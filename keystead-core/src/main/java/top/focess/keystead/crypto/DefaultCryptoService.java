@@ -1,17 +1,23 @@
 package top.focess.keystead.crypto;
 
+import com.google.crypto.tink.CleartextKeysetHandle;
+import com.google.crypto.tink.HybridDecrypt;
+import com.google.crypto.tink.HybridEncrypt;
+import com.google.crypto.tink.JsonKeysetReader;
+import com.google.crypto.tink.JsonKeysetWriter;
+import com.google.crypto.tink.KeysetHandle;
+import com.google.crypto.tink.hybrid.HybridConfig;
+import com.google.crypto.tink.hybrid.HybridKeyTemplates;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Objects;
-import javax.crypto.AEADBadTagException;
-import javax.crypto.Cipher;
 import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
-import javax.crypto.spec.SecretKeySpec;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.model.EncryptedEnvelope;
@@ -19,23 +25,28 @@ import top.focess.keystead.model.KeyId;
 
 public final class DefaultCryptoService {
 
-    public static final String PAYLOAD_ALGORITHM = "AES-256-GCM";
+    public static final String PAYLOAD_ALGORITHM = JdkAesGcmCipher.ALGORITHM;
+    public static final String DEVICE_KEY_ALGORITHM = "TINK_ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM";
     public static final String KDF_ALGORITHM = "PBKDF2WithHmacSHA256";
     public static final int DEFAULT_KDF_ITERATIONS = 120_000;
 
     private static final int KEY_BYTES = 32;
     private static final int SALT_BYTES = 16;
-    private static final int NONCE_BYTES = 12;
-    private static final int GCM_TAG_BITS = 128;
 
     private final SecureRandom random;
+    private final AeadCipher aeadCipher;
 
     public DefaultCryptoService() {
         this(new SecureRandom());
     }
 
     public DefaultCryptoService(@NonNull SecureRandom random) {
+        this(random, new TinkAesGcmCipher());
+    }
+
+    public DefaultCryptoService(@NonNull SecureRandom random, @NonNull AeadCipher aeadCipher) {
         this.random = Objects.requireNonNull(random, "random");
+        this.aeadCipher = Objects.requireNonNull(aeadCipher, "aeadCipher");
     }
 
     public @NonNull VaultKey generateVaultKey(@NonNull KeyId keyId) {
@@ -54,6 +65,26 @@ public final class DefaultCryptoService {
         return salt;
     }
 
+    public @NonNull DeviceKeyPair generateDeviceKeyPair() {
+        try {
+            registerHybridPrimitives();
+            KeysetHandle privateHandle =
+                    KeysetHandle.generateNew(
+                            HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM);
+            KeysetHandle publicHandle = privateHandle.getPublicKeysetHandle();
+            byte[] publicKey = writePublicKeyset(publicHandle);
+            byte[] privateKey = writePrivateKeyset(privateHandle);
+            try {
+                return new DeviceKeyPair(DEVICE_KEY_ALGORITHM, publicKey, privateKey);
+            } finally {
+                Arrays.fill(publicKey, (byte) 0);
+                Arrays.fill(privateKey, (byte) 0);
+            }
+        } catch (GeneralSecurityException e) {
+            throw new CryptoException("Could not generate device key pair", e);
+        }
+    }
+
     public @NonNull EncryptedEnvelope encrypt(
             @NonNull VaultKey key,
             byte @NonNull [] plaintext,
@@ -64,12 +95,12 @@ public final class DefaultCryptoService {
         Objects.requireNonNull(aad, "aad");
         Objects.requireNonNull(encryptedAt, "encryptedAt");
 
-        byte[] nonce = new byte[NONCE_BYTES];
+        byte[] nonce = new byte[aeadCipher.nonceSizeBytes()];
         random.nextBytes(nonce);
         byte[] ciphertext =
-                withKeyBytes(key, keyBytes -> encryptAesGcm(keyBytes, nonce, plaintext, aad));
+                withKeyBytes(key, keyBytes -> aeadCipher.encrypt(keyBytes, nonce, plaintext, aad));
         return new EncryptedEnvelope(
-                1, PAYLOAD_ALGORITHM, key.keyId(), nonce, aad, ciphertext, encryptedAt);
+                1, aeadCipher.algorithm(), key.keyId(), nonce, aad, ciphertext, encryptedAt);
     }
 
     public byte @NonNull [] decrypt(
@@ -77,7 +108,7 @@ public final class DefaultCryptoService {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(envelope, "envelope");
         Objects.requireNonNull(aad, "aad");
-        if (!PAYLOAD_ALGORITHM.equals(envelope.algorithm())) {
+        if (!aeadCipher.algorithm().equals(envelope.algorithm())) {
             throw new CryptoException("Unsupported encrypted envelope algorithm");
         }
         if (!Arrays.equals(envelope.aad(), aad)) {
@@ -85,7 +116,8 @@ public final class DefaultCryptoService {
         }
         return withKeyBytes(
                 key,
-                keyBytes -> decryptAesGcm(keyBytes, envelope.nonce(), envelope.ciphertext(), aad));
+                keyBytes ->
+                        aeadCipher.decrypt(keyBytes, envelope.nonce(), envelope.ciphertext(), aad));
     }
 
     public byte @NonNull [] wrapVaultKey(
@@ -95,14 +127,14 @@ public final class DefaultCryptoService {
             int iterations) {
         Objects.requireNonNull(vaultKey, "vaultKey");
         byte[] wrappingKey = deriveWrappingKey(masterPassword, salt, iterations);
-        byte[] nonce = new byte[NONCE_BYTES];
+        byte[] nonce = new byte[aeadCipher.nonceSizeBytes()];
         random.nextBytes(nonce);
         try {
             byte[] wrapped =
                     withKeyBytes(
                             vaultKey,
                             keyBytes ->
-                                    encryptAesGcm(
+                                    aeadCipher.encrypt(
                                             wrappingKey,
                                             nonce,
                                             keyBytes,
@@ -125,22 +157,67 @@ public final class DefaultCryptoService {
             int iterations) {
         Objects.requireNonNull(keyId, "keyId");
         Objects.requireNonNull(wrappedVaultKey, "wrappedVaultKey");
-        if (wrappedVaultKey.length <= NONCE_BYTES) {
+        if (wrappedVaultKey.length <= aeadCipher.nonceSizeBytes()) {
             throw new CryptoException("Wrapped vault key is invalid");
         }
 
         byte[] wrappingKey = deriveWrappingKey(masterPassword, salt, iterations);
-        byte[] nonce = Arrays.copyOfRange(wrappedVaultKey, 0, NONCE_BYTES);
+        byte[] nonce = Arrays.copyOfRange(wrappedVaultKey, 0, aeadCipher.nonceSizeBytes());
         byte[] ciphertext =
-                Arrays.copyOfRange(wrappedVaultKey, NONCE_BYTES, wrappedVaultKey.length);
+                Arrays.copyOfRange(
+                        wrappedVaultKey, aeadCipher.nonceSizeBytes(), wrappedVaultKey.length);
         byte @Nullable [] opened = null;
         try {
-            opened = decryptAesGcm(wrappingKey, nonce, ciphertext, wrappingAad(keyId));
+            opened = aeadCipher.decrypt(wrappingKey, nonce, ciphertext, wrappingAad(keyId));
             return new VaultKey(keyId, opened);
         } finally {
             Arrays.fill(wrappingKey, (byte) 0);
             Arrays.fill(nonce, (byte) 0);
             Arrays.fill(ciphertext, (byte) 0);
+            if (opened != null) {
+                Arrays.fill(opened, (byte) 0);
+            }
+        }
+    }
+
+    public byte @NonNull [] wrapVaultKeyForDevice(
+            @NonNull VaultKey vaultKey,
+            byte @NonNull [] devicePublicKey,
+            byte @NonNull [] context) {
+        Objects.requireNonNull(vaultKey, "vaultKey");
+        Objects.requireNonNull(devicePublicKey, "devicePublicKey");
+        Objects.requireNonNull(context, "context");
+        try {
+            registerHybridPrimitives();
+            KeysetHandle publicHandle =
+                    KeysetHandle.readNoSecret(JsonKeysetReader.withBytes(devicePublicKey));
+            HybridEncrypt encrypt = publicHandle.getPrimitive(HybridEncrypt.class);
+            return withKeyBytes(vaultKey, keyBytes -> encryptForDevice(encrypt, keyBytes, context));
+        } catch (GeneralSecurityException | IOException e) {
+            throw new CryptoException("Could not wrap vault key for device", e);
+        }
+    }
+
+    public @NonNull VaultKey unwrapVaultKeyFromDevicePackage(
+            @NonNull KeyId keyId,
+            byte @NonNull [] encryptedVaultKey,
+            byte @NonNull [] devicePrivateKey,
+            byte @NonNull [] context) {
+        Objects.requireNonNull(keyId, "keyId");
+        Objects.requireNonNull(encryptedVaultKey, "encryptedVaultKey");
+        Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
+        Objects.requireNonNull(context, "context");
+        byte @Nullable [] opened = null;
+        try {
+            registerHybridPrimitives();
+            KeysetHandle privateHandle =
+                    CleartextKeysetHandle.read(JsonKeysetReader.withBytes(devicePrivateKey));
+            HybridDecrypt decrypt = privateHandle.getPrimitive(HybridDecrypt.class);
+            opened = decrypt.decrypt(encryptedVaultKey, context);
+            return new VaultKey(keyId, opened);
+        } catch (GeneralSecurityException | IOException e) {
+            throw new CryptoException("Could not unwrap device vault key package", e);
+        } finally {
             if (opened != null) {
                 Arrays.fill(opened, (byte) 0);
             }
@@ -168,46 +245,45 @@ public final class DefaultCryptoService {
         }
     }
 
-    private byte @NonNull [] encryptAesGcm(
-            byte @NonNull [] keyBytes,
-            byte @NonNull [] nonce,
-            byte @NonNull [] plaintext,
-            byte @NonNull [] aad) {
-        try {
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(
-                    Cipher.ENCRYPT_MODE,
-                    new SecretKeySpec(keyBytes, "AES"),
-                    new GCMParameterSpec(GCM_TAG_BITS, nonce));
-            cipher.updateAAD(aad);
-            return cipher.doFinal(plaintext);
-        } catch (GeneralSecurityException e) {
-            throw new CryptoException("Could not encrypt payload", e);
-        }
-    }
-
-    private byte @NonNull [] decryptAesGcm(
-            byte @NonNull [] keyBytes,
-            byte @NonNull [] nonce,
-            byte @NonNull [] ciphertext,
-            byte @NonNull [] aad) {
-        try {
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(
-                    Cipher.DECRYPT_MODE,
-                    new SecretKeySpec(keyBytes, "AES"),
-                    new GCMParameterSpec(GCM_TAG_BITS, nonce));
-            cipher.updateAAD(aad);
-            return cipher.doFinal(ciphertext);
-        } catch (AEADBadTagException e) {
-            throw new CryptoException("Could not decrypt payload", e);
-        } catch (GeneralSecurityException e) {
-            throw new CryptoException("Could not decrypt payload", e);
-        }
-    }
-
     private byte @NonNull [] wrappingAad(@NonNull KeyId keyId) {
         return keyId.value().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private byte @NonNull [] encryptForDevice(
+            @NonNull HybridEncrypt encrypt, byte @NonNull [] keyBytes, byte @NonNull [] context) {
+        try {
+            return encrypt.encrypt(keyBytes, context);
+        } catch (GeneralSecurityException e) {
+            throw new CryptoException("Could not wrap vault key for device", e);
+        }
+    }
+
+    private static void registerHybridPrimitives() {
+        try {
+            HybridConfig.register();
+        } catch (GeneralSecurityException e) {
+            throw new CryptoException("Could not register hybrid crypto primitives", e);
+        }
+    }
+
+    private static byte @NonNull [] writePublicKeyset(@NonNull KeysetHandle handle) {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try {
+            handle.writeNoSecret(JsonKeysetWriter.withOutputStream(output));
+            return output.toByteArray();
+        } catch (GeneralSecurityException | IOException e) {
+            throw new CryptoException("Could not serialize public device key", e);
+        }
+    }
+
+    private static byte @NonNull [] writePrivateKeyset(@NonNull KeysetHandle handle) {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try {
+            CleartextKeysetHandle.write(handle, JsonKeysetWriter.withOutputStream(output));
+            return output.toByteArray();
+        } catch (IOException e) {
+            throw new CryptoException("Could not serialize private device key", e);
+        }
     }
 
     private byte @NonNull [] withKeyBytes(@NonNull VaultKey key, @NonNull KeyOperation operation) {

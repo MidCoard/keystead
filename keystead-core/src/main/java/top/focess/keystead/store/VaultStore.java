@@ -11,6 +11,10 @@ public interface VaultStore {
 
     @NonNull Optional<VaultHeader> loadVaultHeader(@NonNull VaultId vaultId);
 
+    long nextRevision(@NonNull VaultId vaultId);
+
+    void recordRevision(@NonNull VaultId vaultId, long revision);
+
     void saveSecretRecord(@NonNull EncryptedSecretRecord record);
 
     @NonNull Optional<EncryptedSecretRecord> loadSecretRecord(
@@ -18,5 +22,16 @@ public interface VaultStore {
 
     void deleteSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId);
 
+    void saveDeletedSecretRecord(@NonNull DeletedSecretRecord record);
+
+    @NonNull Optional<DeletedSecretRecord> loadDeletedSecretRecord(
+            @NonNull VaultId vaultId, @NonNull SecretId secretId);
+
+    void deleteDeletedSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId);
+
     @NonNull List<SecretMetadata> listMetadata(@NonNull VaultId vaultId);
+
+    @NonNull List<EncryptedSecretRecord> listSecretRecords(@NonNull VaultId vaultId);
+
+    @NonNull List<DeletedSecretRecord> listDeletedSecretRecords(@NonNull VaultId vaultId);
 }

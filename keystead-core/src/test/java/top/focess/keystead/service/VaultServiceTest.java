@@ -18,8 +18,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import top.focess.keystead.crypto.CryptoException;
+import top.focess.keystead.crypto.DefaultCryptoService;
+import top.focess.keystead.crypto.DeviceKeyPair;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretDestroyedException;
+import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretClassification;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.VaultId;
@@ -79,6 +82,37 @@ class VaultServiceTest {
 
         assertThrows(
                 CryptoException.class, () -> service.openVault(VAULT_ID, chars("wrong-password")));
+    }
+
+    @Test
+    void vaultHandleCreatesContextBoundDeviceKeyPackage() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        DefaultCryptoService crypto = new DefaultCryptoService();
+        byte[] context = "vault:vault-1:device:laptop-1".getBytes(StandardCharsets.UTF_8);
+
+        try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
+                VaultHandle vault =
+                        service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            byte[] packageBytes = vault.wrapVaultKeyForDevice(device.publicKey(), context);
+
+            assertTrue(packageBytes.length > 0);
+            assertDoesNotThrow(
+                    () ->
+                            crypto.unwrapVaultKeyFromDevicePackage(
+                                            new KeyId("vault-key"),
+                                            packageBytes,
+                                            device.privateKey(),
+                                            context)
+                                    .close());
+            assertThrows(
+                    CryptoException.class,
+                    () ->
+                            crypto.unwrapVaultKeyFromDevicePackage(
+                                    new KeyId("vault-key"),
+                                    packageBytes,
+                                    device.privateKey(),
+                                    "wrong-context".getBytes(StandardCharsets.UTF_8)));
+        }
     }
 
     @Test
@@ -148,6 +182,80 @@ class VaultServiceTest {
     }
 
     @Test
+    void updateLoginReplacesPayloadAndUsesNewRevision() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            SecretId secretId = saveGitHubLogin(vault);
+
+            try (SecretBuffer username = SecretBuffer.fromChars(chars("alice@example.com"));
+                    SecretBuffer password = SecretBuffer.fromChars(chars("rotated-password"))) {
+                vault.updateLogin(
+                        secretId,
+                        draft ->
+                                draft.title("GitHub")
+                                        .classification(
+                                                new SecretClassification(
+                                                        "development",
+                                                        "github",
+                                                        "alice@example.com",
+                                                        Set.of("work")))
+                                        .username(username)
+                                        .password(password)
+                                        .url("https://github.com"));
+            }
+
+            assertEquals(2L, vault.listSecrets().getFirst().revision());
+            vault.withLogin(
+                    secretId,
+                    view -> {
+                        assertEquals("GitHub", view.metadata().title());
+                        view.withPassword(
+                                password -> assertArrayEquals(chars("rotated-password"), password));
+                    });
+            assertEquals(1, vault.exportRecordsSince(1).size());
+            assertEquals(2L, vault.exportRecordsSince(1).getFirst().revision());
+        }
+    }
+
+    @Test
+    void updateStructuredSecretReplacesFieldsAndUsesNewRevision() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            SecretId secretId;
+            try (SecretBuffer token = SecretBuffer.fromChars(chars("ghp_old"))) {
+                secretId =
+                        vault.saveSecret(
+                                top.focess.keystead.model.SecretType.API_TOKEN,
+                                draft -> draft.title("GitHub token").field("token", token));
+            }
+
+            try (SecretBuffer token = SecretBuffer.fromChars(chars("ghp_new"))) {
+                vault.updateSecret(
+                        secretId,
+                        draft ->
+                                draft.title("GitHub token")
+                                        .classification(
+                                                new SecretClassification(
+                                                        "development",
+                                                        "github",
+                                                        "alice@example.com"))
+                                        .field("token", token));
+            }
+
+            assertEquals(2L, vault.listSecrets().getFirst().revision());
+            vault.withSecret(
+                    secretId,
+                    view ->
+                            view.withField(
+                                    "token", token -> assertArrayEquals(chars("ghp_new"), token)));
+            assertEquals(1, vault.exportRecordsSince(1).size());
+            assertEquals(2L, vault.exportRecordsSince(1).getFirst().revision());
+        }
+    }
+
+    @Test
     void tamperedLoginMetadataCannotBeOpened() throws IOException {
         VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
         SecretId secretId;
@@ -201,6 +309,9 @@ class VaultServiceTest {
 
         assertTrue(vault.isClosed());
         assertThrows(IllegalStateException.class, () -> saveGitHubLogin(vault));
+        assertThrows(
+                IllegalStateException.class,
+                () -> vault.wrapVaultKeyForDevice(new byte[] {1, 2, 3}, new byte[] {4, 5, 6}));
     }
 
     private static SecretId saveGitHubLogin(VaultHandle vault) {

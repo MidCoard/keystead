@@ -14,6 +14,8 @@ import top.focess.keystead.store.VaultStore;
 
 public final class DefaultVaultService implements VaultService {
 
+    public static final String DEVICE_KEY_PACKAGE_ALGORITHM = "TINK_DEVICE_KEY_PACKAGE";
+
     private final VaultStore store;
     private final DefaultCryptoService crypto;
     private final Clock clock;
@@ -82,6 +84,9 @@ public final class DefaultVaultService implements VaultService {
         VaultHeader header =
                 store.loadVaultHeader(vaultId)
                         .orElseThrow(() -> new ValidationException("Vault does not exist"));
+        if (!DefaultCryptoService.KDF_ALGORITHM.equals(header.kdfAlgorithm())) {
+            throw new ValidationException("Vault is not protected by a master password header");
+        }
         VaultKey vaultKey =
                 crypto.unwrapVaultKey(
                         header.vaultKeyId(),
@@ -90,6 +95,66 @@ public final class DefaultVaultService implements VaultService {
                         header.kdfSalt(),
                         header.kdfIterations());
         return new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
+    }
+
+    @Override
+    public @NonNull VaultHandle provisionVault(
+            @NonNull VaultId vaultId,
+            byte @NonNull [] encryptedVaultKey,
+            byte @NonNull [] devicePrivateKey,
+            byte @NonNull [] context) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(encryptedVaultKey, "encryptedVaultKey");
+        Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
+        Objects.requireNonNull(context, "context");
+
+        KeyId keyId = defaultVaultKeyId(vaultId);
+        VaultKey vaultKey =
+                crypto.unwrapVaultKeyFromDevicePackage(
+                        keyId, encryptedVaultKey, devicePrivateKey, context);
+        try {
+            Instant now = clock.instant();
+            Instant createdAt =
+                    store.loadVaultHeader(vaultId).map(VaultHeader::createdAt).orElse(now);
+            store.saveVaultHeader(
+                    new VaultHeader(
+                            vaultId,
+                            1,
+                            DEVICE_KEY_PACKAGE_ALGORITHM,
+                            new byte[0],
+                            1,
+                            keyId,
+                            encryptedVaultKey,
+                            createdAt,
+                            now));
+            return new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
+        } catch (RuntimeException e) {
+            vaultKey.close();
+            throw e;
+        }
+    }
+
+    @Override
+    public @NonNull VaultHandle openVaultWithDeviceKey(
+            @NonNull VaultId vaultId, byte @NonNull [] devicePrivateKey, byte @NonNull [] context) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
+        Objects.requireNonNull(context, "context");
+
+        VaultHeader header =
+                store.loadVaultHeader(vaultId)
+                        .orElseThrow(() -> new ValidationException("Vault does not exist"));
+        if (!DEVICE_KEY_PACKAGE_ALGORITHM.equals(header.kdfAlgorithm())) {
+            throw new ValidationException("Vault is not protected by a device key package");
+        }
+        VaultKey vaultKey =
+                crypto.unwrapVaultKeyFromDevicePackage(
+                        header.vaultKeyId(), header.wrappedVaultKey(), devicePrivateKey, context);
+        return new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
+    }
+
+    private @NonNull KeyId defaultVaultKeyId(@NonNull VaultId vaultId) {
+        return new KeyId("vault-key-" + vaultId.value());
     }
 
     private void wipe(byte @Nullable [] value) {

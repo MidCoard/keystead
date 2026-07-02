@@ -16,13 +16,18 @@ import top.focess.keystead.model.*;
 public final class FileVaultStore implements VaultStore {
 
     private static final String VAULT_FILE = "vault.properties";
+    private static final String REVISION_FILE = "revisions.properties";
 
     private final Path vaultDirectory;
     private final Path secretsDirectory;
+    private final Path deletedDirectory;
+    private final Path revisionPath;
 
     public FileVaultStore(@NonNull Path vaultDirectory) {
         this.vaultDirectory = Objects.requireNonNull(vaultDirectory, "vaultDirectory");
         this.secretsDirectory = vaultDirectory.resolve("secrets");
+        this.deletedDirectory = vaultDirectory.resolve("deleted");
+        this.revisionPath = vaultDirectory.resolve(REVISION_FILE);
     }
 
     @Override
@@ -57,6 +62,25 @@ public final class FileVaultStore implements VaultStore {
     }
 
     @Override
+    public synchronized long nextRevision(@NonNull VaultId vaultId) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        long next = currentRevision(vaultId) + 1;
+        writeRevision(vaultId, next);
+        return next;
+    }
+
+    @Override
+    public synchronized void recordRevision(@NonNull VaultId vaultId, long revision) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        if (revision < 0) {
+            throw new IllegalArgumentException("Record revision must not be negative");
+        }
+        if (revision > currentRevision(vaultId)) {
+            writeRevision(vaultId, revision);
+        }
+    }
+
+    @Override
     public void saveSecretRecord(@NonNull EncryptedSecretRecord record) {
         Objects.requireNonNull(record, "record");
         Properties properties = new Properties();
@@ -71,6 +95,8 @@ public final class FileVaultStore implements VaultStore {
         properties.setProperty("envelope.ciphertext", b64(envelope.ciphertext()));
         properties.setProperty("envelope.encryptedAt", envelope.encryptedAt().toString());
         store(properties, secretPath(record.metadata().id()));
+        deleteDeletedSecretRecord(record.vaultId(), record.metadata().id());
+        recordRevision(record.vaultId(), record.revision());
     }
 
     @Override
@@ -120,7 +146,56 @@ public final class FileVaultStore implements VaultStore {
     }
 
     @Override
+    public void saveDeletedSecretRecord(@NonNull DeletedSecretRecord record) {
+        Objects.requireNonNull(record, "record");
+        Properties properties = new Properties();
+        properties.setProperty("vaultId", record.vaultId().value().toString());
+        properties.setProperty("secretId", record.secretId().value().toString());
+        properties.setProperty("secretType", record.secretType().name());
+        properties.setProperty("revision", Long.toString(record.revision()));
+        properties.setProperty("deletedAt", record.deletedAt().toString());
+        store(properties, deletedPath(record.secretId()));
+        recordRevision(record.vaultId(), record.revision());
+    }
+
+    @Override
+    public @NonNull Optional<DeletedSecretRecord> loadDeletedSecretRecord(
+            @NonNull VaultId vaultId, @NonNull SecretId secretId) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(secretId, "secretId");
+        Path path = deletedPath(secretId);
+        if (!Files.exists(path)) {
+            return Optional.empty();
+        }
+        DeletedSecretRecord record = readDeletedRecord(load(path));
+        if (!record.vaultId().equals(vaultId)) {
+            return Optional.empty();
+        }
+        return Optional.of(record);
+    }
+
+    @Override
+    public void deleteDeletedSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(secretId, "secretId");
+        if (loadDeletedSecretRecord(vaultId, secretId).isEmpty()) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(deletedPath(secretId));
+        } catch (IOException e) {
+            throw new StoreException("Could not delete tombstone record", e);
+        }
+    }
+
+    @Override
     public @NonNull List<SecretMetadata> listMetadata(@NonNull VaultId vaultId) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        return listSecretRecords(vaultId).stream().map(EncryptedSecretRecord::metadata).toList();
+    }
+
+    @Override
+    public @NonNull List<EncryptedSecretRecord> listSecretRecords(@NonNull VaultId vaultId) {
         Objects.requireNonNull(vaultId, "vaultId");
         if (!Files.exists(secretsDirectory)) {
             return List.of();
@@ -133,12 +208,64 @@ public final class FileVaultStore implements VaultStore {
                                     vaultId.value()
                                             .toString()
                                             .equals(properties.getProperty("vaultId")))
-                    .map(this::readMetadata)
-                    .sorted(Comparator.comparing(metadata -> metadata.id().value()))
+                    .map(this::readRecord)
+                    .sorted(Comparator.comparing(record -> record.metadata().id().value()))
                     .toList();
         } catch (IOException e) {
-            throw new StoreException("Could not list secret metadata", e);
+            throw new StoreException("Could not list secret records", e);
         }
+    }
+
+    @Override
+    public @NonNull List<DeletedSecretRecord> listDeletedSecretRecords(@NonNull VaultId vaultId) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        if (!Files.exists(deletedDirectory)) {
+            return List.of();
+        }
+        try (var stream = Files.list(deletedDirectory)) {
+            return stream.filter(path -> path.getFileName().toString().endsWith(".properties"))
+                    .map(this::load)
+                    .filter(
+                            properties ->
+                                    vaultId.value()
+                                            .toString()
+                                            .equals(properties.getProperty("vaultId")))
+                    .map(this::readDeletedRecord)
+                    .sorted(Comparator.comparing(record -> record.secretId().value()))
+                    .toList();
+        } catch (IOException e) {
+            throw new StoreException("Could not list deleted secret records", e);
+        }
+    }
+
+    private @NonNull EncryptedSecretRecord readRecord(@NonNull Properties properties) {
+        VaultId storedVaultId = new VaultId(UUID.fromString(required(properties, "vaultId")));
+        SecretMetadata metadata = readMetadata(properties);
+        EncryptedEnvelope envelope =
+                new EncryptedEnvelope(
+                        intValue(properties, "envelope.version"),
+                        required(properties, "envelope.algorithm"),
+                        new KeyId(required(properties, "envelope.keyId")),
+                        bytes(properties, "envelope.nonce"),
+                        bytes(properties, "envelope.aad"),
+                        bytes(properties, "envelope.ciphertext"),
+                        Instant.parse(required(properties, "envelope.encryptedAt")));
+        EncryptedSecretRecord record =
+                new EncryptedSecretRecord(
+                        storedVaultId,
+                        metadata,
+                        envelope,
+                        longValue(properties, "record.revision"));
+        return record;
+    }
+
+    private @NonNull DeletedSecretRecord readDeletedRecord(@NonNull Properties properties) {
+        return new DeletedSecretRecord(
+                new VaultId(UUID.fromString(required(properties, "vaultId"))),
+                new SecretId(UUID.fromString(required(properties, "secretId"))),
+                SecretType.valueOf(required(properties, "secretType")),
+                longValue(properties, "revision"),
+                Instant.parse(required(properties, "deletedAt")));
     }
 
     private void writeMetadata(
@@ -209,6 +336,43 @@ public final class FileVaultStore implements VaultStore {
 
     private @NonNull Path secretPath(@NonNull SecretId secretId) {
         return secretsDirectory.resolve(secretId.value() + ".properties");
+    }
+
+    private @NonNull Path deletedPath(@NonNull SecretId secretId) {
+        return deletedDirectory.resolve(secretId.value() + ".properties");
+    }
+
+    private synchronized long currentRevision(@NonNull VaultId vaultId) {
+        Properties properties = Files.exists(revisionPath) ? load(revisionPath) : new Properties();
+        @Nullable String value = properties.getProperty(revisionKey(vaultId));
+        if (value != null) {
+            return Long.parseLong(value);
+        }
+        return Math.max(maxSecretRevision(vaultId), maxDeletedRevision(vaultId));
+    }
+
+    private synchronized void writeRevision(@NonNull VaultId vaultId, long revision) {
+        Properties properties = Files.exists(revisionPath) ? load(revisionPath) : new Properties();
+        properties.setProperty(revisionKey(vaultId), Long.toString(revision));
+        store(properties, revisionPath);
+    }
+
+    private long maxSecretRevision(@NonNull VaultId vaultId) {
+        return listSecretRecords(vaultId).stream()
+                .mapToLong(EncryptedSecretRecord::revision)
+                .max()
+                .orElse(0L);
+    }
+
+    private long maxDeletedRevision(@NonNull VaultId vaultId) {
+        return listDeletedSecretRecords(vaultId).stream()
+                .mapToLong(DeletedSecretRecord::revision)
+                .max()
+                .orElse(0L);
+    }
+
+    private @NonNull String revisionKey(@NonNull VaultId vaultId) {
+        return "vault." + vaultId.value() + ".lastRevision";
     }
 
     private void store(@NonNull Properties properties, @NonNull Path path) {

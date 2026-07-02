@@ -9,4 +9,13 @@ public interface VaultService {
             @NonNull CreateVaultRequest request, char @NonNull [] masterPassword);
 
     @NonNull VaultHandle openVault(@NonNull VaultId vaultId, char @NonNull [] masterPassword);
+
+    @NonNull VaultHandle provisionVault(
+            @NonNull VaultId vaultId,
+            byte @NonNull [] encryptedVaultKey,
+            byte @NonNull [] devicePrivateKey,
+            byte @NonNull [] context);
+
+    @NonNull VaultHandle openVaultWithDeviceKey(
+            @NonNull VaultId vaultId, byte @NonNull [] devicePrivateKey, byte @NonNull [] context);
 }
