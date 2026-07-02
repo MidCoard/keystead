@@ -1,7 +1,9 @@
 package top.focess.keystead.service;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.NonNull;
@@ -14,6 +16,7 @@ final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
     private @Nullable String title;
     private @NonNull SecretClassification classification = SecretClassification.none();
     private final Set<String> tags = new LinkedHashSet<>();
+    private final Map<String, String> attributes = new LinkedHashMap<>();
     private byte @Nullable [] body;
     private boolean closed;
 
@@ -41,6 +44,16 @@ final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
     }
 
     @Override
+    public @NonNull SecureNoteDraft attribute(@NonNull String key, @NonNull String value) {
+        requireOpen();
+        if (!Objects.requireNonNull(key, "key").isBlank()
+                && !Objects.requireNonNull(value, "value").isBlank()) {
+            attributes.put(key, value);
+        }
+        return this;
+    }
+
+    @Override
     public @NonNull SecureNoteDraft body(@NonNull SecretBuffer body) {
         requireOpen();
         replaceBody(copySecret(body));
@@ -57,6 +70,10 @@ final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
 
     @NonNull SecretClassification classification() {
         return classification;
+    }
+
+    @NonNull Map<String, String> attributes() {
+        return Map.copyOf(attributes);
     }
 
     byte @Nullable [] bodyBytes() {

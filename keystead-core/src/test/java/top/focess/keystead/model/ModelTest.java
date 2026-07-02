@@ -3,6 +3,7 @@ package top.focess.keystead.model;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -26,13 +27,14 @@ class ModelTest {
                 new SecretMetadata(
                         new SecretId(UUID.randomUUID()),
                         SecretType.LOGIN_PASSWORD,
-                        "GitHub",
-                        classification,
-                        tags,
+                        new SecretProfile(
+                                "GitHub", classification, tags, Map.of("project", "keystead")),
                         Instant.parse("2026-07-02T00:00:00Z"),
                         Instant.parse("2026-07-02T00:01:00Z"),
                         1L);
 
+        assertEquals("GitHub", metadata.profile().title());
+        assertEquals(Map.of("project", "keystead"), metadata.profile().attributes());
         assertEquals(classification, metadata.classification());
         assertEquals(tags, metadata.tags());
         assertThrows(UnsupportedOperationException.class, () -> metadata.tags().add("new"));
@@ -63,6 +65,24 @@ class ModelTest {
         assertThrows(UnsupportedOperationException.class, () -> classification.labels().add("new"));
         assertEquals(
                 SecretClassification.none(), new SecretClassification(" ", null, "", Set.of()));
+    }
+
+    @Test
+    void profileOwnsTitleClassificationTagsAndAttributes() {
+        SecretProfile profile =
+                new SecretProfile(
+                        " GitHub main ",
+                        new SecretClassification(
+                                "development", "github", "alice@example.com", Set.of("work")),
+                        Set.of(" code ", ""),
+                        Map.of(" environment ", " production ", "", "ignored", "blank", " "));
+
+        assertEquals("GitHub main", profile.title());
+        assertEquals("development", profile.classification().category());
+        assertEquals(Set.of("code"), profile.tags());
+        assertEquals(Map.of("environment", "production"), profile.attributes());
+        assertThrows(UnsupportedOperationException.class, () -> profile.tags().add("new"));
+        assertThrows(UnsupportedOperationException.class, () -> profile.attributes().put("x", "y"));
     }
 
     @Test

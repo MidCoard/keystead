@@ -12,6 +12,7 @@ java {
 
 dependencies {
     api("org.jspecify:jspecify:1.0.0")
+    implementation("com.google.crypto.tink:tink:1.22.0")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

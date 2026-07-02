@@ -153,6 +153,7 @@ public final class FileVaultStore implements VaultStore {
         properties.setProperty(
                 "metadata.tags",
                 metadata.tags().stream().sorted().map(this::b64).collect(Collectors.joining(",")));
+        properties.setProperty("metadata.attributes", encodedMap(metadata.profile().attributes()));
         properties.setProperty("metadata.createdAt", metadata.createdAt().toString());
         properties.setProperty("metadata.updatedAt", metadata.updatedAt().toString());
         properties.setProperty("metadata.revision", Long.toString(metadata.revision()));
@@ -162,9 +163,11 @@ public final class FileVaultStore implements VaultStore {
         return new SecretMetadata(
                 new SecretId(UUID.fromString(required(properties, "metadata.id"))),
                 SecretType.valueOf(required(properties, "metadata.type")),
-                text(properties, "metadata.title"),
-                readClassification(properties),
-                tags(properties),
+                new SecretProfile(
+                        text(properties, "metadata.title"),
+                        readClassification(properties),
+                        tags(properties),
+                        encodedMap(properties.getProperty("metadata.attributes", ""))),
                 Instant.parse(required(properties, "metadata.createdAt")),
                 Instant.parse(required(properties, "metadata.updatedAt")),
                 longValue(properties, "metadata.revision"));
@@ -265,6 +268,32 @@ public final class FileVaultStore implements VaultStore {
         return Arrays.stream(encoded.split(","))
                 .map(value -> new String(Base64.getDecoder().decode(value), StandardCharsets.UTF_8))
                 .collect(Collectors.toUnmodifiableSet());
+    }
+
+    private @NonNull String encodedMap(@NonNull Map<String, String> values) {
+        return values.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> b64(entry.getKey()) + ":" + b64(entry.getValue()))
+                .collect(Collectors.joining(","));
+    }
+
+    private @NonNull Map<String, String> encodedMap(@NonNull String encoded) {
+        if (encoded.isBlank()) {
+            return Map.of();
+        }
+        return Arrays.stream(encoded.split(","))
+                .map(value -> value.split(":", 2))
+                .filter(parts -> parts.length == 2)
+                .collect(
+                        Collectors.toUnmodifiableMap(
+                                parts ->
+                                        new String(
+                                                Base64.getDecoder().decode(parts[0]),
+                                                StandardCharsets.UTF_8),
+                                parts ->
+                                        new String(
+                                                Base64.getDecoder().decode(parts[1]),
+                                                StandardCharsets.UTF_8)));
     }
 
     private void setNullableText(

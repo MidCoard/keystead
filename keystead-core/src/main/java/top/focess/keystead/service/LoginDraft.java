@@ -13,6 +13,8 @@ public interface LoginDraft {
 
     @NonNull LoginDraft classification(@NonNull SecretClassification classification);
 
+    @NonNull LoginDraft attribute(@NonNull String key, @NonNull String value);
+
     @NonNull LoginDraft username(@NonNull SecretBuffer username);
 
     @NonNull LoginDraft password(@NonNull SecretBuffer password);

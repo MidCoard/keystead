@@ -11,6 +11,7 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
     private @Nullable String title;
     private @NonNull SecretClassification classification = SecretClassification.none();
     private final Set<String> tags = new LinkedHashSet<>();
+    private final Map<String, String> attributes = new LinkedHashMap<>();
     private byte @Nullable [] username;
     private byte @Nullable [] password;
     private @Nullable String url;
@@ -37,6 +38,16 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
     public @NonNull LoginDraft classification(@NonNull SecretClassification classification) {
         requireOpen();
         this.classification = Objects.requireNonNull(classification, "classification");
+        return this;
+    }
+
+    @Override
+    public @NonNull LoginDraft attribute(@NonNull String key, @NonNull String value) {
+        requireOpen();
+        if (!Objects.requireNonNull(key, "key").isBlank()
+                && !Objects.requireNonNull(value, "value").isBlank()) {
+            attributes.put(key, value);
+        }
         return this;
     }
 
@@ -78,6 +89,10 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
 
     @NonNull SecretClassification classification() {
         return classification;
+    }
+
+    @NonNull Map<String, String> attributes() {
+        return Map.copyOf(attributes);
     }
 
     @Nullable String url() {

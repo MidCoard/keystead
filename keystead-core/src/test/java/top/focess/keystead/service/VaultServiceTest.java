@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -54,6 +55,9 @@ class VaultServiceTest {
                                         "alice@example.com",
                                         Set.of("work")),
                                 view.metadata().classification());
+                        assertEquals(
+                                Map.of("project", "keystead"),
+                                view.metadata().profile().attributes());
                         assertEquals("https://github.com", view.url().orElseThrow());
                         view.withUsername(
                                 chars -> assertArrayEquals(chars("alice@example.com"), chars));
@@ -212,6 +216,7 @@ class VaultServiceTest {
                                                     "github",
                                                     "alice@example.com",
                                                     Set.of("work")))
+                                    .attribute("project", "keystead")
                                     .tag("work")
                                     .username(username)
                                     .password(password)

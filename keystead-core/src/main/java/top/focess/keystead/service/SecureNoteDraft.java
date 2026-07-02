@@ -13,5 +13,7 @@ public interface SecureNoteDraft {
 
     @NonNull SecureNoteDraft classification(@NonNull SecretClassification classification);
 
+    @NonNull SecureNoteDraft attribute(@NonNull String key, @NonNull String value);
+
     @NonNull SecureNoteDraft body(@NonNull SecretBuffer body);
 }

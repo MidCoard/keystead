@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -55,6 +56,7 @@ class FileVaultStoreTest {
         assertEquals("github", metadata.classification().provider());
         assertEquals("alice@example.com", metadata.classification().account());
         assertEquals(Set.of("work"), metadata.classification().labels());
+        assertEquals(Map.of("project", "keystead"), metadata.profile().attributes());
     }
 
     @Test
@@ -114,10 +116,15 @@ class FileVaultStoreTest {
                 new SecretMetadata(
                         new SecretId(UUID.fromString("00000000-0000-0000-0000-000000000002")),
                         SecretType.LOGIN_PASSWORD,
-                        "GitHub",
-                        new SecretClassification(
-                                "development", "github", "alice@example.com", Set.of("work")),
-                        Set.of("work", "code"),
+                        new SecretProfile(
+                                "GitHub",
+                                new SecretClassification(
+                                        "development",
+                                        "github",
+                                        "alice@example.com",
+                                        Set.of("work")),
+                                Set.of("work", "code"),
+                                Map.of("project", "keystead")),
                         Instant.parse("2026-07-02T00:00:00Z"),
                         Instant.parse("2026-07-02T00:01:00Z"),
                         1L);

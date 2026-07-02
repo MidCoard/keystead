@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -59,9 +60,11 @@ final class DefaultVaultHandle implements VaultHandle {
                     new SecretMetadata(
                             secretId,
                             SecretType.LOGIN_PASSWORD,
-                            draft.title(),
-                            draft.classification(),
-                            draft.tags(),
+                            new SecretProfile(
+                                    draft.title(),
+                                    draft.classification(),
+                                    draft.tags(),
+                                    draft.attributes()),
                             now,
                             now,
                             1L);
@@ -127,9 +130,11 @@ final class DefaultVaultHandle implements VaultHandle {
                     new SecretMetadata(
                             secretId,
                             SecretType.SECURE_NOTE,
-                            draft.title(),
-                            draft.classification(),
-                            draft.tags(),
+                            new SecretProfile(
+                                    draft.title(),
+                                    draft.classification(),
+                                    draft.tags(),
+                                    draft.attributes()),
                             now,
                             now,
                             1L);
@@ -220,6 +225,14 @@ final class DefaultVaultHandle implements VaultHandle {
                 .forEach(label -> appendAad(value, label));
         appendAad(value, Integer.toString(metadata.tags().size()));
         metadata.tags().stream().sorted().forEach(tag -> appendAad(value, tag));
+        appendAad(value, Integer.toString(metadata.profile().attributes().size()));
+        metadata.profile().attributes().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(
+                        entry -> {
+                            appendAad(value, entry.getKey());
+                            appendAad(value, entry.getValue());
+                        });
         appendAad(value, metadata.createdAt().toString());
         appendAad(value, metadata.updatedAt().toString());
         appendAad(value, Long.toString(metadata.revision()));
