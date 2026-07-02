@@ -1,0 +1,15 @@
+# Build outputs
+.gradle/
+build/
+out/
+
+# IDE files
+.idea/
+*.iml
+
+# Local/system files
+.DS_Store
+Thumbs.db
+
+# Design and planning notes are local working artifacts for now.
+docs/superpowers/
