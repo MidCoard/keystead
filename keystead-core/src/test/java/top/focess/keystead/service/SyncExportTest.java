@@ -44,6 +44,7 @@ class SyncExportTest {
                                                 new SecretClassification(
                                                         "development",
                                                         "github",
+                                                        "github.com",
                                                         "alice@example.com",
                                                         Set.of("work")))
                                         .username(username)
@@ -118,6 +119,7 @@ class SyncExportTest {
                                                 new SecretClassification(
                                                         "development",
                                                         "github",
+                                                        "github.com",
                                                         "alice@example.com"))
                                         .field("token", value));
             }
@@ -129,6 +131,7 @@ class SyncExportTest {
             assertEquals(1, vault.importRecords(List.of(exported)));
 
             assertEquals("GitHub token", vault.listSecrets().getFirst().title());
+            assertEquals("github.com", vault.listSecrets().getFirst().classification().software());
             vault.withSecret(
                     new top.focess.keystead.model.SecretId(UUID.fromString(exported.secretId())),
                     view ->

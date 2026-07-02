@@ -54,6 +54,7 @@ class FileVaultStoreTest {
                         .metadata();
         assertEquals("development", metadata.classification().category());
         assertEquals("github", metadata.classification().provider());
+        assertEquals("github.com", metadata.classification().software());
         assertEquals("alice@example.com", metadata.classification().account());
         assertEquals(Set.of("work"), metadata.classification().labels());
         assertEquals(Map.of("project", "keystead"), metadata.profile().attributes());
@@ -121,6 +122,7 @@ class FileVaultStoreTest {
                                 new SecretClassification(
                                         "development",
                                         "github",
+                                        "github.com",
                                         "alice@example.com",
                                         Set.of("work")),
                                 Set.of("work", "code"),

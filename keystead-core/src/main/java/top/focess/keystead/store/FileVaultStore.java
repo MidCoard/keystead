@@ -304,6 +304,7 @@ public final class FileVaultStore implements VaultStore {
             @NonNull Properties properties, @NonNull SecretClassification classification) {
         setNullableText(properties, "metadata.classification.category", classification.category());
         setNullableText(properties, "metadata.classification.provider", classification.provider());
+        setNullableText(properties, "metadata.classification.software", classification.software());
         setNullableText(properties, "metadata.classification.account", classification.account());
         properties.setProperty(
                 "metadata.classification.labels",
@@ -317,6 +318,7 @@ public final class FileVaultStore implements VaultStore {
         return new SecretClassification(
                 optionalText(properties, "metadata.classification.category"),
                 optionalText(properties, "metadata.classification.provider"),
+                optionalText(properties, "metadata.classification.software"),
                 optionalText(properties, "metadata.classification.account"),
                 encodedSet(properties.getProperty("metadata.classification.labels", "")));
     }

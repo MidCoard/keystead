@@ -452,6 +452,9 @@ final class DefaultVaultHandle implements VaultHandle {
         appendAad(value, metadata.title());
         appendAad(value, nullableAad(metadata.classification().category()));
         appendAad(value, nullableAad(metadata.classification().provider()));
+        if (metadata.classification().software() != null) {
+            appendAad(value, metadata.classification().software());
+        }
         appendAad(value, nullableAad(metadata.classification().account()));
         appendAad(value, Integer.toString(metadata.classification().labels().size()));
         metadata.classification().labels().stream()

@@ -98,6 +98,7 @@ final class SyncRecordCodec {
             @NonNull Properties properties, @NonNull SecretClassification classification) {
         setNullable(properties, "classification.category", classification.category());
         setNullable(properties, "classification.provider", classification.provider());
+        setNullable(properties, "classification.software", classification.software());
         setNullable(properties, "classification.account", classification.account());
         properties.setProperty("classification.labels", encodedSet(classification.labels()));
     }
@@ -107,6 +108,7 @@ final class SyncRecordCodec {
         return new SecretClassification(
                 optional(properties, "classification.category"),
                 optional(properties, "classification.provider"),
+                optional(properties, "classification.software"),
                 optional(properties, "classification.account"),
                 encodedSet(properties.getProperty("classification.labels", "")));
     }

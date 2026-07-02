@@ -22,7 +22,7 @@ class ModelTest {
         Set<String> tags = Set.of("work", "github");
         SecretClassification classification =
                 new SecretClassification(
-                        "development", "github", "alice@example.com", Set.of("work"));
+                        "development", "github", "github.com", "alice@example.com", Set.of("work"));
         SecretMetadata metadata =
                 new SecretMetadata(
                         new SecretId(UUID.randomUUID()),
@@ -56,15 +56,39 @@ class ModelTest {
     void classificationNormalizesBlankFieldsAndCopiesLabels() {
         SecretClassification classification =
                 new SecretClassification(
-                        " development ", " github ", " alice@example.com ", Set.of(" work ", ""));
+                        " development ",
+                        " github ",
+                        " github.com ",
+                        " alice@example.com ",
+                        Set.of(" work ", ""));
 
         assertEquals("development", classification.category());
         assertEquals("github", classification.provider());
+        assertEquals("github.com", classification.software());
         assertEquals("alice@example.com", classification.account());
         assertEquals(Set.of("work"), classification.labels());
         assertThrows(UnsupportedOperationException.class, () -> classification.labels().add("new"));
         assertEquals(
-                SecretClassification.none(), new SecretClassification(" ", null, "", Set.of()));
+                SecretClassification.none(), new SecretClassification(" ", null, "", "", Set.of()));
+    }
+
+    @Test
+    void taxonomyFactoriesCreateCommonClassifications() {
+        SecretClassification development =
+                SecretTaxonomy.development(
+                        SecretTaxonomy.PROVIDER_GITHUB,
+                        SecretTaxonomy.SOFTWARE_GITHUB,
+                        "alice@example.com");
+        SecretClassification communication =
+                SecretTaxonomy.communication(
+                        SecretTaxonomy.PROVIDER_WECHAT, SecretTaxonomy.SOFTWARE_WECHAT, "alice");
+
+        assertEquals("development", development.category());
+        assertEquals("github", development.provider());
+        assertEquals("github.com", development.software());
+        assertEquals("communication", communication.category());
+        assertEquals("wechat", communication.provider());
+        assertEquals("wechat", communication.software());
     }
 
     @Test
@@ -73,7 +97,11 @@ class ModelTest {
                 new SecretProfile(
                         " GitHub main ",
                         new SecretClassification(
-                                "development", "github", "alice@example.com", Set.of("work")),
+                                "development",
+                                "github",
+                                "github.com",
+                                "alice@example.com",
+                                Set.of("work")),
                         Set.of(" code ", ""),
                         Map.of(" environment ", " production ", "", "ignored", "blank", " "));
 
