@@ -28,12 +28,15 @@ final class SecureNotePayloadCodec {
     static @NonNull SecureNoteViewImpl decode(
             @NonNull SecretMetadata metadata, byte @NonNull [] payload) {
         ByteBuffer buffer = ByteBuffer.wrap(payload);
-        int version = buffer.getInt();
+        int version = readInt(buffer);
         if (version != VERSION) {
             throw new ValidationException("Unsupported secure note payload version");
         }
         byte @Nullable [] body = readBytes(buffer);
         try {
+            if (buffer.hasRemaining()) {
+                throw new ValidationException("Secure note payload contains trailing data");
+            }
             return new SecureNoteViewImpl(metadata, body);
         } finally {
             wipe(body);
@@ -50,13 +53,26 @@ final class SecureNotePayloadCodec {
     }
 
     private static byte @Nullable [] readBytes(@NonNull ByteBuffer buffer) {
-        int length = buffer.getInt();
-        if (length < 0) {
+        int length = readInt(buffer);
+        if (length == -1) {
             return null;
+        }
+        if (length < -1) {
+            throw new ValidationException("Secure note payload contains an invalid field length");
+        }
+        if (length > buffer.remaining()) {
+            throw new ValidationException("Secure note payload field is truncated");
         }
         byte[] value = new byte[length];
         buffer.get(value);
         return value;
+    }
+
+    private static int readInt(@NonNull ByteBuffer buffer) {
+        if (buffer.remaining() < Integer.BYTES) {
+            throw new ValidationException("Secure note payload is truncated");
+        }
+        return buffer.getInt();
     }
 
     private static void wipe(byte @Nullable [] value) {

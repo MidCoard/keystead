@@ -80,6 +80,9 @@ public final class DefaultCryptoService {
         if (!PAYLOAD_ALGORITHM.equals(envelope.algorithm())) {
             throw new CryptoException("Unsupported encrypted envelope algorithm");
         }
+        if (!Arrays.equals(envelope.aad(), aad)) {
+            throw new CryptoException("Encrypted envelope AAD does not match expected AAD");
+        }
         return withKeyBytes(
                 key,
                 keyBytes -> decryptAesGcm(keyBytes, envelope.nonce(), envelope.ciphertext(), aad));

@@ -3,11 +3,13 @@ package top.focess.keystead.service;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -118,6 +120,51 @@ class VaultServiceTest {
     }
 
     @Test
+    void tamperedLoginMetadataCannotBeOpened() throws IOException {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        SecretId secretId;
+
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            secretId = saveGitHubLogin(vault);
+        }
+
+        Path secretFile = tempDir.resolve("secrets").resolve(secretId.value() + ".properties");
+        String file = Files.readString(secretFile);
+        Files.writeString(
+                secretFile,
+                file.replace(
+                        "metadata.title=" + b64("GitHub"), "metadata.title=" + b64("Payroll")));
+
+        try (VaultHandle vault = service.openVault(VAULT_ID, master())) {
+            assertThrows(
+                    CryptoException.class,
+                    () -> vault.withLogin(secretId, view -> fail("tampered metadata opened")));
+        }
+    }
+
+    @Test
+    void tamperedLoginEnvelopeAadCannotBeOpened() throws IOException {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        SecretId secretId;
+
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            secretId = saveGitHubLogin(vault);
+        }
+
+        Path secretFile = tempDir.resolve("secrets").resolve(secretId.value() + ".properties");
+        String file = Files.readString(secretFile);
+        Files.writeString(
+                secretFile,
+                file.replaceAll("(?m)^envelope\\.aad=.*$", "envelope.aad=" + b64("tampered-aad")));
+
+        try (VaultHandle vault = service.openVault(VAULT_ID, master())) {
+            assertThrows(
+                    CryptoException.class,
+                    () -> vault.withLogin(secretId, view -> fail("tampered AAD opened")));
+        }
+    }
+
+    @Test
     void closingVaultHandleRejectsFurtherOperations() {
         VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
         VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master());
@@ -149,5 +196,9 @@ class VaultServiceTest {
 
     private static char[] chars(String value) {
         return value.toCharArray();
+    }
+
+    private static String b64(String value) {
+        return Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 }

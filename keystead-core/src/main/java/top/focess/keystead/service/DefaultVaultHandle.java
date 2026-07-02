@@ -196,15 +196,23 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     private byte @NonNull [] aad(@NonNull SecretMetadata metadata, long revision) {
-        String value =
-                vaultId.value()
-                        + "|"
-                        + metadata.id().value()
-                        + "|"
-                        + metadata.type().name()
-                        + "|"
-                        + revision;
-        return value.getBytes(StandardCharsets.UTF_8);
+        StringBuilder value = new StringBuilder();
+        appendAad(value, "keystead-secret-record-v2");
+        appendAad(value, vaultId.value().toString());
+        appendAad(value, metadata.id().value().toString());
+        appendAad(value, metadata.type().name());
+        appendAad(value, metadata.title());
+        appendAad(value, Integer.toString(metadata.tags().size()));
+        metadata.tags().stream().sorted().forEach(tag -> appendAad(value, tag));
+        appendAad(value, metadata.createdAt().toString());
+        appendAad(value, metadata.updatedAt().toString());
+        appendAad(value, Long.toString(metadata.revision()));
+        appendAad(value, Long.toString(revision));
+        return value.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private void appendAad(@NonNull StringBuilder builder, @NonNull String value) {
+        builder.append(value.length()).append(':').append(value).append('|');
     }
 
     private void requireOpen() {

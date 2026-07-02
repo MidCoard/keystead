@@ -1,10 +1,12 @@
 package top.focess.keystead.service;
 
+import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.VaultId;
 
 public interface VaultService {
 
-    VaultHandle createVault(CreateVaultRequest request, char[] masterPassword);
+    @NonNull VaultHandle createVault(
+            @NonNull CreateVaultRequest request, char @NonNull [] masterPassword);
 
-    VaultHandle openVault(VaultId vaultId, char[] masterPassword);
+    @NonNull VaultHandle openVault(@NonNull VaultId vaultId, char @NonNull [] masterPassword);
 }
