@@ -1,21 +1,25 @@
 package top.focess.keystead.service;
 
+import java.util.List;
+import java.util.function.Consumer;
+import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.VaultId;
 
-import java.util.List;
-import java.util.function.Consumer;
-
 public interface VaultHandle extends AutoCloseable {
 
-    VaultId vaultId();
+    @NonNull VaultId vaultId();
 
-    SecretId saveLogin(Consumer<LoginDraft> draftConsumer);
+    @NonNull SecretId saveLogin(@NonNull Consumer<LoginDraft> draftConsumer);
 
-    void withLogin(SecretId secretId, Consumer<LoginSecretView> viewConsumer);
+    void withLogin(@NonNull SecretId secretId, @NonNull Consumer<LoginSecretView> viewConsumer);
 
-    List<SecretMetadata> listSecrets();
+    @NonNull SecretId saveSecureNote(@NonNull Consumer<SecureNoteDraft> draftConsumer);
+
+    void withSecureNote(@NonNull SecretId secretId, @NonNull Consumer<SecureNoteView> viewConsumer);
+
+    @NonNull List<SecretMetadata> listSecrets();
 
     boolean isClosed();
 

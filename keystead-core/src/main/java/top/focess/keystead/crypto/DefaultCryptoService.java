@@ -1,20 +1,21 @@
 package top.focess.keystead.crypto;
 
-import top.focess.keystead.model.EncryptedEnvelope;
-import top.focess.keystead.model.KeyId;
-
-import javax.crypto.AEADBadTagException;
-import javax.crypto.Cipher;
-import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.PBEKeySpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Objects;
+import javax.crypto.AEADBadTagException;
+import javax.crypto.Cipher;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+import top.focess.keystead.model.EncryptedEnvelope;
+import top.focess.keystead.model.KeyId;
 
 public final class DefaultCryptoService {
 
@@ -33,11 +34,11 @@ public final class DefaultCryptoService {
         this(new SecureRandom());
     }
 
-    public DefaultCryptoService(SecureRandom random) {
+    public DefaultCryptoService(@NonNull SecureRandom random) {
         this.random = Objects.requireNonNull(random, "random");
     }
 
-    public VaultKey generateVaultKey(KeyId keyId) {
+    public @NonNull VaultKey generateVaultKey(@NonNull KeyId keyId) {
         byte[] keyBytes = new byte[KEY_BYTES];
         random.nextBytes(keyBytes);
         try {
@@ -47,13 +48,17 @@ public final class DefaultCryptoService {
         }
     }
 
-    public byte[] randomSalt() {
+    public byte @NonNull [] randomSalt() {
         byte[] salt = new byte[SALT_BYTES];
         random.nextBytes(salt);
         return salt;
     }
 
-    public EncryptedEnvelope encrypt(VaultKey key, byte[] plaintext, byte[] aad, Instant encryptedAt) {
+    public @NonNull EncryptedEnvelope encrypt(
+            @NonNull VaultKey key,
+            byte @NonNull [] plaintext,
+            byte @NonNull [] aad,
+            @NonNull Instant encryptedAt) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(plaintext, "plaintext");
         Objects.requireNonNull(aad, "aad");
@@ -61,29 +66,44 @@ public final class DefaultCryptoService {
 
         byte[] nonce = new byte[NONCE_BYTES];
         random.nextBytes(nonce);
-        byte[] ciphertext = withKeyBytes(key, keyBytes -> encryptAesGcm(keyBytes, nonce, plaintext, aad));
-        return new EncryptedEnvelope(1, PAYLOAD_ALGORITHM, key.keyId(), nonce, aad, ciphertext, encryptedAt);
+        byte[] ciphertext =
+                withKeyBytes(key, keyBytes -> encryptAesGcm(keyBytes, nonce, plaintext, aad));
+        return new EncryptedEnvelope(
+                1, PAYLOAD_ALGORITHM, key.keyId(), nonce, aad, ciphertext, encryptedAt);
     }
 
-    public byte[] decrypt(VaultKey key, EncryptedEnvelope envelope, byte[] aad) {
+    public byte @NonNull [] decrypt(
+            @NonNull VaultKey key, @NonNull EncryptedEnvelope envelope, byte @NonNull [] aad) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(envelope, "envelope");
         Objects.requireNonNull(aad, "aad");
         if (!PAYLOAD_ALGORITHM.equals(envelope.algorithm())) {
             throw new CryptoException("Unsupported encrypted envelope algorithm");
         }
-        return withKeyBytes(key, keyBytes -> decryptAesGcm(keyBytes, envelope.nonce(), envelope.ciphertext(), aad));
+        return withKeyBytes(
+                key,
+                keyBytes -> decryptAesGcm(keyBytes, envelope.nonce(), envelope.ciphertext(), aad));
     }
 
-    public byte[] wrapVaultKey(VaultKey vaultKey, char[] masterPassword, byte[] salt, int iterations) {
+    public byte @NonNull [] wrapVaultKey(
+            @NonNull VaultKey vaultKey,
+            char @NonNull [] masterPassword,
+            byte @NonNull [] salt,
+            int iterations) {
         Objects.requireNonNull(vaultKey, "vaultKey");
         byte[] wrappingKey = deriveWrappingKey(masterPassword, salt, iterations);
         byte[] nonce = new byte[NONCE_BYTES];
         random.nextBytes(nonce);
         try {
-            byte[] wrapped = withKeyBytes(vaultKey, keyBytes ->
-                encryptAesGcm(wrappingKey, nonce, keyBytes, wrappingAad(vaultKey.keyId()))
-            );
+            byte[] wrapped =
+                    withKeyBytes(
+                            vaultKey,
+                            keyBytes ->
+                                    encryptAesGcm(
+                                            wrappingKey,
+                                            nonce,
+                                            keyBytes,
+                                            wrappingAad(vaultKey.keyId())));
             byte[] output = new byte[nonce.length + wrapped.length];
             System.arraycopy(nonce, 0, output, 0, nonce.length);
             System.arraycopy(wrapped, 0, output, nonce.length, wrapped.length);
@@ -94,7 +114,12 @@ public final class DefaultCryptoService {
         }
     }
 
-    public VaultKey unwrapVaultKey(KeyId keyId, byte[] wrappedVaultKey, char[] masterPassword, byte[] salt, int iterations) {
+    public @NonNull VaultKey unwrapVaultKey(
+            @NonNull KeyId keyId,
+            byte @NonNull [] wrappedVaultKey,
+            char @NonNull [] masterPassword,
+            byte @NonNull [] salt,
+            int iterations) {
         Objects.requireNonNull(keyId, "keyId");
         Objects.requireNonNull(wrappedVaultKey, "wrappedVaultKey");
         if (wrappedVaultKey.length <= NONCE_BYTES) {
@@ -103,8 +128,9 @@ public final class DefaultCryptoService {
 
         byte[] wrappingKey = deriveWrappingKey(masterPassword, salt, iterations);
         byte[] nonce = Arrays.copyOfRange(wrappedVaultKey, 0, NONCE_BYTES);
-        byte[] ciphertext = Arrays.copyOfRange(wrappedVaultKey, NONCE_BYTES, wrappedVaultKey.length);
-        byte[] opened = null;
+        byte[] ciphertext =
+                Arrays.copyOfRange(wrappedVaultKey, NONCE_BYTES, wrappedVaultKey.length);
+        byte @Nullable [] opened = null;
         try {
             opened = decryptAesGcm(wrappingKey, nonce, ciphertext, wrappingAad(keyId));
             return new VaultKey(keyId, opened);
@@ -118,14 +144,17 @@ public final class DefaultCryptoService {
         }
     }
 
-    private byte[] deriveWrappingKey(char[] masterPassword, byte[] salt, int iterations) {
+    private byte @NonNull [] deriveWrappingKey(
+            char @NonNull [] masterPassword, byte @NonNull [] salt, int iterations) {
         Objects.requireNonNull(masterPassword, "masterPassword");
         Objects.requireNonNull(salt, "salt");
         if (iterations <= 0) {
             throw new IllegalArgumentException("KDF iterations must be positive");
         }
         char[] passwordCopy = Arrays.copyOf(masterPassword, masterPassword.length);
-        PBEKeySpec spec = new PBEKeySpec(passwordCopy, Arrays.copyOf(salt, salt.length), iterations, KEY_BYTES * 8);
+        PBEKeySpec spec =
+                new PBEKeySpec(
+                        passwordCopy, Arrays.copyOf(salt, salt.length), iterations, KEY_BYTES * 8);
         try {
             return SecretKeyFactory.getInstance(KDF_ALGORITHM).generateSecret(spec).getEncoded();
         } catch (GeneralSecurityException e) {
@@ -136,10 +165,17 @@ public final class DefaultCryptoService {
         }
     }
 
-    private byte[] encryptAesGcm(byte[] keyBytes, byte[] nonce, byte[] plaintext, byte[] aad) {
+    private byte @NonNull [] encryptAesGcm(
+            byte @NonNull [] keyBytes,
+            byte @NonNull [] nonce,
+            byte @NonNull [] plaintext,
+            byte @NonNull [] aad) {
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new GCMParameterSpec(GCM_TAG_BITS, nonce));
+            cipher.init(
+                    Cipher.ENCRYPT_MODE,
+                    new SecretKeySpec(keyBytes, "AES"),
+                    new GCMParameterSpec(GCM_TAG_BITS, nonce));
             cipher.updateAAD(aad);
             return cipher.doFinal(plaintext);
         } catch (GeneralSecurityException e) {
@@ -147,10 +183,17 @@ public final class DefaultCryptoService {
         }
     }
 
-    private byte[] decryptAesGcm(byte[] keyBytes, byte[] nonce, byte[] ciphertext, byte[] aad) {
+    private byte @NonNull [] decryptAesGcm(
+            byte @NonNull [] keyBytes,
+            byte @NonNull [] nonce,
+            byte @NonNull [] ciphertext,
+            byte @NonNull [] aad) {
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new GCMParameterSpec(GCM_TAG_BITS, nonce));
+            cipher.init(
+                    Cipher.DECRYPT_MODE,
+                    new SecretKeySpec(keyBytes, "AES"),
+                    new GCMParameterSpec(GCM_TAG_BITS, nonce));
             cipher.updateAAD(aad);
             return cipher.doFinal(ciphertext);
         } catch (AEADBadTagException e) {
@@ -160,11 +203,11 @@ public final class DefaultCryptoService {
         }
     }
 
-    private byte[] wrappingAad(KeyId keyId) {
+    private byte @NonNull [] wrappingAad(@NonNull KeyId keyId) {
         return keyId.value().getBytes(StandardCharsets.UTF_8);
     }
 
-    private byte[] withKeyBytes(VaultKey key, KeyOperation operation) {
+    private byte @NonNull [] withKeyBytes(@NonNull VaultKey key, @NonNull KeyOperation operation) {
         final byte[][] output = new byte[1][];
         key.copyBytes(keyBytes -> output[0] = operation.apply(keyBytes));
         return output[0];
@@ -172,6 +215,6 @@ public final class DefaultCryptoService {
 
     @FunctionalInterface
     private interface KeyOperation {
-        byte[] apply(byte[] keyBytes);
+        byte @NonNull [] apply(byte @NonNull [] keyBytes);
     }
 }

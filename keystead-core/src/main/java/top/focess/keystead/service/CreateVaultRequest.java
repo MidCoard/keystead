@@ -1,10 +1,10 @@
 package top.focess.keystead.service;
 
+import java.util.Objects;
+import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.VaultId;
 
-import java.util.Objects;
-
-public record CreateVaultRequest(VaultId vaultId) {
+public record CreateVaultRequest(@NonNull VaultId vaultId) {
 
     public CreateVaultRequest {
         Objects.requireNonNull(vaultId, "vaultId");

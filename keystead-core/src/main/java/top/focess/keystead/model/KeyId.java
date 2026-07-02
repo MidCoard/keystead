@@ -1,8 +1,9 @@
 package top.focess.keystead.model;
 
 import java.util.Objects;
+import org.jspecify.annotations.NonNull;
 
-public record KeyId(String value) {
+public record KeyId(@NonNull String value) {
 
     public KeyId {
         Objects.requireNonNull(value, "value");

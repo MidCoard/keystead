@@ -7,21 +7,23 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.Consumer;
+import org.jspecify.annotations.NonNull;
 
 public final class SecretBuffer implements AutoCloseable {
 
     private final byte[] bytes;
     private boolean closed;
 
-    private SecretBuffer(byte[] bytes) {
+    private SecretBuffer(byte @NonNull [] bytes) {
         this.bytes = Objects.requireNonNull(bytes, "bytes");
     }
 
-    public static SecretBuffer fromUtf8(byte[] bytes) {
-        return new SecretBuffer(Arrays.copyOf(Objects.requireNonNull(bytes, "bytes"), bytes.length));
+    public static @NonNull SecretBuffer fromUtf8(byte @NonNull [] bytes) {
+        return new SecretBuffer(
+                Arrays.copyOf(Objects.requireNonNull(bytes, "bytes"), bytes.length));
     }
 
-    public static SecretBuffer fromChars(char[] chars) {
+    public static @NonNull SecretBuffer fromChars(char @NonNull [] chars) {
         Objects.requireNonNull(chars, "chars");
         char[] copy = Arrays.copyOf(chars, chars.length);
         try {
@@ -46,7 +48,7 @@ public final class SecretBuffer implements AutoCloseable {
         return closed;
     }
 
-    public void copyBytes(Consumer<byte[]> consumer) {
+    public void copyBytes(@NonNull Consumer<byte[]> consumer) {
         Objects.requireNonNull(consumer, "consumer");
         requireOpen();
         byte[] copy = Arrays.copyOf(bytes, bytes.length);
@@ -57,7 +59,7 @@ public final class SecretBuffer implements AutoCloseable {
         }
     }
 
-    public void copyChars(Consumer<char[]> consumer) {
+    public void copyChars(@NonNull Consumer<char[]> consumer) {
         Objects.requireNonNull(consumer, "consumer");
         requireOpen();
         char[] copy = decodeToChars();
@@ -77,7 +79,7 @@ public final class SecretBuffer implements AutoCloseable {
     }
 
     @Override
-    public String toString() {
+    public @NonNull String toString() {
         return "[REDACTED SECRET]";
     }
 
@@ -87,7 +89,7 @@ public final class SecretBuffer implements AutoCloseable {
         }
     }
 
-    private char[] decodeToChars() {
+    private char @NonNull [] decodeToChars() {
         try {
             CharBuffer decoded = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes));
             char[] output = new char[decoded.remaining()];
@@ -99,13 +101,13 @@ public final class SecretBuffer implements AutoCloseable {
         }
     }
 
-    private static void wipeByteBuffer(ByteBuffer buffer) {
+    private static void wipeByteBuffer(@NonNull ByteBuffer buffer) {
         if (buffer.hasArray()) {
             Arrays.fill(buffer.array(), (byte) 0);
         }
     }
 
-    private static void wipeCharBuffer(CharBuffer buffer) {
+    private static void wipeCharBuffer(@NonNull CharBuffer buffer) {
         if (buffer.hasArray()) {
             Arrays.fill(buffer.array(), '\0');
         }

@@ -1,28 +1,29 @@
 package top.focess.keystead.service;
 
-import top.focess.keystead.memory.SecretBuffer;
-
 import java.util.*;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+import top.focess.keystead.memory.SecretBuffer;
 
 final class LoginDraftImpl implements LoginDraft, AutoCloseable {
 
-    private String title;
+    private @Nullable String title;
     private final Set<String> tags = new LinkedHashSet<>();
-    private byte[] username;
-    private byte[] password;
-    private String url;
-    private byte[] notes;
+    private byte @Nullable [] username;
+    private byte @Nullable [] password;
+    private @Nullable String url;
+    private byte @Nullable [] notes;
     private boolean closed;
 
     @Override
-    public LoginDraft title(String title) {
+    public @NonNull LoginDraft title(@NonNull String title) {
         requireOpen();
         this.title = Objects.requireNonNull(title, "title");
         return this;
     }
 
     @Override
-    public LoginDraft tag(String tag) {
+    public @NonNull LoginDraft tag(@Nullable String tag) {
         requireOpen();
         if (tag != null && !tag.isBlank()) {
             tags.add(tag);
@@ -31,54 +32,54 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
     }
 
     @Override
-    public LoginDraft username(SecretBuffer username) {
+    public @NonNull LoginDraft username(@NonNull SecretBuffer username) {
         requireOpen();
         replaceUsername(copySecret(username));
         return this;
     }
 
     @Override
-    public LoginDraft password(SecretBuffer password) {
+    public @NonNull LoginDraft password(@NonNull SecretBuffer password) {
         requireOpen();
         replacePassword(copySecret(password));
         return this;
     }
 
     @Override
-    public LoginDraft url(String url) {
+    public @NonNull LoginDraft url(@Nullable String url) {
         requireOpen();
         this.url = url;
         return this;
     }
 
     @Override
-    public LoginDraft notes(SecretBuffer notes) {
+    public @NonNull LoginDraft notes(@NonNull SecretBuffer notes) {
         requireOpen();
         replaceNotes(copySecret(notes));
         return this;
     }
 
-    String title() {
+    @Nullable String title() {
         return title;
     }
 
-    Set<String> tags() {
+    @NonNull Set<String> tags() {
         return Set.copyOf(tags);
     }
 
-    String url() {
+    @Nullable String url() {
         return url;
     }
 
-    byte[] usernameBytes() {
+    byte @Nullable [] usernameBytes() {
         return copyOrNull(username);
     }
 
-    byte[] passwordBytes() {
+    byte @Nullable [] passwordBytes() {
         return copyOrNull(password);
     }
 
-    byte[] notesBytes() {
+    byte @Nullable [] notesBytes() {
         return copyOrNull(notes);
     }
 
@@ -102,29 +103,29 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
         }
     }
 
-    private byte[] copySecret(SecretBuffer buffer) {
+    private byte @NonNull [] copySecret(@NonNull SecretBuffer buffer) {
         Objects.requireNonNull(buffer, "buffer");
         byte[][] output = new byte[1][];
         buffer.copyBytes(bytes -> output[0] = bytes.clone());
         return output[0];
     }
 
-    private void replaceUsername(byte[] value) {
+    private void replaceUsername(byte @NonNull [] value) {
         wipe(username);
         username = value;
     }
 
-    private void replacePassword(byte[] value) {
+    private void replacePassword(byte @NonNull [] value) {
         wipe(password);
         password = value;
     }
 
-    private void replaceNotes(byte[] value) {
+    private void replaceNotes(byte @NonNull [] value) {
         wipe(notes);
         notes = value;
     }
 
-    private byte[] copyOrNull(byte[] value) {
+    private byte @Nullable [] copyOrNull(byte @Nullable [] value) {
         return value == null ? null : value.clone();
     }
 
@@ -134,7 +135,7 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
         }
     }
 
-    private void wipe(byte[] value) {
+    private void wipe(byte @Nullable [] value) {
         if (value != null) {
             Arrays.fill(value, (byte) 0);
         }

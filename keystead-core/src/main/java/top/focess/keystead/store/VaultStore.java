@@ -1,19 +1,20 @@
 package top.focess.keystead.store;
 
-import top.focess.keystead.model.*;
-
 import java.util.List;
 import java.util.Optional;
+import org.jspecify.annotations.NonNull;
+import top.focess.keystead.model.*;
 
 public interface VaultStore {
 
-    void saveVaultHeader(VaultHeader header);
+    void saveVaultHeader(@NonNull VaultHeader header);
 
-    Optional<VaultHeader> loadVaultHeader(VaultId vaultId);
+    @NonNull Optional<VaultHeader> loadVaultHeader(@NonNull VaultId vaultId);
 
-    void saveSecretRecord(EncryptedSecretRecord record);
+    void saveSecretRecord(@NonNull EncryptedSecretRecord record);
 
-    Optional<EncryptedSecretRecord> loadSecretRecord(VaultId vaultId, SecretId secretId);
+    @NonNull Optional<EncryptedSecretRecord> loadSecretRecord(
+            @NonNull VaultId vaultId, @NonNull SecretId secretId);
 
-    List<SecretMetadata> listMetadata(VaultId vaultId);
+    @NonNull List<SecretMetadata> listMetadata(@NonNull VaultId vaultId);
 }

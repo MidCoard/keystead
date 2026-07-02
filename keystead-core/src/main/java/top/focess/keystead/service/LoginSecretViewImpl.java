@@ -1,24 +1,30 @@
 package top.focess.keystead.service;
 
-import top.focess.keystead.memory.SecretBuffer;
-import top.focess.keystead.memory.SecretDestroyedException;
-import top.focess.keystead.model.SecretMetadata;
-
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.SecretDestroyedException;
+import top.focess.keystead.model.SecretMetadata;
 
 final class LoginSecretViewImpl implements LoginSecretView, AutoCloseable {
 
     private final SecretMetadata metadata;
-    private final String url;
-    private final byte[] username;
-    private final byte[] password;
-    private final byte[] notes;
+    private final @Nullable String url;
+    private final byte @Nullable [] username;
+    private final byte @Nullable [] password;
+    private final byte @Nullable [] notes;
     private boolean closed;
 
-    LoginSecretViewImpl(SecretMetadata metadata, String url, byte[] username, byte[] password, byte[] notes) {
+    LoginSecretViewImpl(
+            @NonNull SecretMetadata metadata,
+            @Nullable String url,
+            byte @Nullable [] username,
+            byte @Nullable [] password,
+            byte @Nullable [] notes) {
         this.metadata = Objects.requireNonNull(metadata, "metadata");
         this.url = url;
         this.username = copyOrNull(username);
@@ -27,29 +33,29 @@ final class LoginSecretViewImpl implements LoginSecretView, AutoCloseable {
     }
 
     @Override
-    public SecretMetadata metadata() {
+    public @NonNull SecretMetadata metadata() {
         requireOpen();
         return metadata;
     }
 
     @Override
-    public Optional<String> url() {
+    public @NonNull Optional<String> url() {
         requireOpen();
         return Optional.ofNullable(url);
     }
 
     @Override
-    public void withUsername(Consumer<char[]> consumer) {
+    public void withUsername(@NonNull Consumer<char[]> consumer) {
         withSecret(username, consumer);
     }
 
     @Override
-    public void withPassword(Consumer<char[]> consumer) {
+    public void withPassword(@NonNull Consumer<char[]> consumer) {
         withSecret(password, consumer);
     }
 
     @Override
-    public void withNotes(Consumer<char[]> consumer) {
+    public void withNotes(@NonNull Consumer<char[]> consumer) {
         withSecret(notes, consumer);
     }
 
@@ -63,7 +69,7 @@ final class LoginSecretViewImpl implements LoginSecretView, AutoCloseable {
         }
     }
 
-    private void withSecret(byte[] value, Consumer<char[]> consumer) {
+    private void withSecret(byte @Nullable [] value, @NonNull Consumer<char[]> consumer) {
         Objects.requireNonNull(consumer, "consumer");
         requireOpen();
         byte[] source = value == null ? new byte[0] : value;
@@ -78,11 +84,11 @@ final class LoginSecretViewImpl implements LoginSecretView, AutoCloseable {
         }
     }
 
-    private byte[] copyOrNull(byte[] value) {
+    private byte @Nullable [] copyOrNull(byte @Nullable [] value) {
         return value == null ? null : value.clone();
     }
 
-    private void wipe(byte[] value) {
+    private void wipe(byte @Nullable [] value) {
         if (value != null) {
             Arrays.fill(value, (byte) 0);
         }

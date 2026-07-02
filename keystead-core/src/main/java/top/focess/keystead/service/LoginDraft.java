@@ -1,18 +1,20 @@
 package top.focess.keystead.service;
 
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
 
 public interface LoginDraft {
 
-    LoginDraft title(String title);
+    @NonNull LoginDraft title(@NonNull String title);
 
-    LoginDraft tag(String tag);
+    @NonNull LoginDraft tag(@Nullable String tag);
 
-    LoginDraft username(SecretBuffer username);
+    @NonNull LoginDraft username(@NonNull SecretBuffer username);
 
-    LoginDraft password(SecretBuffer password);
+    @NonNull LoginDraft password(@NonNull SecretBuffer password);
 
-    LoginDraft url(String url);
+    @NonNull LoginDraft url(@Nullable String url);
 
-    LoginDraft notes(SecretBuffer notes);
+    @NonNull LoginDraft notes(@NonNull SecretBuffer notes);
 }

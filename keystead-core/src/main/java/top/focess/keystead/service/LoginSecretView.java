@@ -1,19 +1,19 @@
 package top.focess.keystead.service;
 
-import top.focess.keystead.model.SecretMetadata;
-
 import java.util.Optional;
 import java.util.function.Consumer;
+import org.jspecify.annotations.NonNull;
+import top.focess.keystead.model.SecretMetadata;
 
 public interface LoginSecretView {
 
-    SecretMetadata metadata();
+    @NonNull SecretMetadata metadata();
 
-    Optional<String> url();
+    @NonNull Optional<String> url();
 
-    void withUsername(Consumer<char[]> consumer);
+    void withUsername(@NonNull Consumer<char[]> consumer);
 
-    void withPassword(Consumer<char[]> consumer);
+    void withPassword(@NonNull Consumer<char[]> consumer);
 
-    void withNotes(Consumer<char[]> consumer);
+    void withNotes(@NonNull Consumer<char[]> consumer);
 }

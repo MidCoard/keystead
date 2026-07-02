@@ -1,12 +1,12 @@
 package top.focess.keystead.generator;
 
-import top.focess.keystead.memory.SecretBuffer;
-
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.NonNull;
+import top.focess.keystead.memory.SecretBuffer;
 
 public final class DefaultPasswordGenerator implements PasswordGenerator {
 
@@ -22,19 +22,21 @@ public final class DefaultPasswordGenerator implements PasswordGenerator {
         this(new SecureRandom());
     }
 
-    public DefaultPasswordGenerator(SecureRandom random) {
+    public DefaultPasswordGenerator(@NonNull SecureRandom random) {
         this.random = Objects.requireNonNull(random, "random");
     }
 
     @Override
-    public SecretBuffer generate(PasswordPolicy policy) {
+    public @NonNull SecretBuffer generate(@NonNull PasswordPolicy policy) {
         Objects.requireNonNull(policy, "policy");
         List<char[]> groups = enabledGroups(policy);
         if (groups.isEmpty()) {
-            throw new IllegalArgumentException("At least one password character group must be enabled");
+            throw new IllegalArgumentException(
+                    "At least one password character group must be enabled");
         }
         if (policy.length() < groups.size()) {
-            throw new IllegalArgumentException("Password length is too short for the enabled character groups");
+            throw new IllegalArgumentException(
+                    "Password length is too short for the enabled character groups");
         }
 
         char[] pool = merge(groups);
@@ -58,7 +60,7 @@ public final class DefaultPasswordGenerator implements PasswordGenerator {
         }
     }
 
-    private List<char[]> enabledGroups(PasswordPolicy policy) {
+    private @NonNull List<char[]> enabledGroups(@NonNull PasswordPolicy policy) {
         List<char[]> groups = new ArrayList<>();
         if (policy.uppercase()) {
             groups.add(filter(UPPERCASE, policy));
@@ -76,7 +78,7 @@ public final class DefaultPasswordGenerator implements PasswordGenerator {
         return groups;
     }
 
-    private char[] filter(char[] source, PasswordPolicy policy) {
+    private char @NonNull [] filter(char @NonNull [] source, @NonNull PasswordPolicy policy) {
         StringBuilder builder = new StringBuilder(source.length);
         for (char c : source) {
             if (policy.avoidAmbiguous() && contains(AMBIGUOUS, c)) {
@@ -92,7 +94,7 @@ public final class DefaultPasswordGenerator implements PasswordGenerator {
         return filtered;
     }
 
-    private char[] merge(List<char[]> groups) {
+    private char @NonNull [] merge(@NonNull List<char[]> groups) {
         int length = 0;
         for (char[] group : groups) {
             length += group.length;
@@ -106,14 +108,15 @@ public final class DefaultPasswordGenerator implements PasswordGenerator {
         return merged;
     }
 
-    private char pick(char[] chars) {
+    private char pick(char @NonNull [] chars) {
         if (chars.length == 0) {
-            throw new IllegalArgumentException("No characters are available for the requested password policy");
+            throw new IllegalArgumentException(
+                    "No characters are available for the requested password policy");
         }
         return chars[random.nextInt(chars.length)];
     }
 
-    private void shuffle(char[] chars) {
+    private void shuffle(char @NonNull [] chars) {
         for (int i = chars.length - 1; i > 0; i--) {
             int swapIndex = random.nextInt(i + 1);
             char value = chars[i];
@@ -122,7 +125,7 @@ public final class DefaultPasswordGenerator implements PasswordGenerator {
         }
     }
 
-    private boolean contains(char[] chars, char target) {
+    private boolean contains(char @NonNull [] chars, char target) {
         for (char c : chars) {
             if (c == target) {
                 return true;

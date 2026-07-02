@@ -1,0 +1,94 @@
+package top.focess.keystead.service;
+
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Objects;
+import java.util.Set;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+import top.focess.keystead.memory.SecretBuffer;
+
+final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
+
+    private @Nullable String title;
+    private final Set<String> tags = new LinkedHashSet<>();
+    private byte @Nullable [] body;
+    private boolean closed;
+
+    @Override
+    public @NonNull SecureNoteDraft title(@NonNull String title) {
+        requireOpen();
+        this.title = Objects.requireNonNull(title, "title");
+        return this;
+    }
+
+    @Override
+    public @NonNull SecureNoteDraft tag(@Nullable String tag) {
+        requireOpen();
+        if (tag != null && !tag.isBlank()) {
+            tags.add(tag);
+        }
+        return this;
+    }
+
+    @Override
+    public @NonNull SecureNoteDraft body(@NonNull SecretBuffer body) {
+        requireOpen();
+        replaceBody(copySecret(body));
+        return this;
+    }
+
+    @Nullable String title() {
+        return title;
+    }
+
+    @NonNull Set<String> tags() {
+        return Set.copyOf(tags);
+    }
+
+    byte @Nullable [] bodyBytes() {
+        return body == null ? null : body.clone();
+    }
+
+    void validate() {
+        requireOpen();
+        if (title == null || title.isBlank()) {
+            throw new ValidationException("Secure note title is required");
+        }
+        if (body == null || body.length == 0) {
+            throw new ValidationException("Secure note body is required");
+        }
+    }
+
+    @Override
+    public void close() {
+        if (!closed) {
+            wipe(body);
+            closed = true;
+        }
+    }
+
+    private byte @NonNull [] copySecret(@NonNull SecretBuffer buffer) {
+        Objects.requireNonNull(buffer, "buffer");
+        byte[][] output = new byte[1][];
+        buffer.copyBytes(bytes -> output[0] = bytes.clone());
+        return output[0];
+    }
+
+    private void replaceBody(byte @NonNull [] value) {
+        wipe(body);
+        body = value;
+    }
+
+    private void requireOpen() {
+        if (closed) {
+            throw new IllegalStateException("Secure note draft is closed");
+        }
+    }
+
+    private void wipe(byte @Nullable [] value) {
+        if (value != null) {
+            Arrays.fill(value, (byte) 0);
+        }
+    }
+}

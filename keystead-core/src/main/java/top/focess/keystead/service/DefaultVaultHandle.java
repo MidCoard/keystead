@@ -1,10 +1,5 @@
 package top.focess.keystead.service;
 
-import top.focess.keystead.crypto.DefaultCryptoService;
-import top.focess.keystead.crypto.VaultKey;
-import top.focess.keystead.model.*;
-import top.focess.keystead.store.VaultStore;
-
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -13,6 +8,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+import top.focess.keystead.crypto.DefaultCryptoService;
+import top.focess.keystead.crypto.VaultKey;
+import top.focess.keystead.model.*;
+import top.focess.keystead.store.VaultStore;
 
 final class DefaultVaultHandle implements VaultHandle {
 
@@ -23,7 +24,12 @@ final class DefaultVaultHandle implements VaultHandle {
     private final Clock clock;
     private boolean closed;
 
-    DefaultVaultHandle(VaultId vaultId, VaultKey vaultKey, VaultStore store, DefaultCryptoService crypto, Clock clock) {
+    DefaultVaultHandle(
+            @NonNull VaultId vaultId,
+            @NonNull VaultKey vaultKey,
+            @NonNull VaultStore store,
+            @NonNull DefaultCryptoService crypto,
+            @NonNull Clock clock) {
         this.vaultId = Objects.requireNonNull(vaultId, "vaultId");
         this.vaultKey = Objects.requireNonNull(vaultKey, "vaultKey");
         this.store = Objects.requireNonNull(store, "store");
@@ -32,32 +38,32 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public VaultId vaultId() {
+    public @NonNull VaultId vaultId() {
         return vaultId;
     }
 
     @Override
-    public SecretId saveLogin(Consumer<LoginDraft> draftConsumer) {
+    public @NonNull SecretId saveLogin(@NonNull Consumer<LoginDraft> draftConsumer) {
         Objects.requireNonNull(draftConsumer, "draftConsumer");
         requireOpen();
 
         LoginDraftImpl draft = new LoginDraftImpl();
-        byte[] payload = null;
+        byte @Nullable [] payload = null;
         try {
             draftConsumer.accept(draft);
             draft.validate();
 
             SecretId secretId = new SecretId(UUID.randomUUID());
             Instant now = clock.instant();
-            SecretMetadata metadata = new SecretMetadata(
-                secretId,
-                SecretType.LOGIN_PASSWORD,
-                draft.title(),
-                draft.tags(),
-                now,
-                now,
-                1L
-            );
+            SecretMetadata metadata =
+                    new SecretMetadata(
+                            secretId,
+                            SecretType.LOGIN_PASSWORD,
+                            draft.title(),
+                            draft.tags(),
+                            now,
+                            now,
+                            1L);
             payload = LoginPayloadCodec.encode(draft);
             byte[] aad = aad(metadata, 1L);
             try {
@@ -74,20 +80,22 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public void withLogin(SecretId secretId, Consumer<LoginSecretView> viewConsumer) {
+    public void withLogin(
+            @NonNull SecretId secretId, @NonNull Consumer<LoginSecretView> viewConsumer) {
         Objects.requireNonNull(secretId, "secretId");
         Objects.requireNonNull(viewConsumer, "viewConsumer");
         requireOpen();
 
-        EncryptedSecretRecord record = store.loadSecretRecord(vaultId, secretId)
-            .orElseThrow(() -> new ValidationException("Login secret does not exist"));
+        EncryptedSecretRecord record =
+                store.loadSecretRecord(vaultId, secretId)
+                        .orElseThrow(() -> new ValidationException("Login secret does not exist"));
         if (record.metadata().type() != SecretType.LOGIN_PASSWORD) {
             throw new ValidationException("Secret is not a login password");
         }
 
         byte[] aad = aad(record.metadata(), record.revision());
-        byte[] payload = null;
-        LoginSecretViewImpl view = null;
+        byte @Nullable [] payload = null;
+        @Nullable LoginSecretViewImpl view = null;
         try {
             payload = crypto.decrypt(vaultKey, record.payload(), aad);
             view = LoginPayloadCodec.decode(record.metadata(), payload);
@@ -102,7 +110,74 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public List<SecretMetadata> listSecrets() {
+    public @NonNull SecretId saveSecureNote(@NonNull Consumer<SecureNoteDraft> draftConsumer) {
+        Objects.requireNonNull(draftConsumer, "draftConsumer");
+        requireOpen();
+
+        SecureNoteDraftImpl draft = new SecureNoteDraftImpl();
+        byte @Nullable [] payload = null;
+        try {
+            draftConsumer.accept(draft);
+            draft.validate();
+
+            SecretId secretId = new SecretId(UUID.randomUUID());
+            Instant now = clock.instant();
+            SecretMetadata metadata =
+                    new SecretMetadata(
+                            secretId,
+                            SecretType.SECURE_NOTE,
+                            draft.title(),
+                            draft.tags(),
+                            now,
+                            now,
+                            1L);
+            payload = SecureNotePayloadCodec.encode(draft);
+            byte[] aad = aad(metadata, 1L);
+            try {
+                EncryptedEnvelope envelope = crypto.encrypt(vaultKey, payload, aad, now);
+                store.saveSecretRecord(new EncryptedSecretRecord(vaultId, metadata, envelope, 1L));
+                return secretId;
+            } finally {
+                wipe(aad);
+            }
+        } finally {
+            wipe(payload);
+            draft.close();
+        }
+    }
+
+    @Override
+    public void withSecureNote(
+            @NonNull SecretId secretId, @NonNull Consumer<SecureNoteView> viewConsumer) {
+        Objects.requireNonNull(secretId, "secretId");
+        Objects.requireNonNull(viewConsumer, "viewConsumer");
+        requireOpen();
+
+        EncryptedSecretRecord record =
+                store.loadSecretRecord(vaultId, secretId)
+                        .orElseThrow(() -> new ValidationException("Secure note does not exist"));
+        if (record.metadata().type() != SecretType.SECURE_NOTE) {
+            throw new ValidationException("Secret is not a secure note");
+        }
+
+        byte[] aad = aad(record.metadata(), record.revision());
+        byte @Nullable [] payload = null;
+        @Nullable SecureNoteViewImpl view = null;
+        try {
+            payload = crypto.decrypt(vaultKey, record.payload(), aad);
+            view = SecureNotePayloadCodec.decode(record.metadata(), payload);
+            viewConsumer.accept(view);
+        } finally {
+            if (view != null) {
+                view.close();
+            }
+            wipe(payload);
+            wipe(aad);
+        }
+    }
+
+    @Override
+    public @NonNull List<SecretMetadata> listSecrets() {
         requireOpen();
         return store.listMetadata(vaultId);
     }
@@ -120,8 +195,15 @@ final class DefaultVaultHandle implements VaultHandle {
         }
     }
 
-    private byte[] aad(SecretMetadata metadata, long revision) {
-        String value = vaultId.value() + "|" + metadata.id().value() + "|" + metadata.type().name() + "|" + revision;
+    private byte @NonNull [] aad(@NonNull SecretMetadata metadata, long revision) {
+        String value =
+                vaultId.value()
+                        + "|"
+                        + metadata.id().value()
+                        + "|"
+                        + metadata.type().name()
+                        + "|"
+                        + revision;
         return value.getBytes(StandardCharsets.UTF_8);
     }
 
@@ -131,7 +213,7 @@ final class DefaultVaultHandle implements VaultHandle {
         }
     }
 
-    private void wipe(byte[] value) {
+    private void wipe(byte @Nullable [] value) {
         if (value != null) {
             Arrays.fill(value, (byte) 0);
         }

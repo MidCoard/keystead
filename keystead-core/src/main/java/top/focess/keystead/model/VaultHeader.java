@@ -3,18 +3,18 @@ package top.focess.keystead.model;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Objects;
+import org.jspecify.annotations.NonNull;
 
 public record VaultHeader(
-    VaultId vaultId,
-    int formatVersion,
-    String kdfAlgorithm,
-    byte[] kdfSalt,
-    int kdfIterations,
-    KeyId vaultKeyId,
-    byte[] wrappedVaultKey,
-    Instant createdAt,
-    Instant updatedAt
-) {
+        @NonNull VaultId vaultId,
+        int formatVersion,
+        @NonNull String kdfAlgorithm,
+        byte @NonNull [] kdfSalt,
+        int kdfIterations,
+        @NonNull KeyId vaultKeyId,
+        byte @NonNull [] wrappedVaultKey,
+        @NonNull Instant createdAt,
+        @NonNull Instant updatedAt) {
 
     public VaultHeader {
         Objects.requireNonNull(vaultId, "vaultId");
@@ -35,23 +35,32 @@ public record VaultHeader(
     }
 
     @Override
-    public byte[] kdfSalt() {
+    public byte @NonNull [] kdfSalt() {
         return Arrays.copyOf(kdfSalt, kdfSalt.length);
     }
 
     @Override
-    public byte[] wrappedVaultKey() {
+    public byte @NonNull [] wrappedVaultKey() {
         return Arrays.copyOf(wrappedVaultKey, wrappedVaultKey.length);
     }
 
     @Override
-    public String toString() {
+    public @NonNull String toString() {
         return "VaultHeader[vaultId=%s, formatVersion=%d, kdfAlgorithm=%s, kdfSalt=[REDACTED %d bytes], kdfIterations=%d, vaultKeyId=%s, wrappedVaultKey=[REDACTED %d bytes], createdAt=%s, updatedAt=%s]"
-            .formatted(vaultId, formatVersion, kdfAlgorithm, kdfSalt.length, kdfIterations, vaultKeyId, wrappedVaultKey.length, createdAt, updatedAt);
+                .formatted(
+                        vaultId,
+                        formatVersion,
+                        kdfAlgorithm,
+                        kdfSalt.length,
+                        kdfIterations,
+                        vaultKeyId,
+                        wrappedVaultKey.length,
+                        createdAt,
+                        updatedAt);
     }
 
     @Override
-    public boolean equals(Object object) {
+    public boolean equals(@NonNull Object object) {
         if (this == object) {
             return true;
         }
@@ -59,19 +68,27 @@ public record VaultHeader(
             return false;
         }
         return formatVersion == other.formatVersion
-            && kdfIterations == other.kdfIterations
-            && vaultId.equals(other.vaultId)
-            && kdfAlgorithm.equals(other.kdfAlgorithm)
-            && Arrays.equals(kdfSalt, other.kdfSalt)
-            && vaultKeyId.equals(other.vaultKeyId)
-            && Arrays.equals(wrappedVaultKey, other.wrappedVaultKey)
-            && createdAt.equals(other.createdAt)
-            && updatedAt.equals(other.updatedAt);
+                && kdfIterations == other.kdfIterations
+                && vaultId.equals(other.vaultId)
+                && kdfAlgorithm.equals(other.kdfAlgorithm)
+                && Arrays.equals(kdfSalt, other.kdfSalt)
+                && vaultKeyId.equals(other.vaultKeyId)
+                && Arrays.equals(wrappedVaultKey, other.wrappedVaultKey)
+                && createdAt.equals(other.createdAt)
+                && updatedAt.equals(other.updatedAt);
     }
 
     @Override
     public int hashCode() {
-        int result = Objects.hash(vaultId, formatVersion, kdfAlgorithm, kdfIterations, vaultKeyId, createdAt, updatedAt);
+        int result =
+                Objects.hash(
+                        vaultId,
+                        formatVersion,
+                        kdfAlgorithm,
+                        kdfIterations,
+                        vaultKeyId,
+                        createdAt,
+                        updatedAt);
         result = 31 * result + Arrays.hashCode(kdfSalt);
         result = 31 * result + Arrays.hashCode(wrappedVaultKey);
         return result;

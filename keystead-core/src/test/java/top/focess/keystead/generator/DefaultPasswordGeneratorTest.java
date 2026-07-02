@@ -1,12 +1,11 @@
 package top.focess.keystead.generator;
 
-import org.junit.jupiter.api.Test;
-import top.focess.keystead.memory.SecretBuffer;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import top.focess.keystead.memory.SecretBuffer;
 
 class DefaultPasswordGeneratorTest {
 
@@ -38,15 +37,17 @@ class DefaultPasswordGeneratorTest {
 
     @Test
     void generatedPasswordExcludesConfiguredCharacters() {
-        PasswordPolicy policy = new PasswordPolicy(48, false, true, false, false, false, Set.of('a', 'b', 'c'));
+        PasswordPolicy policy =
+                new PasswordPolicy(48, false, true, false, false, false, Set.of('a', 'b', 'c'));
 
         try (SecretBuffer password = generator.generate(policy)) {
-            password.copyChars(chars -> {
-                assertEquals(48, chars.length);
-                for (char c : chars) {
-                    assertTrue(c >= 'd' && c <= 'z', "unexpected character: " + c);
-                }
-            });
+            password.copyChars(
+                    chars -> {
+                        assertEquals(48, chars.length);
+                        for (char c : chars) {
+                            assertTrue(c >= 'd' && c <= 'z', "unexpected character: " + c);
+                        }
+                    });
         }
     }
 
@@ -55,11 +56,12 @@ class DefaultPasswordGeneratorTest {
         PasswordPolicy policy = new PasswordPolicy(48, true, true, true, false, true, Set.of());
 
         try (SecretBuffer password = generator.generate(policy)) {
-            password.copyChars(chars -> {
-                for (char c : chars) {
-                    assertFalse("0O1Il".indexOf(c) >= 0, "ambiguous character: " + c);
-                }
-            });
+            password.copyChars(
+                    chars -> {
+                        for (char c : chars) {
+                            assertFalse("0O1Il".indexOf(c) >= 0, "ambiguous character: " + c);
+                        }
+                    });
         }
     }
 

@@ -3,16 +3,16 @@ package top.focess.keystead.model;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Objects;
+import org.jspecify.annotations.NonNull;
 
 public record EncryptedEnvelope(
-    int version,
-    String algorithm,
-    KeyId keyId,
-    byte[] nonce,
-    byte[] aad,
-    byte[] ciphertext,
-    Instant encryptedAt
-) {
+        int version,
+        @NonNull String algorithm,
+        @NonNull KeyId keyId,
+        byte @NonNull [] nonce,
+        byte @NonNull [] aad,
+        byte @NonNull [] ciphertext,
+        @NonNull Instant encryptedAt) {
 
     public EncryptedEnvelope {
         Objects.requireNonNull(algorithm, "algorithm");
@@ -30,28 +30,35 @@ public record EncryptedEnvelope(
     }
 
     @Override
-    public byte[] nonce() {
+    public byte @NonNull [] nonce() {
         return Arrays.copyOf(nonce, nonce.length);
     }
 
     @Override
-    public byte[] aad() {
+    public byte @NonNull [] aad() {
         return Arrays.copyOf(aad, aad.length);
     }
 
     @Override
-    public byte[] ciphertext() {
+    public byte @NonNull [] ciphertext() {
         return Arrays.copyOf(ciphertext, ciphertext.length);
     }
 
     @Override
-    public String toString() {
+    public @NonNull String toString() {
         return "EncryptedEnvelope[version=%d, algorithm=%s, keyId=%s, nonce=[REDACTED %d bytes], aad=[REDACTED %d bytes], ciphertext=[REDACTED %d bytes], encryptedAt=%s]"
-            .formatted(version, algorithm, keyId, nonce.length, aad.length, ciphertext.length, encryptedAt);
+                .formatted(
+                        version,
+                        algorithm,
+                        keyId,
+                        nonce.length,
+                        aad.length,
+                        ciphertext.length,
+                        encryptedAt);
     }
 
     @Override
-    public boolean equals(Object object) {
+    public boolean equals(@NonNull Object object) {
         if (this == object) {
             return true;
         }
@@ -59,12 +66,12 @@ public record EncryptedEnvelope(
             return false;
         }
         return version == other.version
-            && algorithm.equals(other.algorithm)
-            && keyId.equals(other.keyId)
-            && Arrays.equals(nonce, other.nonce)
-            && Arrays.equals(aad, other.aad)
-            && Arrays.equals(ciphertext, other.ciphertext)
-            && encryptedAt.equals(other.encryptedAt);
+                && algorithm.equals(other.algorithm)
+                && keyId.equals(other.keyId)
+                && Arrays.equals(nonce, other.nonce)
+                && Arrays.equals(aad, other.aad)
+                && Arrays.equals(ciphertext, other.ciphertext)
+                && encryptedAt.equals(other.encryptedAt);
     }
 
     @Override

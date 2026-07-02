@@ -3,16 +3,16 @@ package top.focess.keystead.model;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Set;
+import org.jspecify.annotations.NonNull;
 
 public record SecretMetadata(
-    SecretId id,
-    SecretType type,
-    String title,
-    Set<String> tags,
-    Instant createdAt,
-    Instant updatedAt,
-    long revision
-) {
+        @NonNull SecretId id,
+        @NonNull SecretType type,
+        @NonNull String title,
+        @NonNull Set<String> tags,
+        @NonNull Instant createdAt,
+        @NonNull Instant updatedAt,
+        long revision) {
 
     public SecretMetadata {
         Objects.requireNonNull(id, "id");

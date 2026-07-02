@@ -1,13 +1,13 @@
 package top.focess.keystead.model;
 
 import java.util.Objects;
+import org.jspecify.annotations.NonNull;
 
 public record EncryptedSecretRecord(
-    VaultId vaultId,
-    SecretMetadata metadata,
-    EncryptedEnvelope payload,
-    long revision
-) {
+        @NonNull VaultId vaultId,
+        @NonNull SecretMetadata metadata,
+        @NonNull EncryptedEnvelope payload,
+        long revision) {
 
     public EncryptedSecretRecord {
         Objects.requireNonNull(vaultId, "vaultId");
