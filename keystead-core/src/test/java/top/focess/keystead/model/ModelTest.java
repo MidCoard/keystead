@@ -19,16 +19,21 @@ class ModelTest {
     @Test
     void metadataRejectsNullValuesAndCopiesTags() {
         Set<String> tags = Set.of("work", "github");
+        SecretClassification classification =
+                new SecretClassification(
+                        "development", "github", "alice@example.com", Set.of("work"));
         SecretMetadata metadata =
                 new SecretMetadata(
                         new SecretId(UUID.randomUUID()),
                         SecretType.LOGIN_PASSWORD,
                         "GitHub",
+                        classification,
                         tags,
                         Instant.parse("2026-07-02T00:00:00Z"),
                         Instant.parse("2026-07-02T00:01:00Z"),
                         1L);
 
+        assertEquals(classification, metadata.classification());
         assertEquals(tags, metadata.tags());
         assertThrows(UnsupportedOperationException.class, () -> metadata.tags().add("new"));
         assertThrows(
@@ -38,10 +43,36 @@ class ModelTest {
                                 metadata.id(),
                                 null,
                                 metadata.title(),
+                                metadata.classification(),
                                 metadata.tags(),
                                 metadata.createdAt(),
                                 metadata.updatedAt(),
                                 metadata.revision()));
+    }
+
+    @Test
+    void classificationNormalizesBlankFieldsAndCopiesLabels() {
+        SecretClassification classification =
+                new SecretClassification(
+                        " development ", " github ", " alice@example.com ", Set.of(" work ", ""));
+
+        assertEquals("development", classification.category());
+        assertEquals("github", classification.provider());
+        assertEquals("alice@example.com", classification.account());
+        assertEquals(Set.of("work"), classification.labels());
+        assertThrows(UnsupportedOperationException.class, () -> classification.labels().add("new"));
+        assertEquals(
+                SecretClassification.none(), new SecretClassification(" ", null, "", Set.of()));
+    }
+
+    @Test
+    void secretTypesCoverDeveloperAndAuthenticationMaterials() {
+        assertNotNull(SecretType.valueOf("SSH_KEY"));
+        assertNotNull(SecretType.valueOf("API_TOKEN"));
+        assertNotNull(SecretType.valueOf("GPG_KEY"));
+        assertNotNull(SecretType.valueOf("MFA_SECRET"));
+        assertNotNull(SecretType.valueOf("CERTIFICATE"));
+        assertNotNull(SecretType.valueOf("GENERIC_SECRET"));
     }
 
     @Test

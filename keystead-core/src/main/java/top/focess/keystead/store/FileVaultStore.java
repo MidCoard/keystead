@@ -106,6 +106,20 @@ public final class FileVaultStore implements VaultStore {
     }
 
     @Override
+    public void deleteSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(secretId, "secretId");
+        if (loadSecretRecord(vaultId, secretId).isEmpty()) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(secretPath(secretId));
+        } catch (IOException e) {
+            throw new StoreException("Could not delete secret record", e);
+        }
+    }
+
+    @Override
     public @NonNull List<SecretMetadata> listMetadata(@NonNull VaultId vaultId) {
         Objects.requireNonNull(vaultId, "vaultId");
         if (!Files.exists(secretsDirectory)) {
@@ -135,6 +149,7 @@ public final class FileVaultStore implements VaultStore {
         properties.setProperty("metadata.id", metadata.id().value().toString());
         properties.setProperty("metadata.type", metadata.type().name());
         properties.setProperty("metadata.title", b64(metadata.title()));
+        writeClassification(properties, metadata.classification());
         properties.setProperty(
                 "metadata.tags",
                 metadata.tags().stream().sorted().map(this::b64).collect(Collectors.joining(",")));
@@ -148,10 +163,32 @@ public final class FileVaultStore implements VaultStore {
                 new SecretId(UUID.fromString(required(properties, "metadata.id"))),
                 SecretType.valueOf(required(properties, "metadata.type")),
                 text(properties, "metadata.title"),
+                readClassification(properties),
                 tags(properties),
                 Instant.parse(required(properties, "metadata.createdAt")),
                 Instant.parse(required(properties, "metadata.updatedAt")),
                 longValue(properties, "metadata.revision"));
+    }
+
+    private void writeClassification(
+            @NonNull Properties properties, @NonNull SecretClassification classification) {
+        setNullableText(properties, "metadata.classification.category", classification.category());
+        setNullableText(properties, "metadata.classification.provider", classification.provider());
+        setNullableText(properties, "metadata.classification.account", classification.account());
+        properties.setProperty(
+                "metadata.classification.labels",
+                classification.labels().stream()
+                        .sorted()
+                        .map(this::b64)
+                        .collect(Collectors.joining(",")));
+    }
+
+    private @NonNull SecretClassification readClassification(@NonNull Properties properties) {
+        return new SecretClassification(
+                optionalText(properties, "metadata.classification.category"),
+                optionalText(properties, "metadata.classification.provider"),
+                optionalText(properties, "metadata.classification.account"),
+                encodedSet(properties.getProperty("metadata.classification.labels", "")));
     }
 
     private @NonNull VaultHeader readHeader(@NonNull Properties properties) {
@@ -218,12 +255,30 @@ public final class FileVaultStore implements VaultStore {
 
     private @NonNull Set<String> tags(@NonNull Properties properties) {
         String encoded = required(properties, "metadata.tags");
+        return encodedSet(encoded);
+    }
+
+    private @NonNull Set<String> encodedSet(@NonNull String encoded) {
         if (encoded.isBlank()) {
             return Set.of();
         }
         return Arrays.stream(encoded.split(","))
                 .map(value -> new String(Base64.getDecoder().decode(value), StandardCharsets.UTF_8))
                 .collect(Collectors.toUnmodifiableSet());
+    }
+
+    private void setNullableText(
+            @NonNull Properties properties, @NonNull String key, @Nullable String value) {
+        if (value != null) {
+            properties.setProperty(key, b64(value));
+        }
+    }
+
+    private @Nullable String optionalText(@NonNull Properties properties, @NonNull String key) {
+        @Nullable String encoded = properties.getProperty(key);
+        return encoded == null
+                ? null
+                : new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
     }
 
     private @NonNull String b64(@NonNull String value) {

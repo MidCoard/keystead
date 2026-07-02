@@ -7,10 +7,12 @@ import java.util.Set;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.model.SecretClassification;
 
 final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
 
     private @Nullable String title;
+    private @NonNull SecretClassification classification = SecretClassification.none();
     private final Set<String> tags = new LinkedHashSet<>();
     private byte @Nullable [] body;
     private boolean closed;
@@ -32,6 +34,13 @@ final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
     }
 
     @Override
+    public @NonNull SecureNoteDraft classification(@NonNull SecretClassification classification) {
+        requireOpen();
+        this.classification = Objects.requireNonNull(classification, "classification");
+        return this;
+    }
+
+    @Override
     public @NonNull SecureNoteDraft body(@NonNull SecretBuffer body) {
         requireOpen();
         replaceBody(copySecret(body));
@@ -44,6 +53,10 @@ final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
 
     @NonNull Set<String> tags() {
         return Set.copyOf(tags);
+    }
+
+    @NonNull SecretClassification classification() {
+        return classification;
     }
 
     byte @Nullable [] bodyBytes() {

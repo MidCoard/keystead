@@ -16,5 +16,7 @@ public interface VaultStore {
     @NonNull Optional<EncryptedSecretRecord> loadSecretRecord(
             @NonNull VaultId vaultId, @NonNull SecretId secretId);
 
+    void deleteSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId);
+
     @NonNull List<SecretMetadata> listMetadata(@NonNull VaultId vaultId);
 }

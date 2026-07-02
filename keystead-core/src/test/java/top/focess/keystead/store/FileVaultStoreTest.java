@@ -41,6 +41,23 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void savesAndLoadsSecretClassificationMetadata() {
+        VaultStore store = new FileVaultStore(tempDir);
+        EncryptedSecretRecord record = record();
+
+        store.saveSecretRecord(record);
+
+        SecretMetadata metadata =
+                store.loadSecretRecord(record.vaultId(), record.metadata().id())
+                        .orElseThrow()
+                        .metadata();
+        assertEquals("development", metadata.classification().category());
+        assertEquals("github", metadata.classification().provider());
+        assertEquals("alice@example.com", metadata.classification().account());
+        assertEquals(Set.of("work"), metadata.classification().labels());
+    }
+
+    @Test
     void listsMetadataWithoutOpeningPayload() {
         VaultStore store = new FileVaultStore(tempDir);
         EncryptedSecretRecord record = record();
@@ -48,6 +65,19 @@ class FileVaultStoreTest {
         store.saveSecretRecord(record);
 
         assertEquals(List.of(record.metadata()), store.listMetadata(record.vaultId()));
+    }
+
+    @Test
+    void deleteSecretRecordRemovesPersistedRecord() {
+        VaultStore store = new FileVaultStore(tempDir);
+        EncryptedSecretRecord record = record();
+
+        store.saveSecretRecord(record);
+        store.deleteSecretRecord(record.vaultId(), record.metadata().id());
+
+        assertEquals(
+                Optional.empty(), store.loadSecretRecord(record.vaultId(), record.metadata().id()));
+        assertEquals(List.of(), store.listMetadata(record.vaultId()));
     }
 
     @Test
@@ -85,6 +115,8 @@ class FileVaultStoreTest {
                         new SecretId(UUID.fromString("00000000-0000-0000-0000-000000000002")),
                         SecretType.LOGIN_PASSWORD,
                         "GitHub",
+                        new SecretClassification(
+                                "development", "github", "alice@example.com", Set.of("work")),
                         Set.of("work", "code"),
                         Instant.parse("2026-07-02T00:00:00Z"),
                         Instant.parse("2026-07-02T00:01:00Z"),

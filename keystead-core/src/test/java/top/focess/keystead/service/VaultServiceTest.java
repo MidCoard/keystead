@@ -10,6 +10,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
 import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretDestroyedException;
+import top.focess.keystead.model.SecretClassification;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.VaultId;
 import top.focess.keystead.store.FileVaultStore;
@@ -44,6 +47,13 @@ class VaultServiceTest {
                     secretId,
                     view -> {
                         assertEquals("GitHub", view.metadata().title());
+                        assertEquals(
+                                new SecretClassification(
+                                        "development",
+                                        "github",
+                                        "alice@example.com",
+                                        Set.of("work")),
+                                view.metadata().classification());
                         assertEquals("https://github.com", view.url().orElseThrow());
                         view.withUsername(
                                 chars -> assertArrayEquals(chars("alice@example.com"), chars));
@@ -120,6 +130,20 @@ class VaultServiceTest {
     }
 
     @Test
+    void deleteLoginRemovesSecretFromVault() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        SecretId secretId;
+
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            secretId = saveGitHubLogin(vault);
+            vault.deleteSecret(secretId);
+
+            assertEquals(List.of(), vault.listSecrets());
+            assertThrows(ValidationException.class, () -> vault.withLogin(secretId, view -> {}));
+        }
+    }
+
+    @Test
     void tamperedLoginMetadataCannotBeOpened() throws IOException {
         VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
         SecretId secretId;
@@ -182,6 +206,12 @@ class VaultServiceTest {
             return vault.saveLogin(
                     draft ->
                             draft.title("GitHub")
+                                    .classification(
+                                            new SecretClassification(
+                                                    "development",
+                                                    "github",
+                                                    "alice@example.com",
+                                                    Set.of("work")))
                                     .tag("work")
                                     .username(username)
                                     .password(password)

@@ -19,6 +19,8 @@ public interface VaultHandle extends AutoCloseable {
 
     void withSecureNote(@NonNull SecretId secretId, @NonNull Consumer<SecureNoteView> viewConsumer);
 
+    void deleteSecret(@NonNull SecretId secretId);
+
     @NonNull List<SecretMetadata> listSecrets();
 
     boolean isClosed();

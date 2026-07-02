@@ -60,6 +60,7 @@ final class DefaultVaultHandle implements VaultHandle {
                             secretId,
                             SecretType.LOGIN_PASSWORD,
                             draft.title(),
+                            draft.classification(),
                             draft.tags(),
                             now,
                             now,
@@ -127,6 +128,7 @@ final class DefaultVaultHandle implements VaultHandle {
                             secretId,
                             SecretType.SECURE_NOTE,
                             draft.title(),
+                            draft.classification(),
                             draft.tags(),
                             now,
                             now,
@@ -177,6 +179,13 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
+    public void deleteSecret(@NonNull SecretId secretId) {
+        Objects.requireNonNull(secretId, "secretId");
+        requireOpen();
+        store.deleteSecretRecord(vaultId, secretId);
+    }
+
+    @Override
     public @NonNull List<SecretMetadata> listSecrets() {
         requireOpen();
         return store.listMetadata(vaultId);
@@ -202,6 +211,13 @@ final class DefaultVaultHandle implements VaultHandle {
         appendAad(value, metadata.id().value().toString());
         appendAad(value, metadata.type().name());
         appendAad(value, metadata.title());
+        appendAad(value, nullableAad(metadata.classification().category()));
+        appendAad(value, nullableAad(metadata.classification().provider()));
+        appendAad(value, nullableAad(metadata.classification().account()));
+        appendAad(value, Integer.toString(metadata.classification().labels().size()));
+        metadata.classification().labels().stream()
+                .sorted()
+                .forEach(label -> appendAad(value, label));
         appendAad(value, Integer.toString(metadata.tags().size()));
         metadata.tags().stream().sorted().forEach(tag -> appendAad(value, tag));
         appendAad(value, metadata.createdAt().toString());
@@ -213,6 +229,10 @@ final class DefaultVaultHandle implements VaultHandle {
 
     private void appendAad(@NonNull StringBuilder builder, @NonNull String value) {
         builder.append(value.length()).append(':').append(value).append('|');
+    }
+
+    private @NonNull String nullableAad(@Nullable String value) {
+        return value == null ? "" : value;
     }
 
     private void requireOpen() {

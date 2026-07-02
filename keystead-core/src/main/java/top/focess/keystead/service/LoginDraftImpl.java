@@ -4,10 +4,12 @@ import java.util.*;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.model.SecretClassification;
 
 final class LoginDraftImpl implements LoginDraft, AutoCloseable {
 
     private @Nullable String title;
+    private @NonNull SecretClassification classification = SecretClassification.none();
     private final Set<String> tags = new LinkedHashSet<>();
     private byte @Nullable [] username;
     private byte @Nullable [] password;
@@ -28,6 +30,13 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
         if (tag != null && !tag.isBlank()) {
             tags.add(tag);
         }
+        return this;
+    }
+
+    @Override
+    public @NonNull LoginDraft classification(@NonNull SecretClassification classification) {
+        requireOpen();
+        this.classification = Objects.requireNonNull(classification, "classification");
         return this;
     }
 
@@ -65,6 +74,10 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
 
     @NonNull Set<String> tags() {
         return Set.copyOf(tags);
+    }
+
+    @NonNull SecretClassification classification() {
+        return classification;
     }
 
     @Nullable String url() {
