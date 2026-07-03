@@ -18,8 +18,8 @@ class NullnessSemanticsTest {
             Set.of("boolean", "byte", "char", "double", "float", "int", "long", "short");
     private static final Set<String> NON_DECLARATION_PREFIXES =
             Set.of(
-                    "assert", "catch", "do", "for", "if", "new", "return", "super", "switch",
-                    "throw", "try", "while");
+                    "assert", "case", "catch", "do", "for", "if", "new", "return", "super",
+                    "switch", "throw", "try", "while", "yield");
 
     @Test
     void productionCodeDoesNotUsePackageLevelNullDefaults() throws IOException {

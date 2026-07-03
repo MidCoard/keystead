@@ -129,6 +129,31 @@ class ModelTest {
     }
 
     @Test
+    void taxonomySuggestionsUseOnlySecretTypeTitleAndAccountMetadata() {
+        assertEquals(
+                SecretTaxonomy.githubDevelopment("alice@example.com"),
+                SecretTaxonomy.suggest(
+                        SecretType.API_TOKEN, " GitHub deployment token ", "alice@example.com"));
+        assertEquals(
+                SecretTaxonomy.sshDevelopment("workstation"),
+                SecretTaxonomy.suggest(SecretType.SSH_KEY, "workstation key", "workstation"));
+        assertEquals(
+                SecretTaxonomy.gpgDevelopment("Alice@Example.COM"),
+                SecretTaxonomy.suggest(
+                        SecretType.GPG_KEY, "primary signing key", "Alice@Example.COM"));
+        assertEquals(
+                new SecretClassification(
+                        "communication", "google", "google-authenticator", "alice"),
+                SecretTaxonomy.suggest(SecretType.MFA_SECRET, "Google Authenticator", "alice"));
+        assertEquals(
+                SecretTaxonomy.wechatCommunication("alice"),
+                SecretTaxonomy.suggest(SecretType.LOGIN_PASSWORD, "WeChat password", "alice"));
+        assertEquals(
+                SecretClassification.none(),
+                SecretTaxonomy.suggest(SecretType.GENERIC_SECRET, "misc", null));
+    }
+
+    @Test
     void profileOwnsTitleClassificationTagsAndAttributes() {
         SecretProfile profile =
                 new SecretProfile(

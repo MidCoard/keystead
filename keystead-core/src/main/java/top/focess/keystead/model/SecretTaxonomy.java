@@ -1,5 +1,7 @@
 package top.focess.keystead.model;
 
+import java.util.Locale;
+import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
@@ -54,5 +56,33 @@ public final class SecretTaxonomy {
 
     public static @NonNull SecretClassification wechatCommunication(@Nullable String account) {
         return communication(PROVIDER_WECHAT, SOFTWARE_WECHAT, account);
+    }
+
+    public static @NonNull SecretClassification suggest(
+            @NonNull SecretType type, @Nullable String title, @Nullable String account) {
+        Objects.requireNonNull(type, "type");
+        if (contains(title, PROVIDER_GITHUB)) {
+            return githubDevelopment(account);
+        }
+        if (contains(title, PROVIDER_WECHAT)) {
+            return wechatCommunication(account);
+        }
+        return switch (type) {
+            case SSH_KEY -> sshDevelopment(account);
+            case GPG_KEY -> gpgDevelopment(account);
+            case API_TOKEN -> development(PROVIDER_API, null, account);
+            case MFA_SECRET -> {
+                if (contains(title, PROVIDER_GOOGLE)) {
+                    yield communication(PROVIDER_GOOGLE, SOFTWARE_GOOGLE_AUTHENTICATOR, account);
+                }
+                yield communication(null, null, account);
+            }
+            case CERTIFICATE -> development(PROVIDER_X509, SOFTWARE_X509, account);
+            case LOGIN_PASSWORD, SECURE_NOTE, GENERIC_SECRET -> SecretClassification.none();
+        };
+    }
+
+    private static boolean contains(@Nullable String value, @NonNull String needle) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(needle);
     }
 }
