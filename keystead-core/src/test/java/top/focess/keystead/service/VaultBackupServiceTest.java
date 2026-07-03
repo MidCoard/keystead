@@ -201,6 +201,53 @@ class VaultBackupServiceTest {
         assertEquals(2, report.imported());
     }
 
+    @Test
+    void archiveRejectsManifestRecordCountMismatch() {
+        BackupManifest manifest =
+                new BackupManifest(
+                        VaultBackupService.FORMAT_VERSION, VAULT_ID, 2, 0, CLOCK.instant());
+
+        ValidationException exception =
+                assertThrows(
+                        ValidationException.class,
+                        () ->
+                                new BackupArchive(
+                                        manifest,
+                                        header(),
+                                        List.of(record(secretId(2L), "alpha", 1L)),
+                                        List.of()));
+
+        assertTrue(exception.getMessage().contains("record count"));
+    }
+
+    @Test
+    void archiveRejectsRecordFromAnotherVault() {
+        VaultId otherVault = new VaultId(new UUID(0L, 99L));
+        EncryptedSecretRecord foreignRecord =
+                new EncryptedSecretRecord(
+                        otherVault,
+                        record(secretId(2L), "alpha", 1L).metadata(),
+                        record(secretId(2L), "alpha", 1L).payload(),
+                        1L);
+
+        ValidationException exception =
+                assertThrows(
+                        ValidationException.class,
+                        () ->
+                                new BackupArchive(
+                                        new BackupManifest(
+                                                VaultBackupService.FORMAT_VERSION,
+                                                VAULT_ID,
+                                                1,
+                                                0,
+                                                CLOCK.instant()),
+                                        header(),
+                                        List.of(foreignRecord),
+                                        List.of()));
+
+        assertTrue(exception.getMessage().contains("vault"));
+    }
+
     private static VaultHeader header() {
         return new VaultHeader(
                 VAULT_ID,

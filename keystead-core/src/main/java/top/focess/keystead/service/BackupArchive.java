@@ -18,5 +18,25 @@ public record BackupArchive(
         Objects.requireNonNull(vaultHeader, "vaultHeader");
         records = List.copyOf(Objects.requireNonNull(records, "records"));
         tombstones = List.copyOf(Objects.requireNonNull(tombstones, "tombstones"));
+        if (!manifest.vaultId().equals(vaultHeader.vaultId())) {
+            throw new ValidationException("Backup archive vault header does not match manifest");
+        }
+        if (manifest.recordCount() != records.size()) {
+            throw new ValidationException("Backup archive record count does not match manifest");
+        }
+        if (manifest.tombstoneCount() != tombstones.size()) {
+            throw new ValidationException("Backup archive tombstone count does not match manifest");
+        }
+        for (EncryptedSecretRecord record : records) {
+            if (!manifest.vaultId().equals(record.vaultId())) {
+                throw new ValidationException("Backup archive contains record from another vault");
+            }
+        }
+        for (DeletedSecretRecord tombstone : tombstones) {
+            if (!manifest.vaultId().equals(tombstone.vaultId())) {
+                throw new ValidationException(
+                        "Backup archive contains tombstone from another vault");
+            }
+        }
     }
 }
