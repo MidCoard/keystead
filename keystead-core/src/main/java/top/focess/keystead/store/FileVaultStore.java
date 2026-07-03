@@ -181,6 +181,7 @@ public final class FileVaultStore implements VaultStore {
             return Optional.empty();
         }
         SecretMetadata metadata = readMetadata(properties);
+        requireSecretPathMatches(secretId, metadata.id(), "Secret record");
         EncryptedEnvelope envelope =
                 new EncryptedEnvelope(
                         intValue(properties, "envelope.version"),
@@ -259,6 +260,7 @@ public final class FileVaultStore implements VaultStore {
         if (!record.vaultId().equals(vaultId)) {
             return Optional.empty();
         }
+        requireSecretPathMatches(secretId, record.secretId(), "Deleted secret record");
         return Optional.of(record);
     }
 
@@ -314,7 +316,10 @@ public final class FileVaultStore implements VaultStore {
             if (!vaultId.value().toString().equals(properties.getProperty("vaultId"))) {
                 return Optional.empty();
             }
-            return Optional.of(readRecord(properties));
+            EncryptedSecretRecord record = readRecord(properties);
+            requireSecretPathMatches(
+                    secretIdFromRowPath(path), record.metadata().id(), "Secret record");
+            return Optional.of(record);
         } catch (StoreException | IllegalArgumentException e) {
             // A single corrupt/truncated record must not brick the whole vault listing.
             return Optional.empty();
@@ -353,7 +358,10 @@ public final class FileVaultStore implements VaultStore {
             if (!vaultId.value().toString().equals(properties.getProperty("vaultId"))) {
                 return Optional.empty();
             }
-            return Optional.of(readDeletedRecord(properties));
+            DeletedSecretRecord record = readDeletedRecord(properties);
+            requireSecretPathMatches(
+                    secretIdFromRowPath(path), record.secretId(), "Deleted secret record");
+            return Optional.of(record);
         } catch (StoreException | IllegalArgumentException e) {
             // A single corrupt tombstone must not brick the whole vault listing.
             return Optional.empty();
@@ -518,6 +526,25 @@ public final class FileVaultStore implements VaultStore {
 
     private @NonNull Path deletedPath(@NonNull SecretId secretId) {
         return deletedDirectory.resolve(secretId.value() + ".properties");
+    }
+
+    private @NonNull SecretId secretIdFromRowPath(@NonNull Path path) {
+        String fileName = path.getFileName().toString();
+        String suffix = ".properties";
+        if (!fileName.endsWith(suffix)) {
+            throw new StoreException("Vault row path is not a properties file", null);
+        }
+        return new SecretId(
+                UUID.fromString(fileName.substring(0, fileName.length() - suffix.length())));
+    }
+
+    private void requireSecretPathMatches(
+            @NonNull SecretId pathSecretId,
+            @NonNull SecretId recordSecretId,
+            @NonNull String rowKind) {
+        if (!pathSecretId.equals(recordSecretId)) {
+            throw new StoreException(rowKind + " path does not match secret id", null);
+        }
     }
 
     private void recoverVaultFiles(@NonNull VaultId vaultId) {

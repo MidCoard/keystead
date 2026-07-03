@@ -182,6 +182,34 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void loadSecretRecordRejectsFileWhoseMetadataIdDoesNotMatchPath() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        SecretId requestedSecretId = secretId(99L);
+        EncryptedSecretRecord storedRecord = record(secretId(2L), "GitHub", 1L);
+        store.saveSecretRecord(storedRecord);
+        String recordFile = Files.readString(secretFile(storedRecord.metadata().id()));
+        Files.writeString(secretFile(requestedSecretId), recordFile);
+
+        assertThrows(
+                StoreException.class,
+                () -> store.loadSecretRecord(storedRecord.vaultId(), requestedSecretId));
+    }
+
+    @Test
+    void loadDeletedSecretRecordRejectsFileWhoseSecretIdDoesNotMatchPath() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        SecretId requestedSecretId = secretId(99L);
+        DeletedSecretRecord storedRecord = deleted(secretId(2L), 1L);
+        store.saveDeletedSecretRecord(storedRecord);
+        String tombstoneFile = Files.readString(deletedFile(storedRecord.secretId()));
+        Files.writeString(deletedFile(requestedSecretId), tombstoneFile);
+
+        assertThrows(
+                StoreException.class,
+                () -> store.loadDeletedSecretRecord(storedRecord.vaultId(), requestedSecretId));
+    }
+
+    @Test
     void listsMetadataWithoutOpeningPayload() {
         VaultStore store = new FileVaultStore(tempDir);
         EncryptedSecretRecord record = record();
@@ -205,6 +233,18 @@ class FileVaultStoreTest {
         Files.writeString(corrupt, "vaultId=" + valid.vaultId().value() + "\n");
 
         assertEquals(List.of(valid.metadata()), store.listMetadata(valid.vaultId()));
+        assertEquals(List.of(valid), store.listSecretRecords(valid.vaultId()));
+    }
+
+    @Test
+    void listSecretRecordsSkipsFileWhoseMetadataIdDoesNotMatchPath() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        SecretId wrongPathSecretId = secretId(99L);
+        EncryptedSecretRecord valid = record(secretId(2L), "GitHub", 1L);
+        store.saveSecretRecord(valid);
+        String recordFile = Files.readString(secretFile(valid.metadata().id()));
+        Files.writeString(secretFile(wrongPathSecretId), recordFile);
+
         assertEquals(List.of(valid), store.listSecretRecords(valid.vaultId()));
     }
 
@@ -235,6 +275,18 @@ class FileVaultStoreTest {
 
         assertThrows(StoreException.class, () -> store.listDeletedSecretRecords(otherVaultId));
         assertEquals(List.of(), store.listDeletedSecretRecords(header().vaultId()));
+    }
+
+    @Test
+    void listDeletedSecretRecordsSkipsFileWhoseSecretIdDoesNotMatchPath() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        SecretId wrongPathSecretId = secretId(99L);
+        DeletedSecretRecord valid = deleted(secretId(2L), 1L);
+        store.saveDeletedSecretRecord(valid);
+        String tombstoneFile = Files.readString(deletedFile(valid.secretId()));
+        Files.writeString(deletedFile(wrongPathSecretId), tombstoneFile);
+
+        assertEquals(List.of(valid), store.listDeletedSecretRecords(valid.vaultId()));
     }
 
     @Test
