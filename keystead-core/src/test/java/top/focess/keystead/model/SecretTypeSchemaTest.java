@@ -58,6 +58,28 @@ class SecretTypeSchemaTest {
     }
 
     @Test
+    void schemaFieldNamesAreTrimmedBeforeLookupAndDuplicateChecks() {
+        SecretFieldSchema field =
+                new SecretFieldSchema(" token ", SecretFieldType.SECRET, true, true);
+        SecretTypeSchema schema = new SecretTypeSchema(SecretType.API_TOKEN, List.of(field), false);
+
+        assertEquals("token", field.name());
+        assertEquals(List.of("token"), schema.fieldNames());
+        assertNotNull(schema.field("token"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new SecretTypeSchema(
+                                SecretType.API_TOKEN,
+                                List.of(
+                                        new SecretFieldSchema(
+                                                "token", SecretFieldType.SECRET, true, true),
+                                        new SecretFieldSchema(
+                                                " token ", SecretFieldType.TEXT, false, false)),
+                                false));
+    }
+
+    @Test
     void defaultsCoverEverySecretType() {
         List<SecretTypeSchema> defaults = SecretTypeSchema.defaults();
         assertEquals(SecretType.values().length, defaults.size());
