@@ -202,6 +202,64 @@ class SyncExportTest {
                                 false));
     }
 
+    @Test
+    void activeSyncRecordRejectsMissingEncryptedProfileOrEnvelope() {
+        String vaultId = VAULT_ID.value().toString();
+        String secretId = UUID.randomUUID().toString();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                vaultId,
+                                secretId,
+                                1L,
+                                SecretType.API_TOKEN.name(),
+                                "",
+                                "payload",
+                                false));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                vaultId,
+                                secretId,
+                                1L,
+                                SecretType.API_TOKEN.name(),
+                                "profile",
+                                "",
+                                false));
+    }
+
+    @Test
+    void deletedSyncRecordRejectsEncryptedProfileOrEnvelope() {
+        String vaultId = VAULT_ID.value().toString();
+        String secretId = UUID.randomUUID().toString();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                vaultId,
+                                secretId,
+                                1L,
+                                SecretType.API_TOKEN.name(),
+                                "profile",
+                                "",
+                                true));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                vaultId,
+                                secretId,
+                                1L,
+                                SecretType.API_TOKEN.name(),
+                                "",
+                                "payload",
+                                true));
+    }
+
     private static char[] master() {
         return chars("correct horse battery staple");
     }

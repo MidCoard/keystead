@@ -21,5 +21,11 @@ public record EncryptedSyncRecord(
         if (revision <= 0) {
             throw new IllegalArgumentException("Record revision must be positive");
         }
+        if (deleted && (!encryptedProfile.isEmpty() || !envelope.isEmpty())) {
+            throw new IllegalArgumentException("Deleted sync records must not carry envelopes");
+        }
+        if (!deleted && (encryptedProfile.isEmpty() || envelope.isEmpty())) {
+            throw new IllegalArgumentException("Active sync records must carry envelopes");
+        }
     }
 }
