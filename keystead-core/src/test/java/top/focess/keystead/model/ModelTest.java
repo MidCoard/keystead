@@ -53,6 +53,52 @@ class ModelTest {
     }
 
     @Test
+    void metadataRejectsUpdatedTimeBeforeCreatedTime() {
+        Instant createdAt = Instant.parse("2026-07-02T00:01:00Z");
+        Instant updatedAt = Instant.parse("2026-07-02T00:00:00Z");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new SecretMetadata(
+                                new SecretId(UUID.randomUUID()),
+                                SecretType.LOGIN_PASSWORD,
+                                "GitHub",
+                                Set.of("work"),
+                                createdAt,
+                                updatedAt,
+                                1L));
+    }
+
+    @Test
+    void encryptedRecordRejectsRevisionDifferentFromMetadataRevision() {
+        SecretMetadata metadata =
+                new SecretMetadata(
+                        new SecretId(UUID.randomUUID()),
+                        SecretType.API_TOKEN,
+                        "GitHub token",
+                        Set.of("work"),
+                        Instant.parse("2026-07-02T00:00:00Z"),
+                        Instant.parse("2026-07-02T00:01:00Z"),
+                        4L);
+        EncryptedEnvelope envelope =
+                new EncryptedEnvelope(
+                        1,
+                        "AES-256-GCM",
+                        new KeyId("vault-key"),
+                        new byte[] {1, 2, 3},
+                        new byte[] {4, 5, 6},
+                        new byte[] {7, 8, 9},
+                        Instant.parse("2026-07-02T00:01:00Z"));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSecretRecord(
+                                new VaultId(UUID.randomUUID()), metadata, envelope, 5L));
+    }
+
+    @Test
     void classificationNormalizesBlankFieldsAndCopiesLabels() {
         SecretClassification classification =
                 new SecretClassification(

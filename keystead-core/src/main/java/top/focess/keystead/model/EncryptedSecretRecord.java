@@ -16,5 +16,8 @@ public record EncryptedSecretRecord(
         if (revision < 0) {
             throw new IllegalArgumentException("Record revision must not be negative");
         }
+        if (revision != metadata.revision()) {
+            throw new IllegalArgumentException("Record revision must match metadata revision");
+        }
     }
 }

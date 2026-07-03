@@ -19,6 +19,10 @@ public record SecretMetadata(
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(createdAt, "createdAt");
         Objects.requireNonNull(updatedAt, "updatedAt");
+        if (updatedAt.isBefore(createdAt)) {
+            throw new IllegalArgumentException(
+                    "Secret updated time must not be before created time");
+        }
         if (revision < 0) {
             throw new IllegalArgumentException("Secret revision must not be negative");
         }
