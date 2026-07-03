@@ -318,6 +318,29 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void nextRevisionRejectsDifferentVaultWhenHeaderExists() {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultHeader header = header();
+        VaultId otherVaultId = vaultId(99L);
+
+        store.saveVaultHeader(header);
+
+        assertThrows(StoreException.class, () -> store.nextRevision(otherVaultId));
+    }
+
+    @Test
+    void recordRevisionRejectsDifferentVaultWhenHeaderExists() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultHeader header = header();
+        VaultId otherVaultId = vaultId(99L);
+
+        store.saveVaultHeader(header);
+
+        assertThrows(StoreException.class, () -> store.recordRevision(otherVaultId, 1L));
+        assertFalse(Files.exists(tempDir.resolve("revisions.properties")));
+    }
+
+    @Test
     void nextRevisionRecoversFromStaleDurableRevisionIndex() throws IOException {
         VaultStore store = new FileVaultStore(tempDir);
         VaultId vaultId = header().vaultId();

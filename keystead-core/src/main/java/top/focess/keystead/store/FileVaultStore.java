@@ -87,12 +87,14 @@ public final class FileVaultStore implements VaultStore {
     @Override
     public synchronized long nextRevision(@NonNull VaultId vaultId) {
         Objects.requireNonNull(vaultId, "vaultId");
+        requireVaultDirectoryIdentity(vaultId);
         return currentRevision(vaultId) + 1;
     }
 
     @Override
     public synchronized void recordRevision(@NonNull VaultId vaultId, long revision) {
         Objects.requireNonNull(vaultId, "vaultId");
+        requireVaultDirectoryIdentity(vaultId);
         if (revision < 0) {
             throw new IllegalArgumentException("Record revision must not be negative");
         }
