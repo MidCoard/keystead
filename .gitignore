@@ -2,10 +2,12 @@
 .gradle/
 build/
 out/
+.codegraph
 
 # IDE files
 .idea/
 *.iml
+.md
 
 # Local/system files
 .DS_Store
@@ -13,3 +15,5 @@ Thumbs.db
 
 # Design and planning notes are local working artifacts for now.
 docs/superpowers/
+
+!README.md

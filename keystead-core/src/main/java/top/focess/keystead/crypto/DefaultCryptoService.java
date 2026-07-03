@@ -108,6 +108,13 @@ public final class DefaultCryptoService {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(envelope, "envelope");
         Objects.requireNonNull(aad, "aad");
+        if (!key.keyId().equals(envelope.keyId())) {
+            throw new CryptoException(
+                    "Vault key id "
+                            + key.keyId().value()
+                            + " does not match encrypted envelope key id "
+                            + envelope.keyId().value());
+        }
         if (!aeadCipher.algorithm().equals(envelope.algorithm())) {
             throw new CryptoException("Unsupported encrypted envelope algorithm");
         }

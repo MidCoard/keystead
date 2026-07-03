@@ -6,6 +6,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -202,17 +203,26 @@ public final class FileVaultStore implements VaultStore {
         }
         try (var stream = Files.list(secretsDirectory)) {
             return stream.filter(path -> path.getFileName().toString().endsWith(".properties"))
-                    .map(this::load)
-                    .filter(
-                            properties ->
-                                    vaultId.value()
-                                            .toString()
-                                            .equals(properties.getProperty("vaultId")))
-                    .map(this::readRecord)
+                    .map(path -> readRecordSafely(path, vaultId))
+                    .flatMap(Optional::stream)
                     .sorted(Comparator.comparing(record -> record.metadata().id().value()))
                     .toList();
         } catch (IOException e) {
             throw new StoreException("Could not list secret records", e);
+        }
+    }
+
+    private @NonNull Optional<EncryptedSecretRecord> readRecordSafely(
+            @NonNull Path path, @NonNull VaultId vaultId) {
+        try {
+            Properties properties = load(path);
+            if (!vaultId.value().toString().equals(properties.getProperty("vaultId"))) {
+                return Optional.empty();
+            }
+            return Optional.of(readRecord(properties));
+        } catch (StoreException | IllegalArgumentException e) {
+            // A single corrupt/truncated record must not brick the whole vault listing.
+            return Optional.empty();
         }
     }
 
@@ -224,17 +234,26 @@ public final class FileVaultStore implements VaultStore {
         }
         try (var stream = Files.list(deletedDirectory)) {
             return stream.filter(path -> path.getFileName().toString().endsWith(".properties"))
-                    .map(this::load)
-                    .filter(
-                            properties ->
-                                    vaultId.value()
-                                            .toString()
-                                            .equals(properties.getProperty("vaultId")))
-                    .map(this::readDeletedRecord)
+                    .map(path -> readDeletedRecordSafely(path, vaultId))
+                    .flatMap(Optional::stream)
                     .sorted(Comparator.comparing(record -> record.secretId().value()))
                     .toList();
         } catch (IOException e) {
             throw new StoreException("Could not list deleted secret records", e);
+        }
+    }
+
+    private @NonNull Optional<DeletedSecretRecord> readDeletedRecordSafely(
+            @NonNull Path path, @NonNull VaultId vaultId) {
+        try {
+            Properties properties = load(path);
+            if (!vaultId.value().toString().equals(properties.getProperty("vaultId"))) {
+                return Optional.empty();
+            }
+            return Optional.of(readDeletedRecord(properties));
+        } catch (StoreException | IllegalArgumentException e) {
+            // A single corrupt tombstone must not brick the whole vault listing.
+            return Optional.empty();
         }
     }
 
@@ -378,13 +397,27 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private void store(@NonNull Properties properties, @NonNull Path path) {
+        Path temp = path.resolveSibling(path.getFileName().toString() + ".tmp");
         try {
             Files.createDirectories(path.getParent());
-            try (OutputStream output = Files.newOutputStream(path)) {
+            // Write to a sibling temp file, then atomically move it into place so a crash
+            // or IO error mid-write cannot truncate the existing vault/record file.
+            try (OutputStream output = Files.newOutputStream(temp)) {
                 properties.store(output, "Keystead v0.1");
             }
+            Files.move(
+                    temp,
+                    path,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             throw new StoreException("Could not store vault data", e);
+        } finally {
+            try {
+                Files.deleteIfExists(temp);
+            } catch (IOException ignored) {
+                // Best-effort cleanup of a leftover temp file.
+            }
         }
     }
 

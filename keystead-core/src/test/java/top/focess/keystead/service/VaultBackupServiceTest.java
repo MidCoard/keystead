@@ -1,0 +1,195 @@
+package top.focess.keystead.service;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.ZipEntry;
+import java.nio.file.ZipInputStream;
+import java.nio.file.ZipOutputStream;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import top.focess.keystead.model.*;
+import top.focess.keystead.store.FileVaultStore;
+
+class VaultBackupServiceTest {
+
+    private static final Clock CLOCK =
+            Clock.fixed(Instant.parse("2026-07-03T00:00:00Z"), ZoneOffset.UTC);
+    private static final VaultId VAULT_ID = new VaultId(new UUID(0L, 1L));
+
+    private final VaultBackupService backup = new VaultBackupService(CLOCK);
+
+    @TempDir Path tempDir;
+
+    @Test
+    void exportAndRestoreRoundTripsIntoFreshStore() {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+        source.saveSecretRecord(record(secretId(3L), "beta", 2L));
+        source.saveDeletedSecretRecord(deleted(secretId(4L), 3L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        assertEquals(2, archive.records().size());
+        assertEquals(1, archive.tombstones().size());
+        assertEquals(VAULT_ID, archive.manifest().vaultId());
+        assertEquals(2, archive.manifest().recordCount());
+
+        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        BackupImportReport report = backup.restore(target, archive);
+
+        assertEquals(2, report.imported());
+        assertEquals(0, report.skipped());
+        assertEquals(1, report.tombstones());
+        assertTrue(report.conflicts().isEmpty());
+        assertEquals(Optional.of(header()), target.loadVaultHeader(VAULT_ID));
+        assertEquals(2, target.listSecretRecords(VAULT_ID).size());
+        assertEquals(1, target.listDeletedSecretRecords(VAULT_ID).size());
+    }
+
+    @Test
+    void restoreSkipsConflictingRecordsWithoutDestroyingExistingData() {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "older", 1L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+
+        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        target.saveVaultHeader(header());
+        target.saveSecretRecord(record(secretId(2L), "newer", 5L));
+
+        BackupImportReport report = backup.restore(target, archive);
+
+        assertEquals(0, report.imported());
+        assertEquals(1, report.skipped());
+        assertEquals(1, report.conflicts().size());
+        BackupConflict conflict = report.conflicts().get(0);
+        assertEquals(secretId(2L), conflict.secretId());
+        assertEquals(5L, conflict.existingRevision());
+        assertEquals(1L, conflict.incomingRevision());
+
+        List<EncryptedSecretRecord> restored = target.listSecretRecords(VAULT_ID);
+        assertEquals(1, restored.size());
+        assertEquals(5L, restored.get(0).revision());
+        assertEquals("newer", restored.get(0).metadata().title());
+    }
+
+    @Test
+    void archiveSurvivesSerializationRoundTrip() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+        source.saveDeletedSecretRecord(deleted(secretId(3L), 2L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        BackupReadResult read = backup.readFrom(new ByteArrayInputStream(out.toByteArray()));
+        assertEquals(0, read.unsupported());
+        BackupArchive restored = read.archive();
+        assertEquals(archive.manifest(), restored.manifest());
+        assertEquals(archive.vaultHeader(), restored.vaultHeader());
+        assertEquals(archive.records(), restored.records());
+        assertEquals(archive.tombstones(), restored.tombstones());
+
+        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        BackupImportReport report = backup.restore(target, restored);
+        assertEquals(1, report.imported());
+        assertEquals(1, report.tombstones());
+    }
+
+    @Test
+    void readFromSkipsMalformedEntriesWithoutLosingValidOnes() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+        source.saveSecretRecord(record(secretId(3L), "beta", 2L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        // Copy every valid entry, then inject one malformed record entry.
+        ByteArrayOutputStream rebuilt = new ByteArrayOutputStream();
+        try (ZipInputStream in = new ZipInputStream(new ByteArrayInputStream(out.toByteArray()));
+                ZipOutputStream zip = new ZipOutputStream(rebuilt)) {
+            ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                zip.putNextEntry(new ZipEntry(entry.getName()));
+                zip.write(in.readAllBytes());
+                zip.closeEntry();
+            }
+            zip.putNextEntry(new ZipEntry("records/00000000-0000-0000-0000-000000000009.properties"));
+            zip.write("vaultId=00000000-0000-0000-0000-000000000001\n".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+
+        BackupReadResult read = backup.readFrom(new ByteArrayInputStream(rebuilt.toByteArray()));
+        assertEquals(1, read.unsupported());
+        assertEquals(2, read.archive().records().size());
+
+        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        BackupImportReport report = backup.restore(target, read.archive());
+        assertEquals(2, report.imported());
+    }
+
+    private static VaultHeader header() {
+        return new VaultHeader(
+                VAULT_ID,
+                1,
+                "PBKDF2WithHmacSHA256",
+                new byte[] {1, 2, 3},
+                120_000,
+                new KeyId("vault-key"),
+                new byte[] {4, 5, 6},
+                Instant.parse("2026-07-02T00:00:00Z"),
+                Instant.parse("2026-07-02T00:01:00Z"));
+    }
+
+    private static SecretId secretId(long suffix) {
+        return new SecretId(new UUID(0L, suffix));
+    }
+
+    private static EncryptedSecretRecord record(SecretId id, String title, long revision) {
+        SecretMetadata metadata =
+                new SecretMetadata(
+                        id,
+                        SecretType.LOGIN_PASSWORD,
+                        title,
+                        Set.of("work"),
+                        Instant.parse("2026-07-02T00:00:00Z"),
+                        Instant.parse("2026-07-02T00:01:00Z"),
+                        revision);
+        EncryptedEnvelope envelope =
+                new EncryptedEnvelope(
+                        1,
+                        "AES-256-GCM",
+                        new KeyId("vault-key"),
+                        new byte[] {1, 2, 3},
+                        new byte[] {4, 5, 6},
+                        new byte[] {7, 8, 9},
+                        Instant.parse("2026-07-02T00:02:00Z"));
+        return new EncryptedSecretRecord(VAULT_ID, metadata, envelope, revision);
+    }
+
+    private static DeletedSecretRecord deleted(SecretId id, long revision) {
+        return new DeletedSecretRecord(
+                VAULT_ID,
+                id,
+                SecretType.LOGIN_PASSWORD,
+                revision,
+                Instant.parse("2026-07-02T00:03:00Z"));
+    }
+}

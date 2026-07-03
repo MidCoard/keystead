@@ -49,6 +49,30 @@ class DefaultGpgKeyGeneratorTest {
     }
 
     @Test
+    void generatedKeySelfSignatureUsesSha256() throws Exception {
+        Date createdAt = new Date(1_800_000_000_000L);
+        try (GpgKeyPolicy policy =
+                        new GpgKeyPolicy(
+                                "Alice <alice@example.com>", "changeit".toCharArray(), createdAt);
+                GpgKeyPair keyPair = generator.generate(policy)) {
+            PGPPublicKey masterPublicKey = publicRing(keyPair.publicKey()).getPublicKey();
+            int hashAlgorithm = selfSignatureHashAlgorithm(masterPublicKey);
+            assertEquals(org.bouncycastle.bcpg.HashAlgorithmTags.SHA256, hashAlgorithm);
+        }
+    }
+
+    private static int selfSignatureHashAlgorithm(PGPPublicKey publicKey) {
+        Iterator<org.bouncycastle.openpgp.PGPSignature> signatures = publicKey.getSignatures();
+        while (signatures.hasNext()) {
+            org.bouncycastle.openpgp.PGPSignature signature = signatures.next();
+            if (signature.getKeyID() == publicKey.getKeyID()) {
+                return signature.getHashAlgorithm();
+            }
+        }
+        throw new AssertionError("master key has no self-signature");
+    }
+
+    @Test
     void policyRejectsBlankIdentity() {
         assertThrows(
                 IllegalArgumentException.class,

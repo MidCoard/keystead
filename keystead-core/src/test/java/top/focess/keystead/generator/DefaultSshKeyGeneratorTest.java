@@ -2,19 +2,16 @@ package top.focess.keystead.generator;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyFactory;
-import java.security.PrivateKey;
-import java.security.PublicKey;
-import java.security.Signature;
-import java.security.spec.EdECPoint;
-import java.security.spec.EdECPublicKeySpec;
-import java.security.spec.NamedParameterSpec;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
+import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters;
+import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters;
+import org.bouncycastle.crypto.signers.Ed25519Signer;
+import org.bouncycastle.crypto.util.OpenSSHPrivateKeyUtil;
+import org.bouncycastle.crypto.util.OpenSSHPublicKeyUtil;
 import org.junit.jupiter.api.Test;
 
 class DefaultSshKeyGeneratorTest {
@@ -22,7 +19,7 @@ class DefaultSshKeyGeneratorTest {
     private final SshKeyGenerator generator = new DefaultSshKeyGenerator();
 
     @Test
-    void generatesEd25519KeyPairWithOpenSshPublicKeyAndPemPrivateKey() throws Exception {
+    void generatesEd25519KeyPairWithOpenSshPrivateKey() throws Exception {
         try (SshKeyPair keyPair =
                 generator.generate(new SshKeyPolicy(SshKeyAlgorithm.ED25519, "alice@laptop"))) {
 
@@ -31,19 +28,32 @@ class DefaultSshKeyGeneratorTest {
             assertEquals("ssh-ed25519", openSshType(keyPair.publicKey()));
             assertEquals(32, openSshRawKey(keyPair.publicKey()).length);
 
-            PrivateKey privateKey = readPrivateKey(keyPair);
-            PublicKey publicKey = readPublicKey(keyPair.publicKey());
-            byte[] message = "keystead ssh generation".getBytes(StandardCharsets.UTF_8);
+            StringBuilder pem = new StringBuilder();
+            keyPair.privateKey().copyChars(pem::append);
+            String privateKeyPem = pem.toString();
+            assertTrue(privateKeyPem.startsWith("-----BEGIN OPENSSH PRIVATE KEY-----"));
+            assertTrue(privateKeyPem.contains("-----END OPENSSH PRIVATE KEY-----"));
 
-            Signature signer = Signature.getInstance("Ed25519");
-            signer.initSign(privateKey);
-            signer.update(message);
-            byte[] signature = signer.sign();
+            // The private key must round-trip through BouncyCastle's OpenSSH parser and derive
+            // exactly the public key advertised in the authorized_keys-style public string.
+            byte[] privateBlob = openSshPrivateBlob(privateKeyPem);
+            AsymmetricKeyParameter privateParams =
+                    OpenSSHPrivateKeyUtil.parsePrivateKeyBlob(privateBlob);
+            assertInstanceOf(Ed25519PrivateKeyParameters.class, privateParams);
+            Ed25519PublicKeyParameters derivedPublic =
+                    ((Ed25519PrivateKeyParameters) privateParams).generatePublicKey();
+            Ed25519PublicKeyParameters statedPublic = openSshPublicParams(keyPair.publicKey());
+            assertArrayEquals(statedPublic.getEncoded(), derivedPublic.getEncoded());
 
-            Signature verifier = Signature.getInstance("Ed25519");
-            verifier.initVerify(publicKey);
-            verifier.update(message);
-            assertTrue(verifier.verify(signature));
+            byte[] message = "keystead ssh generation".getBytes(StandardCharsets.US_ASCII);
+            Ed25519Signer signer = new Ed25519Signer();
+            signer.init(true, privateParams);
+            signer.update(message, 0, message.length);
+            byte[] signature = signer.generateSignature();
+            Ed25519Signer verifier = new Ed25519Signer();
+            verifier.init(false, statedPublic);
+            verifier.update(message, 0, message.length);
+            assertTrue(verifier.verifySignature(signature));
         }
     }
 
@@ -57,27 +67,21 @@ class DefaultSshKeyGeneratorTest {
                 IllegalStateException.class, () -> keyPair.privateKey().copyChars(chars -> {}));
     }
 
-    private static PrivateKey readPrivateKey(SshKeyPair keyPair) throws Exception {
-        StringBuilder pem = new StringBuilder();
-        keyPair.privateKey().copyChars(chars -> pem.append(chars));
+    private static byte[] openSshPrivateBlob(String pem) {
         String base64 =
-                pem.toString()
-                        .replace("-----BEGIN PRIVATE KEY-----", "")
-                        .replace("-----END PRIVATE KEY-----", "")
+                pem.replace("-----BEGIN OPENSSH PRIVATE KEY-----", "")
+                        .replace("-----END OPENSSH PRIVATE KEY-----", "")
                         .replaceAll("\\s", "");
-        return KeyFactory.getInstance("Ed25519")
-                .generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(base64)));
+        return Base64.getDecoder().decode(base64);
     }
 
-    private static PublicKey readPublicKey(String openSshPublicKey) throws Exception {
-        byte[] raw = openSshRawKey(openSshPublicKey);
-        boolean xOdd = (raw[31] & 0x80) != 0;
-        raw[31] &= 0x7f;
-        byte[] bigEndian = raw.clone();
-        reverse(bigEndian);
-        EdECPoint point = new EdECPoint(xOdd, new BigInteger(1, bigEndian));
-        return KeyFactory.getInstance("Ed25519")
-                .generatePublic(new EdECPublicKeySpec(NamedParameterSpec.ED25519, point));
+    private static Ed25519PublicKeyParameters openSshPublicParams(String openSshPublicKey) {
+        String[] parts = openSshPublicKey.split(" ");
+        assertTrue(parts.length >= 2);
+        byte[] wire = Base64.getDecoder().decode(parts[1]);
+        AsymmetricKeyParameter params = OpenSSHPublicKeyUtil.parsePublicKey(wire);
+        assertInstanceOf(Ed25519PublicKeyParameters.class, params);
+        return (Ed25519PublicKeyParameters) params;
     }
 
     private static String openSshType(String openSshPublicKey) {
@@ -108,13 +112,5 @@ class DefaultSshKeyGeneratorTest {
         byte[] value = new byte[length];
         buffer.get(value);
         return value;
-    }
-
-    private static void reverse(byte[] bytes) {
-        for (int i = 0; i < bytes.length / 2; i++) {
-            byte value = bytes[i];
-            bytes[i] = bytes[bytes.length - 1 - i];
-            bytes[bytes.length - 1 - i] = value;
-        }
     }
 }

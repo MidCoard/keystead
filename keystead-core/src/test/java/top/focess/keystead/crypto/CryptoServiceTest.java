@@ -61,6 +61,27 @@ class CryptoServiceTest {
     }
 
     @Test
+    void decryptRejectsEnvelopeEncryptedUnderDifferentKeyId() {
+        try (VaultKey encryptingKey = crypto.generateVaultKey(new KeyId("vault-key-a"));
+                VaultKey wrongKey = crypto.generateVaultKey(new KeyId("vault-key-b"))) {
+            EncryptedEnvelope envelope =
+                    crypto.encrypt(
+                            encryptingKey,
+                            new byte[] {1, 2, 3},
+                            new byte[] {4, 5, 6},
+                            Instant.parse("2026-07-02T00:00:00Z"));
+
+            CryptoException ex =
+                    assertThrows(
+                            CryptoException.class,
+                            () -> crypto.decrypt(wrongKey, envelope, new byte[] {4, 5, 6}));
+
+            assertNull(ex.getCause(), "wrong key id should be rejected before GCM is attempted");
+            assertTrue(ex.getMessage().toLowerCase().contains("key id"));
+        }
+    }
+
+    @Test
     void wrongMasterPasswordCannotUnwrapVaultKey() {
         try (VaultKey key = crypto.generateVaultKey(new KeyId("vault-key"))) {
             byte[] salt = crypto.randomSalt();

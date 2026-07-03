@@ -1,6 +1,7 @@
 package top.focess.keystead.generator;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -8,10 +9,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
+import java.security.interfaces.EdECPrivateKey;
 import java.security.interfaces.EdECPublicKey;
+import java.security.spec.NamedParameterSpec;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
+import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters;
+import org.bouncycastle.crypto.util.OpenSSHPrivateKeyUtil;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
@@ -41,12 +46,13 @@ public final class DefaultSshKeyGenerator implements SshKeyGenerator {
         }
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("Ed25519");
-            generator.initialize(255, random);
+            generator.initialize(new NamedParameterSpec("Ed25519"), random);
             java.security.KeyPair keyPair = generator.generateKeyPair();
+            EdECPrivateKey ecPrivate = (EdECPrivateKey) keyPair.getPrivate();
+            EdECPublicKey ecPublic = (EdECPublicKey) keyPair.getPublic();
             return new SshKeyPair(
-                    openSshPublicKey((EdECPublicKey) keyPair.getPublic(), policy.comment()),
-                    pemPrivateKey(keyPair.getPrivate().getEncoded()));
-        } catch (GeneralSecurityException e) {
+                    openSshPublicKey(ecPublic, policy.comment()), openSshPrivateKey(ecPrivate));
+        } catch (GeneralSecurityException | IOException e) {
             throw new IllegalStateException("Could not generate SSH key pair", e);
         }
     }
@@ -94,15 +100,24 @@ public final class DefaultSshKeyGenerator implements SshKeyGenerator {
         return output;
     }
 
-    private @NonNull SecretBuffer pemPrivateKey(byte @NonNull [] encodedPrivateKey) {
+    private @NonNull SecretBuffer openSshPrivateKey(@NonNull EdECPrivateKey privateKey)
+            throws IOException {
+        byte @Nullable [] seed = null;
+        byte[] blob = null;
         byte[] base64 = null;
         char[] pem = null;
         try {
-            base64 =
-                    Base64.getMimeEncoder(PEM_LINE_LENGTH, new byte[] {'\n'})
-                            .encode(encodedPrivateKey);
-            String header = "-----BEGIN PRIVATE KEY-----\n";
-            String footer = "\n-----END PRIVATE KEY-----\n";
+            seed =
+                    privateKey
+                            .getBytes()
+                            .orElseThrow(
+                                    () ->
+                                            new IOException(
+                                                    "Ed25519 private key exposes no raw bytes"));
+            blob = OpenSSHPrivateKeyUtil.encodePrivateKey(new Ed25519PrivateKeyParameters(seed, 0));
+            base64 = Base64.getMimeEncoder(PEM_LINE_LENGTH, new byte[] {'\n'}).encode(blob);
+            String header = "-----BEGIN OPENSSH PRIVATE KEY-----\n";
+            String footer = "\n-----END OPENSSH PRIVATE KEY-----\n";
             pem = new char[header.length() + base64.length + footer.length()];
             int offset = append(pem, 0, header);
             for (byte value : base64) {
@@ -111,7 +126,12 @@ public final class DefaultSshKeyGenerator implements SshKeyGenerator {
             append(pem, offset, footer);
             return SecretBuffer.fromChars(pem);
         } finally {
-            Arrays.fill(encodedPrivateKey, (byte) 0);
+            if (seed != null) {
+                Arrays.fill(seed, (byte) 0);
+            }
+            if (blob != null) {
+                Arrays.fill(blob, (byte) 0);
+            }
             if (base64 != null) {
                 Arrays.fill(base64, (byte) 0);
             }
