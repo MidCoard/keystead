@@ -79,6 +79,36 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void saveSecretRecordRejectsDifferentVaultWhenHeaderExists() {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultHeader header = header();
+        VaultId otherVaultId = vaultId(99L);
+        SecretId secretId = secretId(99L);
+        EncryptedSecretRecord record = record(otherVaultId, secretId, "Wrong vault", 1L);
+
+        store.saveVaultHeader(header);
+
+        assertThrows(StoreException.class, () -> store.saveSecretRecord(record));
+        assertEquals(Optional.empty(), store.loadSecretRecord(otherVaultId, secretId));
+        assertFalse(Files.exists(secretFile(secretId)));
+    }
+
+    @Test
+    void saveDeletedSecretRecordRejectsDifferentVaultWhenHeaderExists() {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultHeader header = header();
+        VaultId otherVaultId = vaultId(99L);
+        SecretId secretId = secretId(99L);
+        DeletedSecretRecord record = deleted(otherVaultId, secretId, 1L);
+
+        store.saveVaultHeader(header);
+
+        assertThrows(StoreException.class, () -> store.saveDeletedSecretRecord(record));
+        assertEquals(Optional.empty(), store.loadDeletedSecretRecord(otherVaultId, secretId));
+        assertFalse(Files.exists(deletedFile(secretId)));
+    }
+
+    @Test
     void savesAndLoadsSecretClassificationMetadata() {
         VaultStore store = new FileVaultStore(tempDir);
         EncryptedSecretRecord record = record();
@@ -565,6 +595,14 @@ class FileVaultStoreTest {
 
     private static EncryptedSecretRecord record(
             @NonNull SecretId secretId, @NonNull String title, long revision) {
+        return record(header().vaultId(), secretId, title, revision);
+    }
+
+    private static EncryptedSecretRecord record(
+            @NonNull VaultId vaultId,
+            @NonNull SecretId secretId,
+            @NonNull String title,
+            long revision) {
         SecretMetadata metadata =
                 new SecretMetadata(
                         secretId,
@@ -591,15 +629,15 @@ class FileVaultStoreTest {
                         new byte[] {4, 5, 6},
                         new byte[] {7, 8, 9},
                         Instant.parse("2026-07-02T00:02:00Z"));
-        return new EncryptedSecretRecord(
-                new VaultId(UUID.fromString("00000000-0000-0000-0000-000000000001")),
-                metadata,
-                envelope,
-                revision);
+        return new EncryptedSecretRecord(vaultId, metadata, envelope, revision);
     }
 
     private static SecretId secretId(long suffix) {
         return new SecretId(new UUID(0L, suffix));
+    }
+
+    private static VaultId vaultId(long suffix) {
+        return new VaultId(new UUID(0L, suffix));
     }
 
     private static DeletedSecretRecord deleted(
@@ -608,8 +646,13 @@ class FileVaultStoreTest {
     }
 
     private static DeletedSecretRecord deleted(@NonNull SecretId secretId, long revision) {
+        return deleted(header().vaultId(), secretId, revision);
+    }
+
+    private static DeletedSecretRecord deleted(
+            @NonNull VaultId vaultId, @NonNull SecretId secretId, long revision) {
         return new DeletedSecretRecord(
-                header().vaultId(),
+                vaultId,
                 secretId,
                 SecretType.LOGIN_PASSWORD,
                 revision,

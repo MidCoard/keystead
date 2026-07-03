@@ -127,6 +127,7 @@ public final class FileVaultStore implements VaultStore {
     @Override
     public void saveSecretRecord(@NonNull EncryptedSecretRecord record) {
         Objects.requireNonNull(record, "record");
+        requireVaultDirectoryIdentity(record.vaultId());
         Optional<EncryptedSecretRecord> existing =
                 loadStoredSecretRecord(record.vaultId(), record.metadata().id());
         if (existing.isPresent() && existing.get().revision() >= record.revision()) {
@@ -209,6 +210,7 @@ public final class FileVaultStore implements VaultStore {
     @Override
     public void saveDeletedSecretRecord(@NonNull DeletedSecretRecord record) {
         Objects.requireNonNull(record, "record");
+        requireVaultDirectoryIdentity(record.vaultId());
         Optional<DeletedSecretRecord> deleted =
                 loadStoredDeletedSecretRecord(record.vaultId(), record.secretId());
         if (deleted.isPresent() && deleted.get().revision() >= record.revision()) {
@@ -463,6 +465,17 @@ public final class FileVaultStore implements VaultStore {
                 bytes(properties, "wrappedVaultKey"),
                 Instant.parse(required(properties, "createdAt")),
                 Instant.parse(required(properties, "updatedAt")));
+    }
+
+    private void requireVaultDirectoryIdentity(@NonNull VaultId vaultId) {
+        Path path = vaultDirectory.resolve(VAULT_FILE);
+        if (!Files.exists(path)) {
+            return;
+        }
+        VaultHeader header = readHeader(load(path));
+        if (!header.vaultId().equals(vaultId)) {
+            throw new StoreException("Vault directory already belongs to another vault", null);
+        }
     }
 
     private @NonNull Path secretPath(@NonNull SecretId secretId) {
