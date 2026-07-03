@@ -18,8 +18,8 @@ public record EncryptedSyncRecord(
         Objects.requireNonNull(secretType, "secretType");
         Objects.requireNonNull(encryptedProfile, "encryptedProfile");
         Objects.requireNonNull(envelope, "envelope");
-        if (revision < 0) {
-            throw new IllegalArgumentException("Record revision must not be negative");
+        if (revision <= 0) {
+            throw new IllegalArgumentException("Record revision must be positive");
         }
     }
 }

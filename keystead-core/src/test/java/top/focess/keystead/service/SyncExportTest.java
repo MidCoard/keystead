@@ -2,6 +2,7 @@ package top.focess.keystead.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -184,6 +185,21 @@ class SyncExportTest {
 
             assertEquals(0, vault.importRecords(List.of(exported)));
         }
+    }
+
+    @Test
+    void syncRecordRejectsZeroRevisionBecauseCommittedRowsStartAtOne() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                VAULT_ID.value().toString(),
+                                UUID.randomUUID().toString(),
+                                0L,
+                                SecretType.API_TOKEN.name(),
+                                "profile",
+                                "envelope",
+                                false));
     }
 
     private static char[] master() {

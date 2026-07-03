@@ -13,8 +13,8 @@ public record EncryptedSecretRecord(
         Objects.requireNonNull(vaultId, "vaultId");
         Objects.requireNonNull(metadata, "metadata");
         Objects.requireNonNull(payload, "payload");
-        if (revision < 0) {
-            throw new IllegalArgumentException("Record revision must not be negative");
+        if (revision <= 0) {
+            throw new IllegalArgumentException("Record revision must be positive");
         }
         if (revision != metadata.revision()) {
             throw new IllegalArgumentException("Record revision must match metadata revision");

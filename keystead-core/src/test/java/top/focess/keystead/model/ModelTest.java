@@ -71,6 +71,21 @@ class ModelTest {
     }
 
     @Test
+    void metadataRejectsZeroRevisionBecauseCommittedRowsStartAtOne() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new SecretMetadata(
+                                new SecretId(UUID.randomUUID()),
+                                SecretType.LOGIN_PASSWORD,
+                                "GitHub",
+                                Set.of("work"),
+                                Instant.parse("2026-07-02T00:00:00Z"),
+                                Instant.parse("2026-07-02T00:01:00Z"),
+                                0L));
+    }
+
+    @Test
     void encryptedRecordRejectsRevisionDifferentFromMetadataRevision() {
         SecretMetadata metadata =
                 new SecretMetadata(
@@ -96,6 +111,19 @@ class ModelTest {
                 () ->
                         new EncryptedSecretRecord(
                                 new VaultId(UUID.randomUUID()), metadata, envelope, 5L));
+    }
+
+    @Test
+    void deletedRecordRejectsZeroRevisionBecauseCommittedRowsStartAtOne() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new DeletedSecretRecord(
+                                new VaultId(UUID.randomUUID()),
+                                new SecretId(UUID.randomUUID()),
+                                SecretType.API_TOKEN,
+                                0L,
+                                Instant.parse("2026-07-02T00:01:00Z")));
     }
 
     @Test

@@ -16,8 +16,8 @@ public record DeletedSecretRecord(
         Objects.requireNonNull(secretId, "secretId");
         Objects.requireNonNull(secretType, "secretType");
         Objects.requireNonNull(deletedAt, "deletedAt");
-        if (revision < 0) {
-            throw new IllegalArgumentException("Record revision must not be negative");
+        if (revision <= 0) {
+            throw new IllegalArgumentException("Record revision must be positive");
         }
     }
 }

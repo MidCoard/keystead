@@ -23,8 +23,8 @@ public record SecretMetadata(
             throw new IllegalArgumentException(
                     "Secret updated time must not be before created time");
         }
-        if (revision < 0) {
-            throw new IllegalArgumentException("Secret revision must not be negative");
+        if (revision <= 0) {
+            throw new IllegalArgumentException("Secret revision must be positive");
         }
     }
 
