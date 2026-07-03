@@ -1,0 +1,53 @@
+package top.focess.keystead.generator;
+
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Objects;
+import org.jspecify.annotations.NonNull;
+import top.focess.keystead.memory.SecretBuffer;
+
+public final class DefaultApiTokenGenerator implements ApiTokenGenerator {
+
+    private final SecureRandom random;
+
+    public DefaultApiTokenGenerator() {
+        this(new SecureRandom());
+    }
+
+    public DefaultApiTokenGenerator(@NonNull SecureRandom random) {
+        this.random = Objects.requireNonNull(random, "random");
+    }
+
+    @Override
+    public @NonNull SecretBuffer generate(@NonNull ApiTokenPolicy policy) {
+        Objects.requireNonNull(policy, "policy");
+        byte[] randomBytes = new byte[policy.randomBytes()];
+        byte[] encoded = null;
+        char[] token = null;
+        try {
+            random.nextBytes(randomBytes);
+            encoded = Base64.getUrlEncoder().withoutPadding().encode(randomBytes);
+            byte[] prefix = policy.prefix().getBytes(StandardCharsets.US_ASCII);
+            token = new char[prefix.length + 1 + encoded.length];
+            int offset = 0;
+            for (byte value : prefix) {
+                token[offset++] = (char) value;
+            }
+            token[offset++] = '_';
+            for (byte value : encoded) {
+                token[offset++] = (char) value;
+            }
+            return SecretBuffer.fromChars(token);
+        } finally {
+            Arrays.fill(randomBytes, (byte) 0);
+            if (encoded != null) {
+                Arrays.fill(encoded, (byte) 0);
+            }
+            if (token != null) {
+                Arrays.fill(token, '\0');
+            }
+        }
+    }
+}

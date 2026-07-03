@@ -13,6 +13,10 @@ java {
 dependencies {
     api("org.jspecify:jspecify:1.0.0")
     implementation("com.google.crypto.tink:tink:1.22.0")
+    implementation(platform("org.bouncycastle:bc-jdk18on-bom:1.84"))
+    implementation("org.bouncycastle:bcpg-jdk18on")
+    implementation("org.bouncycastle:bcpkix-jdk18on")
+    implementation("org.bouncycastle:bcprov-jdk18on")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
