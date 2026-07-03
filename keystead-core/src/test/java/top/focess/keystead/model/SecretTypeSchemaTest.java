@@ -43,6 +43,21 @@ class SecretTypeSchemaTest {
     }
 
     @Test
+    void schemaRejectsDuplicateFieldNames() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new SecretTypeSchema(
+                                SecretType.API_TOKEN,
+                                List.of(
+                                        new SecretFieldSchema(
+                                                "token", SecretFieldType.SECRET, true, true),
+                                        new SecretFieldSchema(
+                                                "token", SecretFieldType.TEXT, false, false)),
+                                false));
+    }
+
+    @Test
     void defaultsCoverEverySecretType() {
         List<SecretTypeSchema> defaults = SecretTypeSchema.defaults();
         assertEquals(SecretType.values().length, defaults.size());

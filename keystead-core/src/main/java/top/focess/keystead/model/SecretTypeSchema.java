@@ -24,7 +24,10 @@ public final class SecretTypeSchema {
         this.allowsCustomFields = allowsCustomFields;
         Map<String, SecretFieldSchema> map = new LinkedHashMap<>();
         for (SecretFieldSchema field : this.fields) {
-            map.put(field.name(), field);
+            SecretFieldSchema previous = map.put(field.name(), field);
+            if (previous != null) {
+                throw new IllegalArgumentException("Duplicate field name: " + field.name());
+            }
         }
         this.fieldByName = Collections.unmodifiableMap(map);
     }
