@@ -221,6 +221,20 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void archiveRejectsUnsupportedFutureFormatVersion() {
+        BackupManifest manifest =
+                new BackupManifest(
+                        VaultBackupService.FORMAT_VERSION + 1, VAULT_ID, 0, 0, CLOCK.instant());
+
+        ValidationException exception =
+                assertThrows(
+                        ValidationException.class,
+                        () -> new BackupArchive(manifest, header(), List.of(), List.of()));
+
+        assertTrue(exception.getMessage().contains("format version"));
+    }
+
+    @Test
     void archiveRejectsRecordFromAnotherVault() {
         VaultId otherVault = new VaultId(new UUID(0L, 99L));
         EncryptedSecretRecord foreignRecord =

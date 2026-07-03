@@ -18,6 +18,10 @@ public record BackupArchive(
         Objects.requireNonNull(vaultHeader, "vaultHeader");
         records = List.copyOf(Objects.requireNonNull(records, "records"));
         tombstones = List.copyOf(Objects.requireNonNull(tombstones, "tombstones"));
+        if (manifest.formatVersion() != VaultBackupService.FORMAT_VERSION) {
+            throw new ValidationException(
+                    "Backup archive format version is unsupported: " + manifest.formatVersion());
+        }
         if (!manifest.vaultId().equals(vaultHeader.vaultId())) {
             throw new ValidationException("Backup archive vault header does not match manifest");
         }
