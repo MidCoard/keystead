@@ -1,5 +1,6 @@
 package top.focess.keystead.model;
 
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -14,13 +15,13 @@ public record SecretClassification(
         @NonNull Set<String> labels) {
 
     public SecretClassification {
-        category = normalize(category);
-        provider = normalize(provider);
-        software = normalize(software);
+        category = normalizeTaxonomy(category);
+        provider = normalizeTaxonomy(provider);
+        software = normalizeTaxonomy(software);
         account = normalize(account);
         labels =
                 Objects.requireNonNull(labels, "labels").stream()
-                        .map(SecretClassification::normalizeRequired)
+                        .map(SecretClassification::normalizeLabel)
                         .filter(value -> !value.isBlank())
                         .collect(Collectors.toUnmodifiableSet());
     }
@@ -58,7 +59,12 @@ public record SecretClassification(
         return normalized.isBlank() ? null : normalized;
     }
 
-    private static @NonNull String normalizeRequired(@NonNull String value) {
-        return Objects.requireNonNull(value, "label").trim();
+    private static @Nullable String normalizeTaxonomy(@Nullable String value) {
+        @Nullable String normalized = normalize(value);
+        return normalized == null ? null : normalized.toLowerCase(Locale.ROOT);
+    }
+
+    private static @NonNull String normalizeLabel(@NonNull String value) {
+        return Objects.requireNonNull(value, "label").trim().toLowerCase(Locale.ROOT);
     }
 }

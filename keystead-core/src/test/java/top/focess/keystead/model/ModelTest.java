@@ -73,6 +73,23 @@ class ModelTest {
     }
 
     @Test
+    void classificationCanonicalizesTaxonomyFieldsButPreservesAccountCase() {
+        SecretClassification classification =
+                new SecretClassification(
+                        " Development ",
+                        " GitHub ",
+                        " GitHub.COM ",
+                        " Alice@Example.COM ",
+                        Set.of(" Work ", "work", " Personal "));
+
+        assertEquals("development", classification.category());
+        assertEquals("github", classification.provider());
+        assertEquals("github.com", classification.software());
+        assertEquals("Alice@Example.COM", classification.account());
+        assertEquals(Set.of("work", "personal"), classification.labels());
+    }
+
+    @Test
     void taxonomyFactoriesCreateCommonClassifications() {
         SecretClassification development =
                 SecretTaxonomy.development(
@@ -89,6 +106,26 @@ class ModelTest {
         assertEquals("communication", communication.category());
         assertEquals("wechat", communication.provider());
         assertEquals("wechat", communication.software());
+    }
+
+    @Test
+    void taxonomyPresetsCoverCommonDevelopmentAndCommunicationSecrets() {
+        assertEquals(
+                new SecretClassification(
+                        "development", "github", "github.com", "alice@example.com"),
+                SecretTaxonomy.githubDevelopment("alice@example.com"));
+        assertEquals(
+                new SecretClassification("development", "ssh", "openssh", "workstation"),
+                SecretTaxonomy.sshDevelopment("workstation"));
+        assertEquals(
+                new SecretClassification("development", "gpg", "gpg", "alice@example.com"),
+                SecretTaxonomy.gpgDevelopment("alice@example.com"));
+        assertEquals(
+                new SecretClassification("communication", "google", "google", "alice"),
+                SecretTaxonomy.googleCommunication("alice"));
+        assertEquals(
+                new SecretClassification("communication", "wechat", "wechat", "alice"),
+                SecretTaxonomy.wechatCommunication("alice"));
     }
 
     @Test
