@@ -24,6 +24,10 @@ public record VaultHeader(
         Objects.requireNonNull(wrappedVaultKey, "wrappedVaultKey");
         Objects.requireNonNull(createdAt, "createdAt");
         Objects.requireNonNull(updatedAt, "updatedAt");
+        if (updatedAt.isBefore(createdAt)) {
+            throw new IllegalArgumentException(
+                    "Vault updated time must not be before created time");
+        }
         if (formatVersion <= 0) {
             throw new IllegalArgumentException("Format version must be positive");
         }

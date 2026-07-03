@@ -274,4 +274,21 @@ class ModelTest {
         assertTrue(header.toString().contains("wrappedVaultKey=[REDACTED"));
         assertFalse(header.toString().contains("3, 4"));
     }
+
+    @Test
+    void vaultHeaderRejectsUpdatedTimeBeforeCreatedTime() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new VaultHeader(
+                                new VaultId(UUID.randomUUID()),
+                                1,
+                                "PBKDF2WithHmacSHA256",
+                                new byte[] {1, 2},
+                                120_000,
+                                new KeyId("vault-key"),
+                                new byte[] {3, 4},
+                                Instant.parse("2026-07-02T00:01:00Z"),
+                                Instant.parse("2026-07-02T00:00:00Z")));
+    }
 }
