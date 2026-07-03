@@ -164,6 +164,7 @@ public final class FileVaultStore implements VaultStore {
             @NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Objects.requireNonNull(vaultId, "vaultId");
         Objects.requireNonNull(secretId, "secretId");
+        requireVaultDirectoryIdentity(vaultId);
         return loadStoredSecretRecord(vaultId, secretId)
                 .filter(record -> !isHiddenByNewerTombstone(record));
     }
@@ -243,6 +244,7 @@ public final class FileVaultStore implements VaultStore {
             @NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Objects.requireNonNull(vaultId, "vaultId");
         Objects.requireNonNull(secretId, "secretId");
+        requireVaultDirectoryIdentity(vaultId);
         return loadStoredDeletedSecretRecord(vaultId, secretId)
                 .filter(record -> !isHiddenByNewerRecord(record));
     }
@@ -284,6 +286,7 @@ public final class FileVaultStore implements VaultStore {
     @Override
     public @NonNull List<EncryptedSecretRecord> listSecretRecords(@NonNull VaultId vaultId) {
         Objects.requireNonNull(vaultId, "vaultId");
+        requireVaultDirectoryIdentity(vaultId);
         return listStoredSecretRecords(vaultId).stream()
                 .filter(record -> !isHiddenByNewerTombstone(record))
                 .sorted(Comparator.comparing(record -> record.metadata().id().value()))
@@ -321,6 +324,7 @@ public final class FileVaultStore implements VaultStore {
     @Override
     public @NonNull List<DeletedSecretRecord> listDeletedSecretRecords(@NonNull VaultId vaultId) {
         Objects.requireNonNull(vaultId, "vaultId");
+        requireVaultDirectoryIdentity(vaultId);
         return listStoredDeletedSecretRecords(vaultId).stream()
                 .filter(record -> !isHiddenByNewerRecord(record))
                 .sorted(Comparator.comparing(record -> record.secretId().value()))

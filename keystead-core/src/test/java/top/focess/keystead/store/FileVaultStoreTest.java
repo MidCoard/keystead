@@ -113,7 +113,7 @@ class FileVaultStoreTest {
         store.saveVaultHeader(header);
 
         assertThrows(StoreException.class, () -> store.saveSecretRecord(record));
-        assertEquals(Optional.empty(), store.loadSecretRecord(otherVaultId, secretId));
+        assertThrows(StoreException.class, () -> store.loadSecretRecord(otherVaultId, secretId));
         assertFalse(Files.exists(secretFile(secretId)));
     }
 
@@ -128,7 +128,8 @@ class FileVaultStoreTest {
         store.saveVaultHeader(header);
 
         assertThrows(StoreException.class, () -> store.saveDeletedSecretRecord(record));
-        assertEquals(Optional.empty(), store.loadDeletedSecretRecord(otherVaultId, secretId));
+        assertThrows(
+                StoreException.class, () -> store.loadDeletedSecretRecord(otherVaultId, secretId));
         assertFalse(Files.exists(deletedFile(secretId)));
     }
 
@@ -149,6 +150,35 @@ class FileVaultStoreTest {
         assertEquals("alice@example.com", metadata.classification().account());
         assertEquals(Set.of("work"), metadata.classification().labels());
         assertEquals(Map.of("project", "keystead"), metadata.profile().attributes());
+    }
+
+    @Test
+    void loadSecretRecordRejectsDifferentVaultWhenHeaderExists() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultId otherVaultId = vaultId(99L);
+        SecretId secretId = secretId(99L);
+        String recordFile = savedSecretRecordFileFor(otherVaultId, secretId);
+        store.saveVaultHeader(header());
+        Files.createDirectories(secretFile(secretId).getParent());
+        Files.writeString(secretFile(secretId), recordFile);
+
+        assertThrows(StoreException.class, () -> store.loadSecretRecord(otherVaultId, secretId));
+        assertEquals(Optional.empty(), store.loadSecretRecord(header().vaultId(), secretId));
+    }
+
+    @Test
+    void loadDeletedSecretRecordRejectsDifferentVaultWhenHeaderExists() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultId otherVaultId = vaultId(99L);
+        SecretId secretId = secretId(99L);
+        String tombstoneFile = savedDeletedRecordFileFor(otherVaultId, secretId);
+        store.saveVaultHeader(header());
+        Files.createDirectories(deletedFile(secretId).getParent());
+        Files.writeString(deletedFile(secretId), tombstoneFile);
+
+        assertThrows(
+                StoreException.class, () -> store.loadDeletedSecretRecord(otherVaultId, secretId));
+        assertEquals(Optional.empty(), store.loadDeletedSecretRecord(header().vaultId(), secretId));
     }
 
     @Test
@@ -176,6 +206,35 @@ class FileVaultStoreTest {
 
         assertEquals(List.of(valid.metadata()), store.listMetadata(valid.vaultId()));
         assertEquals(List.of(valid), store.listSecretRecords(valid.vaultId()));
+    }
+
+    @Test
+    void listSecretRecordsRejectsDifferentVaultWhenHeaderExists() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultId otherVaultId = vaultId(99L);
+        SecretId secretId = secretId(99L);
+        String recordFile = savedSecretRecordFileFor(otherVaultId, secretId);
+        store.saveVaultHeader(header());
+        Files.createDirectories(secretFile(secretId).getParent());
+        Files.writeString(secretFile(secretId), recordFile);
+
+        assertThrows(StoreException.class, () -> store.listSecretRecords(otherVaultId));
+        assertThrows(StoreException.class, () -> store.listMetadata(otherVaultId));
+        assertEquals(List.of(), store.listSecretRecords(header().vaultId()));
+    }
+
+    @Test
+    void listDeletedSecretRecordsRejectsDifferentVaultWhenHeaderExists() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultId otherVaultId = vaultId(99L);
+        SecretId secretId = secretId(99L);
+        String tombstoneFile = savedDeletedRecordFileFor(otherVaultId, secretId);
+        store.saveVaultHeader(header());
+        Files.createDirectories(deletedFile(secretId).getParent());
+        Files.writeString(deletedFile(secretId), tombstoneFile);
+
+        assertThrows(StoreException.class, () -> store.listDeletedSecretRecords(otherVaultId));
+        assertEquals(List.of(), store.listDeletedSecretRecords(header().vaultId()));
     }
 
     @Test
@@ -353,7 +412,7 @@ class FileVaultStoreTest {
                         store.commitMutation(
                                 otherVaultId, revision -> fail("mutation should not run")));
         assertTrue(Files.exists(secretFile(secretId)));
-        assertEquals(List.of(tombstone), store.listDeletedSecretRecords(otherVaultId));
+        assertThrows(StoreException.class, () -> store.listDeletedSecretRecords(otherVaultId));
         assertEquals(List.of(), store.listSecretRecords(rootVaultId));
     }
 
@@ -777,6 +836,24 @@ class FileVaultStoreTest {
 
     private @NonNull Path deletedFile(@NonNull SecretId secretId) {
         return tempDir.resolve("deleted").resolve(secretId.value() + ".properties");
+    }
+
+    private @NonNull String savedSecretRecordFileFor(
+            @NonNull VaultId vaultId, @NonNull SecretId secretId) throws IOException {
+        VaultStore setupStore = new FileVaultStore(tempDir);
+        setupStore.saveSecretRecord(record(vaultId, secretId, "Wrong vault", 1L));
+        String value = Files.readString(secretFile(secretId));
+        Files.deleteIfExists(secretFile(secretId));
+        return value;
+    }
+
+    private @NonNull String savedDeletedRecordFileFor(
+            @NonNull VaultId vaultId, @NonNull SecretId secretId) throws IOException {
+        VaultStore setupStore = new FileVaultStore(tempDir);
+        setupStore.saveDeletedSecretRecord(deleted(vaultId, secretId, 1L));
+        String value = Files.readString(deletedFile(secretId));
+        Files.deleteIfExists(deletedFile(secretId));
+        return value;
     }
 
     private static void await(@NonNull CountDownLatch latch) {
