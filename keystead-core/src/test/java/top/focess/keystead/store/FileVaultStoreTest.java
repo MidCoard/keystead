@@ -44,6 +44,29 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void saveVaultHeaderRejectsChangingVaultIdentity() {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultHeader first = header();
+        VaultHeader second =
+                new VaultHeader(
+                        new VaultId(UUID.fromString("00000000-0000-0000-0000-000000000099")),
+                        first.formatVersion(),
+                        first.kdfAlgorithm(),
+                        first.kdfSalt(),
+                        first.kdfIterations(),
+                        first.vaultKeyId(),
+                        first.wrappedVaultKey(),
+                        first.createdAt(),
+                        first.updatedAt());
+
+        store.saveVaultHeader(first);
+
+        assertThrows(StoreException.class, () -> store.saveVaultHeader(second));
+        assertEquals(Optional.of(first), store.loadVaultHeader(first.vaultId()));
+        assertEquals(Optional.empty(), store.loadVaultHeader(second.vaultId()));
+    }
+
+    @Test
     void savesAndLoadsEncryptedSecretRecord() {
         VaultStore store = new FileVaultStore(tempDir);
         EncryptedSecretRecord record = record();

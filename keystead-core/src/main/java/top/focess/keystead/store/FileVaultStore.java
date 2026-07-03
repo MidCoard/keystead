@@ -49,6 +49,13 @@ public final class FileVaultStore implements VaultStore {
     @Override
     public void saveVaultHeader(@NonNull VaultHeader header) {
         Objects.requireNonNull(header, "header");
+        Path path = vaultDirectory.resolve(VAULT_FILE);
+        if (Files.exists(path)) {
+            VaultHeader existing = readHeader(load(path));
+            if (!existing.vaultId().equals(header.vaultId())) {
+                throw new StoreException("Vault directory already belongs to another vault", null);
+            }
+        }
         Properties properties = new Properties();
         properties.setProperty("vaultId", header.vaultId().value().toString());
         properties.setProperty("formatVersion", Integer.toString(header.formatVersion()));
@@ -59,7 +66,7 @@ public final class FileVaultStore implements VaultStore {
         properties.setProperty("wrappedVaultKey", b64(header.wrappedVaultKey()));
         properties.setProperty("createdAt", header.createdAt().toString());
         properties.setProperty("updatedAt", header.updatedAt().toString());
-        store(properties, vaultDirectory.resolve(VAULT_FILE));
+        store(properties, path);
     }
 
     @Override
