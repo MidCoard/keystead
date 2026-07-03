@@ -81,9 +81,11 @@ final class BackupArchiveCodec {
                         manifest = readManifest(properties);
                     } else if (name.equals(VAULT_ENTRY)) {
                         vaultHeader = readVault(properties);
-                    } else if (name.startsWith(RECORDS_PREFIX) && name.endsWith(PROPERTIES_SUFFIX)) {
+                    } else if (name.startsWith(RECORDS_PREFIX)
+                            && name.endsWith(PROPERTIES_SUFFIX)) {
                         records.add(readRecord(properties));
-                    } else if (name.startsWith(DELETED_PREFIX) && name.endsWith(PROPERTIES_SUFFIX)) {
+                    } else if (name.startsWith(DELETED_PREFIX)
+                            && name.endsWith(PROPERTIES_SUFFIX)) {
                         tombstones.add(readDeleted(properties));
                     }
                 } catch (RuntimeException e) {
@@ -255,7 +257,8 @@ final class BackupArchiveCodec {
         properties.setProperty("classification.labels", encodedSet(classification.labels()));
     }
 
-    private static @NonNull SecretClassification readClassification(@NonNull Properties properties) {
+    private static @NonNull SecretClassification readClassification(
+            @NonNull Properties properties) {
         return new SecretClassification(
                 optional(properties, "classification.category"),
                 optional(properties, "classification.provider"),
@@ -286,7 +289,10 @@ final class BackupArchiveCodec {
     }
 
     private static @NonNull String encodedSet(@NonNull Set<String> values) {
-        return values.stream().sorted().map(BackupArchiveCodec::b64).collect(Collectors.joining(","));
+        return values.stream()
+                .sorted()
+                .map(BackupArchiveCodec::b64)
+                .collect(Collectors.joining(","));
     }
 
     private static @NonNull Map<String, String> encodedMap(@NonNull String encoded) {

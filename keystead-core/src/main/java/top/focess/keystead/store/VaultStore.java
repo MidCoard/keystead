@@ -1,6 +1,7 @@
 package top.focess.keystead.store;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.*;
@@ -14,6 +15,14 @@ public interface VaultStore {
     long nextRevision(@NonNull VaultId vaultId);
 
     void recordRevision(@NonNull VaultId vaultId, long revision);
+
+    default void commitMutation(@NonNull VaultId vaultId, @NonNull VaultMutation mutation) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(mutation, "mutation");
+        synchronized (this) {
+            mutation.commit(nextRevision(vaultId));
+        }
+    }
 
     void saveSecretRecord(@NonNull EncryptedSecretRecord record);
 

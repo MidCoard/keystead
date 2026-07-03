@@ -60,20 +60,22 @@ public final class SecretTypeSchema {
     }
 
     private static final Map<SecretType, SecretTypeSchema> DEFAULTS = buildDefaults();
-    private static final List<SecretTypeSchema> DEFAULT_LIST =
-            List.copyOf(DEFAULTS.values());
+    private static final List<SecretTypeSchema> DEFAULT_LIST = List.copyOf(DEFAULTS.values());
 
-    private static Map<SecretType, SecretTypeSchema> buildDefaults() {
+    private static @NonNull Map<SecretType, SecretTypeSchema> buildDefaults() {
         Map<SecretType, SecretTypeSchema> map = new LinkedHashMap<>();
         map.put(
                 SecretType.LOGIN_PASSWORD,
                 new SecretTypeSchema(
                         SecretType.LOGIN_PASSWORD,
                         List.of(
-                                new SecretFieldSchema("username", SecretFieldType.SECRET, true, true),
-                                new SecretFieldSchema("password", SecretFieldType.SECRET, true, true),
+                                new SecretFieldSchema(
+                                        "username", SecretFieldType.SECRET, true, true),
+                                new SecretFieldSchema(
+                                        "password", SecretFieldType.SECRET, true, true),
                                 new SecretFieldSchema("url", SecretFieldType.TEXT, false, true),
-                                new SecretFieldSchema("notes", SecretFieldType.SECRET, false, true)),
+                                new SecretFieldSchema(
+                                        "notes", SecretFieldType.SECRET, false, true)),
                         false));
         map.put(
                 SecretType.SECURE_NOTE,
@@ -86,8 +88,10 @@ public final class SecretTypeSchema {
                 new SecretTypeSchema(
                         SecretType.SSH_KEY,
                         List.of(
-                                new SecretFieldSchema("publicKey", SecretFieldType.TEXT, true, true),
-                                new SecretFieldSchema("privateKey", SecretFieldType.SECRET, true, true),
+                                new SecretFieldSchema(
+                                        "publicKey", SecretFieldType.TEXT, true, true),
+                                new SecretFieldSchema(
+                                        "privateKey", SecretFieldType.SECRET, true, true),
                                 new SecretFieldSchema(
                                         "passphrase", SecretFieldType.SECRET, false, true)),
                         false));
@@ -96,8 +100,10 @@ public final class SecretTypeSchema {
                 new SecretTypeSchema(
                         SecretType.GPG_KEY,
                         List.of(
-                                new SecretFieldSchema("publicKey", SecretFieldType.TEXT, true, true),
-                                new SecretFieldSchema("privateKey", SecretFieldType.SECRET, true, true),
+                                new SecretFieldSchema(
+                                        "publicKey", SecretFieldType.TEXT, true, true),
+                                new SecretFieldSchema(
+                                        "privateKey", SecretFieldType.SECRET, true, true),
                                 new SecretFieldSchema(
                                         "passphrase", SecretFieldType.SECRET, false, true)),
                         false));
@@ -107,7 +113,8 @@ public final class SecretTypeSchema {
                         SecretType.API_TOKEN,
                         List.of(
                                 new SecretFieldSchema("token", SecretFieldType.SECRET, true, true),
-                                new SecretFieldSchema("notes", SecretFieldType.SECRET, false, true)),
+                                new SecretFieldSchema(
+                                        "notes", SecretFieldType.SECRET, false, true)),
                         false));
         map.put(
                 SecretType.MFA_SECRET,

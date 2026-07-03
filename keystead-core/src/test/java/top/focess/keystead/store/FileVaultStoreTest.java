@@ -18,6 +18,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -109,6 +115,127 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void newerTombstoneHidesStaleSecretRecordAfterInterruptedDelete() {
+        VaultStore store = new FileVaultStore(tempDir);
+        EncryptedSecretRecord record = record(secretId(2L), "GitHub", 1L);
+        DeletedSecretRecord tombstone = deleted(record, 2L);
+
+        store.saveSecretRecord(record);
+        store.saveDeletedSecretRecord(tombstone);
+
+        assertEquals(
+                Optional.empty(), store.loadSecretRecord(record.vaultId(), record.metadata().id()));
+        assertEquals(List.of(), store.listSecretRecords(record.vaultId()));
+        assertEquals(List.of(), store.listMetadata(record.vaultId()));
+        assertEquals(List.of(tombstone), store.listDeletedSecretRecords(record.vaultId()));
+    }
+
+    @Test
+    void newerSecretRecordHidesStaleTombstoneAfterInterruptedRestore() {
+        VaultStore store = new FileVaultStore(tempDir);
+        EncryptedSecretRecord record = record(secretId(2L), "GitHub", 2L);
+        DeletedSecretRecord staleTombstone = deleted(record, 1L);
+
+        store.saveSecretRecord(record);
+        store.saveDeletedSecretRecord(staleTombstone);
+
+        assertEquals(
+                Optional.empty(),
+                store.loadDeletedSecretRecord(record.vaultId(), record.metadata().id()));
+        assertEquals(List.of(), store.listDeletedSecretRecords(record.vaultId()));
+        assertEquals(List.of(record), store.listSecretRecords(record.vaultId()));
+        assertEquals(List.of(record.metadata()), store.listMetadata(record.vaultId()));
+    }
+
+    @Test
+    void saveSecretRecordSkipsRecordOlderThanExistingTombstone() {
+        VaultStore store = new FileVaultStore(tempDir);
+        SecretId secretId = secretId(2L);
+        DeletedSecretRecord tombstone = deleted(secretId, 2L);
+        EncryptedSecretRecord staleRecord = record(secretId, "GitHub", 1L);
+
+        store.saveDeletedSecretRecord(tombstone);
+        store.saveSecretRecord(staleRecord);
+
+        assertEquals(List.of(), store.listSecretRecords(staleRecord.vaultId()));
+        assertEquals(List.of(tombstone), store.listDeletedSecretRecords(staleRecord.vaultId()));
+        assertFalse(Files.exists(secretFile(secretId)));
+        assertTrue(Files.exists(deletedFile(secretId)));
+    }
+
+    @Test
+    void saveDeletedSecretRecordDeletesOlderSecretRecord() {
+        VaultStore store = new FileVaultStore(tempDir);
+        SecretId secretId = secretId(2L);
+        EncryptedSecretRecord record = record(secretId, "GitHub", 1L);
+        DeletedSecretRecord tombstone = deleted(secretId, 2L);
+
+        store.saveSecretRecord(record);
+        store.saveDeletedSecretRecord(tombstone);
+
+        assertEquals(List.of(), store.listSecretRecords(record.vaultId()));
+        assertEquals(List.of(tombstone), store.listDeletedSecretRecords(record.vaultId()));
+        assertFalse(Files.exists(secretFile(secretId)));
+        assertTrue(Files.exists(deletedFile(secretId)));
+    }
+
+    @Test
+    void saveDeletedSecretRecordSkipsTombstoneOlderThanExistingRecord() {
+        VaultStore store = new FileVaultStore(tempDir);
+        SecretId secretId = secretId(2L);
+        EncryptedSecretRecord record = record(secretId, "GitHub", 2L);
+        DeletedSecretRecord staleTombstone = deleted(secretId, 1L);
+
+        store.saveSecretRecord(record);
+        store.saveDeletedSecretRecord(staleTombstone);
+
+        assertEquals(List.of(record), store.listSecretRecords(record.vaultId()));
+        assertEquals(List.of(), store.listDeletedSecretRecords(record.vaultId()));
+        assertTrue(Files.exists(secretFile(secretId)));
+        assertFalse(Files.exists(deletedFile(secretId)));
+    }
+
+    @Test
+    void commitMutationRecoversStaleSecretRecordFile() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultId vaultId = header().vaultId();
+        SecretId secretId = secretId(2L);
+        EncryptedSecretRecord record = record(secretId, "GitHub", 1L);
+        DeletedSecretRecord tombstone = deleted(secretId, 2L);
+
+        store.saveSecretRecord(record);
+        String staleRecordFile = Files.readString(secretFile(secretId));
+        store.saveDeletedSecretRecord(tombstone);
+        Files.createDirectories(secretFile(secretId).getParent());
+        Files.writeString(secretFile(secretId), staleRecordFile);
+
+        store.commitMutation(vaultId, revision -> assertEquals(3L, revision));
+
+        assertFalse(Files.exists(secretFile(secretId)));
+        assertEquals(List.of(tombstone), store.listDeletedSecretRecords(vaultId));
+    }
+
+    @Test
+    void commitMutationRecoversStaleTombstoneFile() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultId vaultId = header().vaultId();
+        SecretId secretId = secretId(2L);
+        DeletedSecretRecord tombstone = deleted(secretId, 1L);
+        EncryptedSecretRecord record = record(secretId, "GitHub", 2L);
+
+        store.saveDeletedSecretRecord(tombstone);
+        String staleTombstoneFile = Files.readString(deletedFile(secretId));
+        store.saveSecretRecord(record);
+        Files.createDirectories(deletedFile(secretId).getParent());
+        Files.writeString(deletedFile(secretId), staleTombstoneFile);
+
+        store.commitMutation(vaultId, revision -> assertEquals(3L, revision));
+
+        assertFalse(Files.exists(deletedFile(secretId)));
+        assertEquals(List.of(record), store.listSecretRecords(vaultId));
+    }
+
+    @Test
     void secretRecordFileDoesNotContainPlaintextSecretValues() throws IOException {
         VaultStore store = new FileVaultStore(tempDir);
         EncryptedSecretRecord record = record();
@@ -122,6 +249,130 @@ class FileVaultStoreTest {
         assertFalse(file.contains("alice@example.com"));
         assertFalse(file.contains("secret-password"));
         assertFalse(file.contains("private note"));
+    }
+
+    @Test
+    void nextRevisionDoesNotAdvanceDurableRevisionUntilRecordCommits() {
+        VaultStore store = new FileVaultStore(tempDir);
+        EncryptedSecretRecord record = record();
+
+        assertEquals(1L, store.nextRevision(record.vaultId()));
+        assertEquals(1L, store.nextRevision(record.vaultId()));
+
+        store.saveSecretRecord(record);
+
+        assertEquals(2L, store.nextRevision(record.vaultId()));
+    }
+
+    @Test
+    void nextRevisionRecoversFromStaleDurableRevisionIndex() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultId vaultId = header().vaultId();
+        store.saveSecretRecord(record(secretId(20L), "first", 1L));
+        store.saveSecretRecord(record(secretId(21L), "second", 2L));
+        Files.writeString(
+                tempDir.resolve("revisions.properties"),
+                "vault." + vaultId.value() + ".lastRevision=1\n");
+
+        assertEquals(3L, store.nextRevision(vaultId));
+    }
+
+    @Test
+    void committedMutationsSerializeRevisionAllocationAndWrites() throws Exception {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultId vaultId = header().vaultId();
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> first =
+                    executor.submit(
+                            () -> {
+                                await(start);
+                                store.commitMutation(
+                                        vaultId,
+                                        revision ->
+                                                store.saveSecretRecord(
+                                                        record(secretId(20L), "first", revision)));
+                            });
+            Future<?> second =
+                    executor.submit(
+                            () -> {
+                                await(start);
+                                store.commitMutation(
+                                        vaultId,
+                                        revision ->
+                                                store.saveSecretRecord(
+                                                        record(secretId(21L), "second", revision)));
+                            });
+
+            start.countDown();
+
+            first.get(5, TimeUnit.SECONDS);
+            second.get(5, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertEquals(
+                List.of(1L, 2L),
+                store.listSecretRecords(vaultId).stream()
+                        .map(EncryptedSecretRecord::revision)
+                        .sorted()
+                        .toList());
+    }
+
+    @Test
+    void committedMutationsSerializeAcrossStoreInstances() throws Exception {
+        VaultStore firstStore = new FileVaultStore(tempDir);
+        VaultStore secondStore = new FileVaultStore(tempDir);
+        VaultId vaultId = header().vaultId();
+        CountDownLatch firstAllocated = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        CountDownLatch secondAllocated = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> first =
+                    executor.submit(
+                            () ->
+                                    firstStore.commitMutation(
+                                            vaultId,
+                                            revision -> {
+                                                firstAllocated.countDown();
+                                                await(releaseFirst);
+                                                firstStore.saveSecretRecord(
+                                                        record(secretId(30L), "first", revision));
+                                            }));
+            assertTrue(
+                    firstAllocated.await(5, TimeUnit.SECONDS),
+                    "first mutation did not allocate a revision");
+
+            Future<?> second =
+                    executor.submit(
+                            () ->
+                                    secondStore.commitMutation(
+                                            vaultId,
+                                            revision -> {
+                                                secondAllocated.countDown();
+                                                secondStore.saveSecretRecord(
+                                                        record(secretId(31L), "second", revision));
+                                            }));
+
+            secondAllocated.await(250, TimeUnit.MILLISECONDS);
+            releaseFirst.countDown();
+
+            first.get(5, TimeUnit.SECONDS);
+            second.get(5, TimeUnit.SECONDS);
+        } finally {
+            releaseFirst.countDown();
+            executor.shutdownNow();
+        }
+
+        assertEquals(
+                List.of(1L, 2L),
+                firstStore.listSecretRecords(vaultId).stream()
+                        .map(EncryptedSecretRecord::revision)
+                        .sorted()
+                        .toList());
     }
 
     @Test
@@ -156,6 +407,69 @@ class FileVaultStoreTest {
         } finally {
             releaseDirectoryNewFileCreation(tempDir);
         }
+    }
+
+    @Test
+    void storeForcesTempFileAndParentDirectoryWhenCommittingProperties() {
+        List<String> forcedPaths = new ArrayList<>();
+        VaultStore store =
+                new FileVaultStore(
+                        tempDir,
+                        (path, metadata) ->
+                                forcedPaths.add(
+                                        tempDir.relativize(path).toString() + ":" + metadata));
+
+        store.saveVaultHeader(header());
+
+        assertEquals(2, forcedPaths.size());
+        assertTrue(forcedPaths.get(0).startsWith("vault.properties."));
+        assertTrue(
+                forcedPaths.get(0).endsWith(".tmp:true"),
+                "properties writes must flush the temp file before the atomic move");
+        assertEquals(
+                ":true", forcedPaths.get(1), "properties writes must flush the parent directory");
+    }
+
+    @Test
+    void eachPropertiesCommitUsesUniqueSiblingTempFile() {
+        List<String> tempFiles = new ArrayList<>();
+        VaultStore store =
+                new FileVaultStore(
+                        tempDir,
+                        (path, metadata) -> {
+                            String fileName = path.getFileName().toString();
+                            if (fileName.startsWith("vault.properties")
+                                    && fileName.endsWith(".tmp")) {
+                                tempFiles.add(fileName);
+                            }
+                        });
+
+        store.saveVaultHeader(header());
+        store.saveVaultHeader(header());
+
+        assertEquals(2, tempFiles.size());
+        assertEquals(
+                2,
+                Set.copyOf(tempFiles).size(),
+                "independent commits must not share a deterministic temp file name");
+    }
+
+    @Test
+    void deleteSecretRecordForcesParentDirectoryAfterRemovingRecord() {
+        List<String> forcedPaths = new ArrayList<>();
+        VaultStore store =
+                new FileVaultStore(
+                        tempDir,
+                        (path, metadata) ->
+                                forcedPaths.add(
+                                        tempDir.relativize(path).toString() + ":" + metadata));
+        EncryptedSecretRecord record = record();
+        store.saveSecretRecord(record);
+        forcedPaths.clear();
+
+        store.deleteSecretRecord(record.vaultId(), record.metadata().id());
+
+        assertEquals(List.of("secrets:true"), forcedPaths);
     }
 
     private static boolean restrictDirectoryNewFileCreation(Path directory) {
@@ -223,12 +537,17 @@ class FileVaultStoreTest {
     }
 
     private static EncryptedSecretRecord record() {
+        return record(secretId(2L), "GitHub", 1L);
+    }
+
+    private static EncryptedSecretRecord record(
+            @NonNull SecretId secretId, @NonNull String title, long revision) {
         SecretMetadata metadata =
                 new SecretMetadata(
-                        new SecretId(UUID.fromString("00000000-0000-0000-0000-000000000002")),
+                        secretId,
                         SecretType.LOGIN_PASSWORD,
                         new SecretProfile(
-                                "GitHub",
+                                title,
                                 new SecretClassification(
                                         "development",
                                         "github",
@@ -239,7 +558,7 @@ class FileVaultStoreTest {
                                 Map.of("project", "keystead")),
                         Instant.parse("2026-07-02T00:00:00Z"),
                         Instant.parse("2026-07-02T00:01:00Z"),
-                        1L);
+                        revision);
         EncryptedEnvelope envelope =
                 new EncryptedEnvelope(
                         1,
@@ -253,6 +572,43 @@ class FileVaultStoreTest {
                 new VaultId(UUID.fromString("00000000-0000-0000-0000-000000000001")),
                 metadata,
                 envelope,
-                1L);
+                revision);
+    }
+
+    private static SecretId secretId(long suffix) {
+        return new SecretId(new UUID(0L, suffix));
+    }
+
+    private static DeletedSecretRecord deleted(
+            @NonNull EncryptedSecretRecord record, long revision) {
+        return deleted(record.metadata().id(), revision);
+    }
+
+    private static DeletedSecretRecord deleted(@NonNull SecretId secretId, long revision) {
+        return new DeletedSecretRecord(
+                header().vaultId(),
+                secretId,
+                SecretType.LOGIN_PASSWORD,
+                revision,
+                Instant.parse("2026-07-02T00:03:00Z"));
+    }
+
+    private @NonNull Path secretFile(@NonNull SecretId secretId) {
+        return tempDir.resolve("secrets").resolve(secretId.value() + ".properties");
+    }
+
+    private @NonNull Path deletedFile(@NonNull SecretId secretId) {
+        return tempDir.resolve("deleted").resolve(secretId.value() + ".properties");
+    }
+
+    private static void await(@NonNull CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                fail("timed out waiting for concurrent vault mutation");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            fail("interrupted while waiting for concurrent vault mutation");
+        }
     }
 }

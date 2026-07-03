@@ -14,17 +14,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
 import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.DeviceKeyPair;
+import top.focess.keystead.crypto.VaultKey;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretDestroyedException;
 import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretClassification;
 import top.focess.keystead.model.SecretId;
+import top.focess.keystead.model.SecretMetadata;
+import top.focess.keystead.model.VaultHeader;
 import top.focess.keystead.model.VaultId;
 import top.focess.keystead.store.FileVaultStore;
 
@@ -82,6 +91,40 @@ class VaultServiceTest {
 
         assertThrows(
                 CryptoException.class, () -> service.openVault(VAULT_ID, chars("wrong-password")));
+    }
+
+    @Test
+    void openVaultAcceptsApprovedSha512KdfHeader() {
+        FileVaultStore store = new FileVaultStore(tempDir);
+        DefaultCryptoService crypto = new DefaultCryptoService();
+        VaultService service = new DefaultVaultService(store, crypto, CLOCK);
+        KeyId keyId = new KeyId("vault-key-" + VAULT_ID.value());
+
+        try (VaultKey key = crypto.generateVaultKey(keyId)) {
+            byte[] salt = crypto.randomSalt();
+            byte[] wrappedVaultKey =
+                    crypto.wrapVaultKey(
+                            key,
+                            master(),
+                            salt,
+                            DefaultCryptoService.DEFAULT_KDF_ITERATIONS,
+                            CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA512);
+            store.saveVaultHeader(
+                    new VaultHeader(
+                            VAULT_ID,
+                            1,
+                            CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA512,
+                            salt,
+                            DefaultCryptoService.DEFAULT_KDF_ITERATIONS,
+                            keyId,
+                            wrappedVaultKey,
+                            CLOCK.instant(),
+                            CLOCK.instant()));
+        }
+
+        try (VaultHandle vault = service.openVault(VAULT_ID, master())) {
+            assertEquals(VAULT_ID, vault.vaultId());
+        }
     }
 
     @Test
@@ -219,6 +262,39 @@ class VaultServiceTest {
     }
 
     @Test
+    void concurrentVaultHandlesSaveWithDistinctRevisions() throws Exception {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try (VaultHandle first = service.createVault(new CreateVaultRequest(VAULT_ID), master());
+                VaultHandle second = service.openVault(VAULT_ID, master())) {
+            CountDownLatch start = new CountDownLatch(1);
+            Future<SecretId> firstSave =
+                    executor.submit(
+                            () -> {
+                                await(start);
+                                return saveLogin(first, "GitHub", "alice@example.com");
+                            });
+            Future<SecretId> secondSave =
+                    executor.submit(
+                            () -> {
+                                await(start);
+                                return saveLogin(second, "Google", "alice@gmail.com");
+                            });
+
+            start.countDown();
+
+            assertNotNull(firstSave.get(5, TimeUnit.SECONDS));
+            assertNotNull(secondSave.get(5, TimeUnit.SECONDS));
+            assertEquals(
+                    List.of(1L, 2L),
+                    first.listSecrets().stream().map(SecretMetadata::revision).sorted().toList());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void updateStructuredSecretReplacesFieldsAndUsesNewRevision() {
         VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
 
@@ -315,17 +391,21 @@ class VaultServiceTest {
     }
 
     private static SecretId saveGitHubLogin(VaultHandle vault) {
+        return saveLogin(vault, "GitHub", "alice@example.com");
+    }
+
+    private static SecretId saveLogin(VaultHandle vault, String title, String account) {
         try (SecretBuffer username = SecretBuffer.fromChars(chars("alice@example.com"));
                 SecretBuffer password = SecretBuffer.fromChars(chars("secret-password"));
                 SecretBuffer notes = SecretBuffer.fromChars(chars("private note"))) {
             return vault.saveLogin(
                     draft ->
-                            draft.title("GitHub")
+                            draft.title(title)
                                     .classification(
                                             new SecretClassification(
                                                     "development",
-                                                    "github",
-                                                    "alice@example.com",
+                                                    title.toLowerCase(),
+                                                    account,
                                                     Set.of("work")))
                                     .attribute("project", "keystead")
                                     .tag("work")
@@ -333,6 +413,17 @@ class VaultServiceTest {
                                     .password(password)
                                     .url("https://github.com")
                                     .notes(notes));
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                fail("timed out waiting for concurrent vault save");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            fail("interrupted while waiting for concurrent vault save");
         }
     }
 

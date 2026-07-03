@@ -3,12 +3,17 @@ package top.focess.keystead.store;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -18,17 +23,27 @@ public final class FileVaultStore implements VaultStore {
 
     private static final String VAULT_FILE = "vault.properties";
     private static final String REVISION_FILE = "revisions.properties";
+    private static final String LOCK_FILE = ".keystead.lock";
+    private static final ConcurrentMap<Path, Object> PROCESS_LOCKS = new ConcurrentHashMap<>();
 
     private final Path vaultDirectory;
     private final Path secretsDirectory;
     private final Path deletedDirectory;
     private final Path revisionPath;
+    private final Path lockPath;
+    private final FileDurability durability;
 
     public FileVaultStore(@NonNull Path vaultDirectory) {
+        this(vaultDirectory, FileVaultStore::forcePath);
+    }
+
+    FileVaultStore(@NonNull Path vaultDirectory, @NonNull FileDurability durability) {
         this.vaultDirectory = Objects.requireNonNull(vaultDirectory, "vaultDirectory");
+        this.durability = Objects.requireNonNull(durability, "durability");
         this.secretsDirectory = vaultDirectory.resolve("secrets");
         this.deletedDirectory = vaultDirectory.resolve("deleted");
         this.revisionPath = vaultDirectory.resolve(REVISION_FILE);
+        this.lockPath = vaultDirectory.resolve(LOCK_FILE);
     }
 
     @Override
@@ -65,9 +80,7 @@ public final class FileVaultStore implements VaultStore {
     @Override
     public synchronized long nextRevision(@NonNull VaultId vaultId) {
         Objects.requireNonNull(vaultId, "vaultId");
-        long next = currentRevision(vaultId) + 1;
-        writeRevision(vaultId, next);
-        return next;
+        return currentRevision(vaultId) + 1;
     }
 
     @Override
@@ -82,8 +95,41 @@ public final class FileVaultStore implements VaultStore {
     }
 
     @Override
+    public void commitMutation(@NonNull VaultId vaultId, @NonNull VaultMutation mutation) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(mutation, "mutation");
+        synchronized (processLock(lockPath)) {
+            try {
+                Files.createDirectories(vaultDirectory);
+                try (FileChannel channel =
+                                FileChannel.open(
+                                        lockPath,
+                                        StandardOpenOption.CREATE,
+                                        StandardOpenOption.WRITE);
+                        FileLock lock = channel.lock()) {
+                    recoverVaultFiles(vaultId);
+                    mutation.commit(nextRevision(vaultId));
+                    channel.force(true);
+                }
+            } catch (IOException e) {
+                throw new StoreException("Could not lock vault mutation", e);
+            }
+        }
+    }
+
+    @Override
     public void saveSecretRecord(@NonNull EncryptedSecretRecord record) {
         Objects.requireNonNull(record, "record");
+        Optional<EncryptedSecretRecord> existing =
+                loadStoredSecretRecord(record.vaultId(), record.metadata().id());
+        if (existing.isPresent() && existing.get().revision() >= record.revision()) {
+            return;
+        }
+        Optional<DeletedSecretRecord> deleted =
+                loadStoredDeletedSecretRecord(record.vaultId(), record.metadata().id());
+        if (deleted.isPresent() && deleted.get().revision() >= record.revision()) {
+            return;
+        }
         Properties properties = new Properties();
         writeMetadata(properties, record.vaultId(), record.metadata());
         properties.setProperty("record.revision", Long.toString(record.revision()));
@@ -105,6 +151,12 @@ public final class FileVaultStore implements VaultStore {
             @NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Objects.requireNonNull(vaultId, "vaultId");
         Objects.requireNonNull(secretId, "secretId");
+        return loadStoredSecretRecord(vaultId, secretId)
+                .filter(record -> !isHiddenByNewerTombstone(record));
+    }
+
+    private @NonNull Optional<EncryptedSecretRecord> loadStoredSecretRecord(
+            @NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Path path = secretPath(secretId);
         if (!Files.exists(path)) {
             return Optional.empty();
@@ -124,23 +176,24 @@ public final class FileVaultStore implements VaultStore {
                         bytes(properties, "envelope.aad"),
                         bytes(properties, "envelope.ciphertext"),
                         Instant.parse(required(properties, "envelope.encryptedAt")));
-        return Optional.of(
+        EncryptedSecretRecord record =
                 new EncryptedSecretRecord(
                         storedVaultId,
                         metadata,
                         envelope,
-                        longValue(properties, "record.revision")));
+                        longValue(properties, "record.revision"));
+        return Optional.of(record);
     }
 
     @Override
     public void deleteSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Objects.requireNonNull(vaultId, "vaultId");
         Objects.requireNonNull(secretId, "secretId");
-        if (loadSecretRecord(vaultId, secretId).isEmpty()) {
+        if (loadStoredSecretRecord(vaultId, secretId).isEmpty()) {
             return;
         }
         try {
-            Files.deleteIfExists(secretPath(secretId));
+            deleteIfExistsDurably(secretPath(secretId));
         } catch (IOException e) {
             throw new StoreException("Could not delete secret record", e);
         }
@@ -149,6 +202,16 @@ public final class FileVaultStore implements VaultStore {
     @Override
     public void saveDeletedSecretRecord(@NonNull DeletedSecretRecord record) {
         Objects.requireNonNull(record, "record");
+        Optional<DeletedSecretRecord> deleted =
+                loadStoredDeletedSecretRecord(record.vaultId(), record.secretId());
+        if (deleted.isPresent() && deleted.get().revision() >= record.revision()) {
+            return;
+        }
+        Optional<EncryptedSecretRecord> existing =
+                loadStoredSecretRecord(record.vaultId(), record.secretId());
+        if (existing.isPresent() && existing.get().revision() > record.revision()) {
+            return;
+        }
         Properties properties = new Properties();
         properties.setProperty("vaultId", record.vaultId().value().toString());
         properties.setProperty("secretId", record.secretId().value().toString());
@@ -156,6 +219,7 @@ public final class FileVaultStore implements VaultStore {
         properties.setProperty("revision", Long.toString(record.revision()));
         properties.setProperty("deletedAt", record.deletedAt().toString());
         store(properties, deletedPath(record.secretId()));
+        deleteSecretRecord(record.vaultId(), record.secretId());
         recordRevision(record.vaultId(), record.revision());
     }
 
@@ -164,6 +228,12 @@ public final class FileVaultStore implements VaultStore {
             @NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Objects.requireNonNull(vaultId, "vaultId");
         Objects.requireNonNull(secretId, "secretId");
+        return loadStoredDeletedSecretRecord(vaultId, secretId)
+                .filter(record -> !isHiddenByNewerRecord(record));
+    }
+
+    private @NonNull Optional<DeletedSecretRecord> loadStoredDeletedSecretRecord(
+            @NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Path path = deletedPath(secretId);
         if (!Files.exists(path)) {
             return Optional.empty();
@@ -179,11 +249,11 @@ public final class FileVaultStore implements VaultStore {
     public void deleteDeletedSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Objects.requireNonNull(vaultId, "vaultId");
         Objects.requireNonNull(secretId, "secretId");
-        if (loadDeletedSecretRecord(vaultId, secretId).isEmpty()) {
+        if (loadStoredDeletedSecretRecord(vaultId, secretId).isEmpty()) {
             return;
         }
         try {
-            Files.deleteIfExists(deletedPath(secretId));
+            deleteIfExistsDurably(deletedPath(secretId));
         } catch (IOException e) {
             throw new StoreException("Could not delete tombstone record", e);
         }
@@ -198,6 +268,13 @@ public final class FileVaultStore implements VaultStore {
     @Override
     public @NonNull List<EncryptedSecretRecord> listSecretRecords(@NonNull VaultId vaultId) {
         Objects.requireNonNull(vaultId, "vaultId");
+        return listStoredSecretRecords(vaultId).stream()
+                .filter(record -> !isHiddenByNewerTombstone(record))
+                .sorted(Comparator.comparing(record -> record.metadata().id().value()))
+                .toList();
+    }
+
+    private @NonNull List<EncryptedSecretRecord> listStoredSecretRecords(@NonNull VaultId vaultId) {
         if (!Files.exists(secretsDirectory)) {
             return List.of();
         }
@@ -205,7 +282,6 @@ public final class FileVaultStore implements VaultStore {
             return stream.filter(path -> path.getFileName().toString().endsWith(".properties"))
                     .map(path -> readRecordSafely(path, vaultId))
                     .flatMap(Optional::stream)
-                    .sorted(Comparator.comparing(record -> record.metadata().id().value()))
                     .toList();
         } catch (IOException e) {
             throw new StoreException("Could not list secret records", e);
@@ -229,6 +305,14 @@ public final class FileVaultStore implements VaultStore {
     @Override
     public @NonNull List<DeletedSecretRecord> listDeletedSecretRecords(@NonNull VaultId vaultId) {
         Objects.requireNonNull(vaultId, "vaultId");
+        return listStoredDeletedSecretRecords(vaultId).stream()
+                .filter(record -> !isHiddenByNewerRecord(record))
+                .sorted(Comparator.comparing(record -> record.secretId().value()))
+                .toList();
+    }
+
+    private @NonNull List<DeletedSecretRecord> listStoredDeletedSecretRecords(
+            @NonNull VaultId vaultId) {
         if (!Files.exists(deletedDirectory)) {
             return List.of();
         }
@@ -236,7 +320,6 @@ public final class FileVaultStore implements VaultStore {
             return stream.filter(path -> path.getFileName().toString().endsWith(".properties"))
                     .map(path -> readDeletedRecordSafely(path, vaultId))
                     .flatMap(Optional::stream)
-                    .sorted(Comparator.comparing(record -> record.secretId().value()))
                     .toList();
         } catch (IOException e) {
             throw new StoreException("Could not list deleted secret records", e);
@@ -276,6 +359,26 @@ public final class FileVaultStore implements VaultStore {
                         envelope,
                         longValue(properties, "record.revision"));
         return record;
+    }
+
+    private boolean isHiddenByNewerTombstone(@NonNull EncryptedSecretRecord record) {
+        try {
+            return loadDeletedSecretRecord(record.vaultId(), record.metadata().id())
+                    .filter(deleted -> deleted.revision() >= record.revision())
+                    .isPresent();
+        } catch (StoreException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private boolean isHiddenByNewerRecord(@NonNull DeletedSecretRecord record) {
+        try {
+            return loadStoredSecretRecord(record.vaultId(), record.secretId())
+                    .filter(active -> active.revision() > record.revision())
+                    .isPresent();
+        } catch (StoreException | IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private @NonNull DeletedSecretRecord readDeletedRecord(@NonNull Properties properties) {
@@ -363,13 +466,26 @@ public final class FileVaultStore implements VaultStore {
         return deletedDirectory.resolve(secretId.value() + ".properties");
     }
 
+    private void recoverVaultFiles(@NonNull VaultId vaultId) {
+        listStoredSecretRecords(vaultId).stream()
+                .filter(this::isHiddenByNewerTombstone)
+                .forEach(record -> deleteSecretRecord(vaultId, record.metadata().id()));
+        listStoredDeletedSecretRecords(vaultId).stream()
+                .filter(this::isHiddenByNewerRecord)
+                .forEach(record -> deleteDeletedSecretRecord(vaultId, record.secretId()));
+    }
+
+    private static @NonNull Object processLock(@NonNull Path lockPath) {
+        return PROCESS_LOCKS.computeIfAbsent(
+                lockPath.toAbsolutePath().normalize(), path -> new Object());
+    }
+
     private synchronized long currentRevision(@NonNull VaultId vaultId) {
         Properties properties = Files.exists(revisionPath) ? load(revisionPath) : new Properties();
         @Nullable String value = properties.getProperty(revisionKey(vaultId));
-        if (value != null) {
-            return Long.parseLong(value);
-        }
-        return Math.max(maxSecretRevision(vaultId), maxDeletedRevision(vaultId));
+        long indexedRevision = value == null ? 0L : Long.parseLong(value);
+        return Math.max(
+                indexedRevision, Math.max(maxSecretRevision(vaultId), maxDeletedRevision(vaultId)));
     }
 
     private synchronized void writeRevision(@NonNull VaultId vaultId, long revision) {
@@ -397,27 +513,42 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private void store(@NonNull Properties properties, @NonNull Path path) {
-        Path temp = path.resolveSibling(path.getFileName().toString() + ".tmp");
+        @Nullable Path temp = null;
         try {
             Files.createDirectories(path.getParent());
+            temp =
+                    Files.createTempFile(
+                            path.getParent(), path.getFileName().toString() + ".", ".tmp");
             // Write to a sibling temp file, then atomically move it into place so a crash
             // or IO error mid-write cannot truncate the existing vault/record file.
-            try (OutputStream output = Files.newOutputStream(temp)) {
+            try (OutputStream output =
+                    Files.newOutputStream(
+                            temp, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
                 properties.store(output, "Keystead v0.1");
             }
+            durability.force(temp, true);
             Files.move(
                     temp,
                     path,
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
+            durability.force(path.getParent(), true);
         } catch (IOException e) {
             throw new StoreException("Could not store vault data", e);
         } finally {
             try {
-                Files.deleteIfExists(temp);
+                if (temp != null) {
+                    Files.deleteIfExists(temp);
+                }
             } catch (IOException ignored) {
                 // Best-effort cleanup of a leftover temp file.
             }
+        }
+    }
+
+    private void deleteIfExistsDurably(@NonNull Path path) throws IOException {
+        if (Files.deleteIfExists(path)) {
+            durability.force(path.getParent(), true);
         }
     }
 
@@ -516,4 +647,21 @@ public final class FileVaultStore implements VaultStore {
     private @NonNull String b64(byte @NonNull [] bytes) {
         return Base64.getEncoder().encodeToString(bytes);
     }
+
+    private static void forcePath(@NonNull Path path, boolean metadata) throws IOException {
+        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+            channel.force(metadata);
+        } catch (IOException e) {
+            if (Files.isDirectory(path)) {
+                return;
+            }
+            throw e;
+        }
+    }
+}
+
+@FunctionalInterface
+interface FileDurability {
+
+    void force(@NonNull Path path, boolean metadata) throws IOException;
 }

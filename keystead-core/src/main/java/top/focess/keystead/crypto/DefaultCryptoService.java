@@ -15,6 +15,8 @@ import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
@@ -25,9 +27,10 @@ import top.focess.keystead.model.KeyId;
 
 public final class DefaultCryptoService {
 
-    public static final String PAYLOAD_ALGORITHM = JdkAesGcmCipher.ALGORITHM;
-    public static final String DEVICE_KEY_ALGORITHM = "TINK_ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM";
-    public static final String KDF_ALGORITHM = "PBKDF2WithHmacSHA256";
+    public static final String PAYLOAD_ALGORITHM = CryptoAlgorithmRegistry.AEAD_AES_256_GCM;
+    public static final String DEVICE_KEY_ALGORITHM =
+            CryptoAlgorithmRegistry.DEVICE_TINK_ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM;
+    public static final String KDF_ALGORITHM = CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256;
     public static final int DEFAULT_KDF_ITERATIONS = 120_000;
 
     private static final int KEY_BYTES = 32;
@@ -35,6 +38,7 @@ public final class DefaultCryptoService {
 
     private final SecureRandom random;
     private final AeadCipher aeadCipher;
+    private final Map<String, AeadCipher> aeadCiphers;
 
     public DefaultCryptoService() {
         this(new SecureRandom());
@@ -47,6 +51,7 @@ public final class DefaultCryptoService {
     public DefaultCryptoService(@NonNull SecureRandom random, @NonNull AeadCipher aeadCipher) {
         this.random = Objects.requireNonNull(random, "random");
         this.aeadCipher = Objects.requireNonNull(aeadCipher, "aeadCipher");
+        this.aeadCiphers = aeadCiphers(aeadCipher);
     }
 
     public @NonNull VaultKey generateVaultKey(@NonNull KeyId keyId) {
@@ -115,7 +120,8 @@ public final class DefaultCryptoService {
                             + " does not match encrypted envelope key id "
                             + envelope.keyId().value());
         }
-        if (!aeadCipher.algorithm().equals(envelope.algorithm())) {
+        AeadCipher envelopeCipher = aeadCiphers.get(envelope.algorithm());
+        if (envelopeCipher == null) {
             throw new CryptoException("Unsupported encrypted envelope algorithm");
         }
         if (!Arrays.equals(envelope.aad(), aad)) {
@@ -124,7 +130,8 @@ public final class DefaultCryptoService {
         return withKeyBytes(
                 key,
                 keyBytes ->
-                        aeadCipher.decrypt(keyBytes, envelope.nonce(), envelope.ciphertext(), aad));
+                        envelopeCipher.decrypt(
+                                keyBytes, envelope.nonce(), envelope.ciphertext(), aad));
     }
 
     public byte @NonNull [] wrapVaultKey(
@@ -132,8 +139,17 @@ public final class DefaultCryptoService {
             char @NonNull [] masterPassword,
             byte @NonNull [] salt,
             int iterations) {
+        return wrapVaultKey(vaultKey, masterPassword, salt, iterations, KDF_ALGORITHM);
+    }
+
+    public byte @NonNull [] wrapVaultKey(
+            @NonNull VaultKey vaultKey,
+            char @NonNull [] masterPassword,
+            byte @NonNull [] salt,
+            int iterations,
+            @NonNull String kdfAlgorithm) {
         Objects.requireNonNull(vaultKey, "vaultKey");
-        byte[] wrappingKey = deriveWrappingKey(masterPassword, salt, iterations);
+        byte[] wrappingKey = deriveWrappingKey(masterPassword, salt, iterations, kdfAlgorithm);
         byte[] nonce = new byte[aeadCipher.nonceSizeBytes()];
         random.nextBytes(nonce);
         try {
@@ -162,13 +178,24 @@ public final class DefaultCryptoService {
             char @NonNull [] masterPassword,
             byte @NonNull [] salt,
             int iterations) {
+        return unwrapVaultKey(
+                keyId, wrappedVaultKey, masterPassword, salt, iterations, KDF_ALGORITHM);
+    }
+
+    public @NonNull VaultKey unwrapVaultKey(
+            @NonNull KeyId keyId,
+            byte @NonNull [] wrappedVaultKey,
+            char @NonNull [] masterPassword,
+            byte @NonNull [] salt,
+            int iterations,
+            @NonNull String kdfAlgorithm) {
         Objects.requireNonNull(keyId, "keyId");
         Objects.requireNonNull(wrappedVaultKey, "wrappedVaultKey");
         if (wrappedVaultKey.length <= aeadCipher.nonceSizeBytes()) {
             throw new CryptoException("Wrapped vault key is invalid");
         }
 
-        byte[] wrappingKey = deriveWrappingKey(masterPassword, salt, iterations);
+        byte[] wrappingKey = deriveWrappingKey(masterPassword, salt, iterations, kdfAlgorithm);
         byte[] nonce = Arrays.copyOfRange(wrappedVaultKey, 0, aeadCipher.nonceSizeBytes());
         byte[] ciphertext =
                 Arrays.copyOfRange(
@@ -232,9 +259,13 @@ public final class DefaultCryptoService {
     }
 
     private byte @NonNull [] deriveWrappingKey(
-            char @NonNull [] masterPassword, byte @NonNull [] salt, int iterations) {
+            char @NonNull [] masterPassword,
+            byte @NonNull [] salt,
+            int iterations,
+            @NonNull String kdfAlgorithm) {
         Objects.requireNonNull(masterPassword, "masterPassword");
         Objects.requireNonNull(salt, "salt");
+        Objects.requireNonNull(kdfAlgorithm, "kdfAlgorithm");
         if (iterations <= 0) {
             throw new IllegalArgumentException("KDF iterations must be positive");
         }
@@ -243,7 +274,10 @@ public final class DefaultCryptoService {
                 new PBEKeySpec(
                         passwordCopy, Arrays.copyOf(salt, salt.length), iterations, KEY_BYTES * 8);
         try {
-            return SecretKeyFactory.getInstance(KDF_ALGORITHM).generateSecret(spec).getEncoded();
+            if (!CryptoAlgorithmRegistry.isApprovedKdf(kdfAlgorithm)) {
+                throw new CryptoException("Unsupported vault key KDF algorithm");
+            }
+            return SecretKeyFactory.getInstance(kdfAlgorithm).generateSecret(spec).getEncoded();
         } catch (GeneralSecurityException e) {
             throw new CryptoException("Could not derive wrapping key", e);
         } finally {
@@ -271,6 +305,22 @@ public final class DefaultCryptoService {
         } catch (GeneralSecurityException e) {
             throw new CryptoException("Could not register hybrid crypto primitives", e);
         }
+    }
+
+    private static @NonNull Map<String, AeadCipher> aeadCiphers(@NonNull AeadCipher primary) {
+        Map<String, AeadCipher> ciphers = new LinkedHashMap<>();
+        registerAeadCipher(ciphers, new TinkAesGcmCipher());
+        registerAeadCipher(ciphers, new JdkChaCha20Poly1305Cipher());
+        registerAeadCipher(ciphers, primary);
+        return Map.copyOf(ciphers);
+    }
+
+    private static void registerAeadCipher(
+            @NonNull Map<String, AeadCipher> ciphers, @NonNull AeadCipher cipher) {
+        if (!CryptoAlgorithmRegistry.isApprovedAead(cipher.algorithm())) {
+            throw new IllegalArgumentException("Unsupported AEAD cipher: " + cipher.algorithm());
+        }
+        ciphers.put(cipher.algorithm(), cipher);
     }
 
     private static byte @NonNull [] writePublicKeyset(@NonNull KeysetHandle handle) {

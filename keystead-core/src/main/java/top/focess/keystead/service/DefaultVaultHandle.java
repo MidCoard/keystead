@@ -56,29 +56,35 @@ final class DefaultVaultHandle implements VaultHandle {
 
             SecretId secretId = new SecretId(UUID.randomUUID());
             Instant now = clock.instant();
-            long revision = store.nextRevision(vaultId);
-            SecretMetadata metadata =
-                    new SecretMetadata(
-                            secretId,
-                            SecretType.LOGIN_PASSWORD,
-                            new SecretProfile(
-                                    draft.title(),
-                                    draft.classification(),
-                                    draft.tags(),
-                                    draft.attributes()),
-                            now,
-                            now,
-                            revision);
-            payload = LoginPayloadCodec.encode(draft);
-            byte[] aad = aad(metadata, revision);
-            try {
-                EncryptedEnvelope envelope = crypto.encrypt(vaultKey, payload, aad, now);
-                store.saveSecretRecord(
-                        new EncryptedSecretRecord(vaultId, metadata, envelope, revision));
-                return secretId;
-            } finally {
-                wipe(aad);
-            }
+            byte[] encodedPayload = LoginPayloadCodec.encode(draft);
+            payload = encodedPayload;
+            store.commitMutation(
+                    vaultId,
+                    revision -> {
+                        SecretMetadata metadata =
+                                new SecretMetadata(
+                                        secretId,
+                                        SecretType.LOGIN_PASSWORD,
+                                        new SecretProfile(
+                                                draft.title(),
+                                                draft.classification(),
+                                                draft.tags(),
+                                                draft.attributes()),
+                                        now,
+                                        now,
+                                        revision);
+                        byte[] aad = aad(metadata, revision);
+                        try {
+                            EncryptedEnvelope envelope =
+                                    crypto.encrypt(vaultKey, encodedPayload, aad, now);
+                            store.saveSecretRecord(
+                                    new EncryptedSecretRecord(
+                                            vaultId, metadata, envelope, revision));
+                        } finally {
+                            wipe(aad);
+                        }
+                    });
+            return secretId;
         } finally {
             wipe(payload);
             draft.close();
@@ -106,28 +112,34 @@ final class DefaultVaultHandle implements VaultHandle {
             draft.validate();
 
             Instant now = clock.instant();
-            long revision = store.nextRevision(vaultId);
-            SecretMetadata metadata =
-                    new SecretMetadata(
-                            secretId,
-                            SecretType.LOGIN_PASSWORD,
-                            new SecretProfile(
-                                    draft.title(),
-                                    draft.classification(),
-                                    draft.tags(),
-                                    draft.attributes()),
-                            existing.metadata().createdAt(),
-                            now,
-                            revision);
-            payload = LoginPayloadCodec.encode(draft);
-            byte[] aad = aad(metadata, revision);
-            try {
-                EncryptedEnvelope envelope = crypto.encrypt(vaultKey, payload, aad, now);
-                store.saveSecretRecord(
-                        new EncryptedSecretRecord(vaultId, metadata, envelope, revision));
-            } finally {
-                wipe(aad);
-            }
+            byte[] encodedPayload = LoginPayloadCodec.encode(draft);
+            payload = encodedPayload;
+            store.commitMutation(
+                    vaultId,
+                    revision -> {
+                        SecretMetadata metadata =
+                                new SecretMetadata(
+                                        secretId,
+                                        SecretType.LOGIN_PASSWORD,
+                                        new SecretProfile(
+                                                draft.title(),
+                                                draft.classification(),
+                                                draft.tags(),
+                                                draft.attributes()),
+                                        existing.metadata().createdAt(),
+                                        now,
+                                        revision);
+                        byte[] aad = aad(metadata, revision);
+                        try {
+                            EncryptedEnvelope envelope =
+                                    crypto.encrypt(vaultKey, encodedPayload, aad, now);
+                            store.saveSecretRecord(
+                                    new EncryptedSecretRecord(
+                                            vaultId, metadata, envelope, revision));
+                        } finally {
+                            wipe(aad);
+                        }
+                    });
         } finally {
             wipe(payload);
             draft.close();
@@ -177,29 +189,35 @@ final class DefaultVaultHandle implements VaultHandle {
 
             SecretId secretId = new SecretId(UUID.randomUUID());
             Instant now = clock.instant();
-            long revision = store.nextRevision(vaultId);
-            SecretMetadata metadata =
-                    new SecretMetadata(
-                            secretId,
-                            SecretType.SECURE_NOTE,
-                            new SecretProfile(
-                                    draft.title(),
-                                    draft.classification(),
-                                    draft.tags(),
-                                    draft.attributes()),
-                            now,
-                            now,
-                            revision);
-            payload = SecureNotePayloadCodec.encode(draft);
-            byte[] aad = aad(metadata, revision);
-            try {
-                EncryptedEnvelope envelope = crypto.encrypt(vaultKey, payload, aad, now);
-                store.saveSecretRecord(
-                        new EncryptedSecretRecord(vaultId, metadata, envelope, revision));
-                return secretId;
-            } finally {
-                wipe(aad);
-            }
+            byte[] encodedPayload = SecureNotePayloadCodec.encode(draft);
+            payload = encodedPayload;
+            store.commitMutation(
+                    vaultId,
+                    revision -> {
+                        SecretMetadata metadata =
+                                new SecretMetadata(
+                                        secretId,
+                                        SecretType.SECURE_NOTE,
+                                        new SecretProfile(
+                                                draft.title(),
+                                                draft.classification(),
+                                                draft.tags(),
+                                                draft.attributes()),
+                                        now,
+                                        now,
+                                        revision);
+                        byte[] aad = aad(metadata, revision);
+                        try {
+                            EncryptedEnvelope envelope =
+                                    crypto.encrypt(vaultKey, encodedPayload, aad, now);
+                            store.saveSecretRecord(
+                                    new EncryptedSecretRecord(
+                                            vaultId, metadata, envelope, revision));
+                        } finally {
+                            wipe(aad);
+                        }
+                    });
+            return secretId;
         } finally {
             wipe(payload);
             draft.close();
@@ -252,29 +270,35 @@ final class DefaultVaultHandle implements VaultHandle {
 
             SecretId secretId = new SecretId(UUID.randomUUID());
             Instant now = clock.instant();
-            long revision = store.nextRevision(vaultId);
-            SecretMetadata metadata =
-                    new SecretMetadata(
-                            secretId,
-                            type,
-                            new SecretProfile(
-                                    draft.title(),
-                                    draft.classification(),
-                                    draft.tags(),
-                                    draft.attributes()),
-                            now,
-                            now,
-                            revision);
-            payload = StructuredSecretPayloadCodec.encode(draft);
-            byte[] aad = aad(metadata, revision);
-            try {
-                EncryptedEnvelope envelope = crypto.encrypt(vaultKey, payload, aad, now);
-                store.saveSecretRecord(
-                        new EncryptedSecretRecord(vaultId, metadata, envelope, revision));
-                return secretId;
-            } finally {
-                wipe(aad);
-            }
+            byte[] encodedPayload = StructuredSecretPayloadCodec.encode(draft);
+            payload = encodedPayload;
+            store.commitMutation(
+                    vaultId,
+                    revision -> {
+                        SecretMetadata metadata =
+                                new SecretMetadata(
+                                        secretId,
+                                        type,
+                                        new SecretProfile(
+                                                draft.title(),
+                                                draft.classification(),
+                                                draft.tags(),
+                                                draft.attributes()),
+                                        now,
+                                        now,
+                                        revision);
+                        byte[] aad = aad(metadata, revision);
+                        try {
+                            EncryptedEnvelope envelope =
+                                    crypto.encrypt(vaultKey, encodedPayload, aad, now);
+                            store.saveSecretRecord(
+                                    new EncryptedSecretRecord(
+                                            vaultId, metadata, envelope, revision));
+                        } finally {
+                            wipe(aad);
+                        }
+                    });
+            return secretId;
         } finally {
             wipe(payload);
             draft.close();
@@ -302,28 +326,34 @@ final class DefaultVaultHandle implements VaultHandle {
             draft.validate();
 
             Instant now = clock.instant();
-            long revision = store.nextRevision(vaultId);
-            SecretMetadata metadata =
-                    new SecretMetadata(
-                            secretId,
-                            type,
-                            new SecretProfile(
-                                    draft.title(),
-                                    draft.classification(),
-                                    draft.tags(),
-                                    draft.attributes()),
-                            existing.metadata().createdAt(),
-                            now,
-                            revision);
-            payload = StructuredSecretPayloadCodec.encode(draft);
-            byte[] aad = aad(metadata, revision);
-            try {
-                EncryptedEnvelope envelope = crypto.encrypt(vaultKey, payload, aad, now);
-                store.saveSecretRecord(
-                        new EncryptedSecretRecord(vaultId, metadata, envelope, revision));
-            } finally {
-                wipe(aad);
-            }
+            byte[] encodedPayload = StructuredSecretPayloadCodec.encode(draft);
+            payload = encodedPayload;
+            store.commitMutation(
+                    vaultId,
+                    revision -> {
+                        SecretMetadata metadata =
+                                new SecretMetadata(
+                                        secretId,
+                                        type,
+                                        new SecretProfile(
+                                                draft.title(),
+                                                draft.classification(),
+                                                draft.tags(),
+                                                draft.attributes()),
+                                        existing.metadata().createdAt(),
+                                        now,
+                                        revision);
+                        byte[] aad = aad(metadata, revision);
+                        try {
+                            EncryptedEnvelope envelope =
+                                    crypto.encrypt(vaultKey, encodedPayload, aad, now);
+                            store.saveSecretRecord(
+                                    new EncryptedSecretRecord(
+                                            vaultId, metadata, envelope, revision));
+                        } finally {
+                            wipe(aad);
+                        }
+                    });
         } finally {
             wipe(payload);
             draft.close();
@@ -363,19 +393,22 @@ final class DefaultVaultHandle implements VaultHandle {
     public void deleteSecret(@NonNull SecretId secretId) {
         Objects.requireNonNull(secretId, "secretId");
         requireOpen();
-        @Nullable EncryptedSecretRecord existing =
-                store.loadSecretRecord(vaultId, secretId).orElse(null);
-        if (existing != null) {
-            long revision = store.nextRevision(vaultId);
-            store.saveDeletedSecretRecord(
-                    new DeletedSecretRecord(
-                            vaultId,
-                            secretId,
-                            existing.metadata().type(),
-                            revision,
-                            clock.instant()));
-        }
-        store.deleteSecretRecord(vaultId, secretId);
+        store.commitMutation(
+                vaultId,
+                revision -> {
+                    @Nullable EncryptedSecretRecord existing =
+                            store.loadSecretRecord(vaultId, secretId).orElse(null);
+                    if (existing != null) {
+                        store.saveDeletedSecretRecord(
+                                new DeletedSecretRecord(
+                                        vaultId,
+                                        secretId,
+                                        existing.metadata().type(),
+                                        revision,
+                                        clock.instant()));
+                        store.deleteSecretRecord(vaultId, secretId);
+                    }
+                });
     }
 
     @Override

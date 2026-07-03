@@ -82,6 +82,29 @@ class CryptoServiceTest {
     }
 
     @Test
+    void decryptRejectsUnapprovedEnvelopeAlgorithm() {
+        try (VaultKey key = crypto.generateVaultKey(new KeyId("vault-key"))) {
+            EncryptedEnvelope envelope =
+                    new EncryptedEnvelope(
+                            1,
+                            "AES-ECB",
+                            key.keyId(),
+                            new byte[12],
+                            new byte[] {4, 5, 6},
+                            new byte[] {1, 2, 3},
+                            Instant.parse("2026-07-02T00:00:00Z"));
+
+            CryptoException ex =
+                    assertThrows(
+                            CryptoException.class,
+                            () -> crypto.decrypt(key, envelope, new byte[] {4, 5, 6}));
+
+            assertNull(ex.getCause());
+            assertTrue(ex.getMessage().toLowerCase().contains("unsupported"));
+        }
+    }
+
+    @Test
     void wrongMasterPasswordCannotUnwrapVaultKey() {
         try (VaultKey key = crypto.generateVaultKey(new KeyId("vault-key"))) {
             byte[] salt = crypto.randomSalt();
@@ -98,6 +121,31 @@ class CryptoServiceTest {
                                     new char[] {'w', 'r', 'o', 'n', 'g'},
                                     salt,
                                     120_000));
+        }
+    }
+
+    @Test
+    void approvedSha512KdfCanWrapAndUnwrapVaultKey() {
+        try (VaultKey key = crypto.generateVaultKey(new KeyId("vault-key"))) {
+            byte[] salt = crypto.randomSalt();
+            byte[] wrapped =
+                    crypto.wrapVaultKey(
+                            key,
+                            new char[] {'c', 'o', 'r', 'r', 'e', 'c', 't'},
+                            salt,
+                            120_000,
+                            CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA512);
+
+            try (VaultKey opened =
+                    crypto.unwrapVaultKey(
+                            new KeyId("vault-key"),
+                            wrapped,
+                            new char[] {'c', 'o', 'r', 'r', 'e', 'c', 't'},
+                            salt,
+                            120_000,
+                            CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA512)) {
+                assertArrayEquals(rawKeyBytes(key), rawKeyBytes(opened));
+            }
         }
     }
 

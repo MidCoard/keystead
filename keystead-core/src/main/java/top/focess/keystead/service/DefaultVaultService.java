@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.VaultKey;
 import top.focess.keystead.model.KeyId;
@@ -14,7 +15,8 @@ import top.focess.keystead.store.VaultStore;
 
 public final class DefaultVaultService implements VaultService {
 
-    public static final String DEVICE_KEY_PACKAGE_ALGORITHM = "TINK_DEVICE_KEY_PACKAGE";
+    public static final String DEVICE_KEY_PACKAGE_ALGORITHM =
+            CryptoAlgorithmRegistry.DEVICE_TINK_DEVICE_KEY_PACKAGE;
 
     private final VaultStore store;
     private final DefaultCryptoService crypto;
@@ -84,7 +86,7 @@ public final class DefaultVaultService implements VaultService {
         VaultHeader header =
                 store.loadVaultHeader(vaultId)
                         .orElseThrow(() -> new ValidationException("Vault does not exist"));
-        if (!DefaultCryptoService.KDF_ALGORITHM.equals(header.kdfAlgorithm())) {
+        if (!CryptoAlgorithmRegistry.isApprovedKdf(header.kdfAlgorithm())) {
             throw new ValidationException("Vault is not protected by a master password header");
         }
         VaultKey vaultKey =
@@ -93,7 +95,8 @@ public final class DefaultVaultService implements VaultService {
                         header.wrappedVaultKey(),
                         masterPassword,
                         header.kdfSalt(),
-                        header.kdfIterations());
+                        header.kdfIterations(),
+                        header.kdfAlgorithm());
         return new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
     }
 

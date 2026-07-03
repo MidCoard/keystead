@@ -6,9 +6,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.nio.file.ZipEntry;
-import java.nio.file.ZipInputStream;
-import java.nio.file.ZipOutputStream;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -16,6 +13,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import top.focess.keystead.model.*;
@@ -86,6 +86,59 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void restoreSkipsRecordOlderThanExistingTombstone() {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "older", 1L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+
+        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        target.saveVaultHeader(header());
+        target.saveDeletedSecretRecord(deleted(secretId(2L), 5L));
+
+        BackupImportReport report = backup.restore(target, archive);
+
+        assertEquals(0, report.imported());
+        assertEquals(1, report.skipped());
+        assertEquals(1, report.conflicts().size());
+        BackupConflict conflict = report.conflicts().get(0);
+        assertEquals(secretId(2L), conflict.secretId());
+        assertEquals(5L, conflict.existingRevision());
+        assertEquals(1L, conflict.incomingRevision());
+        assertEquals(List.of(), target.listSecretRecords(VAULT_ID));
+        assertEquals(1, target.listDeletedSecretRecords(VAULT_ID).size());
+        assertEquals(5L, target.listDeletedSecretRecords(VAULT_ID).getFirst().revision());
+    }
+
+    @Test
+    void restoreSkipsTombstoneOlderThanExistingRecord() {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveDeletedSecretRecord(deleted(secretId(2L), 1L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+
+        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        target.saveVaultHeader(header());
+        target.saveSecretRecord(record(secretId(2L), "newer", 5L));
+
+        BackupImportReport report = backup.restore(target, archive);
+
+        assertEquals(0, report.imported());
+        assertEquals(1, report.skipped());
+        assertEquals(0, report.tombstones());
+        assertEquals(1, report.conflicts().size());
+        BackupConflict conflict = report.conflicts().get(0);
+        assertEquals(secretId(2L), conflict.secretId());
+        assertEquals(5L, conflict.existingRevision());
+        assertEquals(1L, conflict.incomingRevision());
+        assertEquals(1, target.listSecretRecords(VAULT_ID).size());
+        assertEquals(5L, target.listSecretRecords(VAULT_ID).getFirst().revision());
+        assertEquals(List.of(), target.listDeletedSecretRecords(VAULT_ID));
+    }
+
+    @Test
     void archiveSurvivesSerializationRoundTrip() throws Exception {
         FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
         source.saveVaultHeader(header());
@@ -131,8 +184,11 @@ class VaultBackupServiceTest {
                 zip.write(in.readAllBytes());
                 zip.closeEntry();
             }
-            zip.putNextEntry(new ZipEntry("records/00000000-0000-0000-0000-000000000009.properties"));
-            zip.write("vaultId=00000000-0000-0000-0000-000000000001\n".getBytes(StandardCharsets.UTF_8));
+            zip.putNextEntry(
+                    new ZipEntry("records/00000000-0000-0000-0000-000000000009.properties"));
+            zip.write(
+                    "vaultId=00000000-0000-0000-0000-000000000001\n"
+                            .getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
         }
 

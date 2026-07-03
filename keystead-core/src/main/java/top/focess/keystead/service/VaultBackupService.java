@@ -34,16 +34,23 @@ public final class VaultBackupService {
         VaultHeader header =
                 store.loadVaultHeader(vaultId)
                         .orElseThrow(
-                                () -> new ValidationException("Vault not found for backup: " + vaultId));
+                                () ->
+                                        new ValidationException(
+                                                "Vault not found for backup: " + vaultId));
         List<EncryptedSecretRecord> records = store.listSecretRecords(vaultId);
         List<DeletedSecretRecord> tombstones = store.listDeletedSecretRecords(vaultId);
         BackupManifest manifest =
                 new BackupManifest(
-                        FORMAT_VERSION, vaultId, records.size(), tombstones.size(), clock.instant());
+                        FORMAT_VERSION,
+                        vaultId,
+                        records.size(),
+                        tombstones.size(),
+                        clock.instant());
         return new BackupArchive(manifest, header, records, tombstones);
     }
 
-    public @NonNull BackupImportReport restore(@NonNull VaultStore target, @NonNull BackupArchive archive) {
+    public @NonNull BackupImportReport restore(
+            @NonNull VaultStore target, @NonNull BackupArchive archive) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(archive, "archive");
         target.saveVaultHeader(archive.vaultHeader());
@@ -60,13 +67,46 @@ public final class VaultBackupService {
                                 record.metadata().id(),
                                 existing.get().revision(),
                                 record.revision()));
-            } else {
-                target.saveSecretRecord(record);
-                imported++;
+                continue;
             }
+            Optional<DeletedSecretRecord> deleted =
+                    target.loadDeletedSecretRecord(record.vaultId(), record.metadata().id());
+            if (deleted.isPresent() && deleted.get().revision() >= record.revision()) {
+                skipped++;
+                conflicts.add(
+                        new BackupConflict(
+                                record.metadata().id(),
+                                deleted.get().revision(),
+                                record.revision()));
+                continue;
+            }
+            target.saveSecretRecord(record);
+            imported++;
         }
         int tombstones = 0;
         for (DeletedSecretRecord tombstone : archive.tombstones()) {
+            Optional<EncryptedSecretRecord> existing =
+                    target.loadSecretRecord(tombstone.vaultId(), tombstone.secretId());
+            if (existing.isPresent() && existing.get().revision() >= tombstone.revision()) {
+                skipped++;
+                conflicts.add(
+                        new BackupConflict(
+                                tombstone.secretId(),
+                                existing.get().revision(),
+                                tombstone.revision()));
+                continue;
+            }
+            Optional<DeletedSecretRecord> deleted =
+                    target.loadDeletedSecretRecord(tombstone.vaultId(), tombstone.secretId());
+            if (deleted.isPresent() && deleted.get().revision() >= tombstone.revision()) {
+                skipped++;
+                conflicts.add(
+                        new BackupConflict(
+                                tombstone.secretId(),
+                                deleted.get().revision(),
+                                tombstone.revision()));
+                continue;
+            }
             target.saveDeletedSecretRecord(tombstone);
             tombstones++;
         }
