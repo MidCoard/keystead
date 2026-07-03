@@ -67,6 +67,30 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void saveVaultHeaderRejectsExistingSecretRecordFromDifferentVault() {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultHeader header = header();
+        EncryptedSecretRecord record = record(vaultId(99L), secretId(99L), "Wrong vault", 1L);
+
+        store.saveSecretRecord(record);
+
+        assertThrows(StoreException.class, () -> store.saveVaultHeader(header));
+        assertEquals(Optional.empty(), store.loadVaultHeader(header.vaultId()));
+    }
+
+    @Test
+    void saveVaultHeaderRejectsExistingTombstoneFromDifferentVault() {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultHeader header = header();
+        DeletedSecretRecord record = deleted(vaultId(99L), secretId(99L), 1L);
+
+        store.saveDeletedSecretRecord(record);
+
+        assertThrows(StoreException.class, () -> store.saveVaultHeader(header));
+        assertEquals(Optional.empty(), store.loadVaultHeader(header.vaultId()));
+    }
+
+    @Test
     void savesAndLoadsEncryptedSecretRecord() {
         VaultStore store = new FileVaultStore(tempDir);
         EncryptedSecretRecord record = record();
@@ -314,9 +338,14 @@ class FileVaultStoreTest {
         store.saveSecretRecord(staleRecord);
         String staleRecordFile = Files.readString(secretFile(secretId));
         store.saveDeletedSecretRecord(tombstone);
-        Files.createDirectories(secretFile(secretId).getParent());
-        Files.writeString(secretFile(secretId), staleRecordFile);
+        String tombstoneFile = Files.readString(deletedFile(secretId));
+        Files.deleteIfExists(secretFile(secretId));
+        Files.deleteIfExists(deletedFile(secretId));
         store.saveVaultHeader(header());
+        Files.createDirectories(secretFile(secretId).getParent());
+        Files.createDirectories(deletedFile(secretId).getParent());
+        Files.writeString(secretFile(secretId), staleRecordFile);
+        Files.writeString(deletedFile(secretId), tombstoneFile);
 
         assertThrows(
                 StoreException.class,

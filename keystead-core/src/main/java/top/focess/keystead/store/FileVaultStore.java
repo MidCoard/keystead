@@ -56,6 +56,8 @@ public final class FileVaultStore implements VaultStore {
                 throw new StoreException("Vault directory already belongs to another vault", null);
             }
         }
+        requireStoredRowsBelongTo(header.vaultId(), secretsDirectory, "secret");
+        requireStoredRowsBelongTo(header.vaultId(), deletedDirectory, "tombstone");
         Properties properties = new Properties();
         properties.setProperty("vaultId", header.vaultId().value().toString());
         properties.setProperty("formatVersion", Integer.toString(header.formatVersion()));
@@ -480,6 +482,29 @@ public final class FileVaultStore implements VaultStore {
         VaultHeader header = readHeader(load(path));
         if (!header.vaultId().equals(vaultId)) {
             throw new StoreException("Vault directory already belongs to another vault", null);
+        }
+    }
+
+    private void requireStoredRowsBelongTo(
+            @NonNull VaultId vaultId, @NonNull Path directory, @NonNull String rowKind) {
+        if (!Files.exists(directory)) {
+            return;
+        }
+        try (var stream = Files.list(directory)) {
+            stream.filter(path -> path.getFileName().toString().endsWith(".properties"))
+                    .forEach(path -> requireStoredRowBelongsTo(vaultId, rowKind, path));
+        } catch (IOException e) {
+            throw new StoreException("Could not inspect existing vault " + rowKind + " rows", e);
+        }
+    }
+
+    private void requireStoredRowBelongsTo(
+            @NonNull VaultId vaultId, @NonNull String rowKind, @NonNull Path path) {
+        Properties properties = load(path);
+        @Nullable String storedVaultId = properties.getProperty("vaultId");
+        if (storedVaultId != null && !storedVaultId.equals(vaultId.value().toString())) {
+            throw new StoreException(
+                    "Vault directory contains " + rowKind + " rows for another vault", null);
         }
     }
 
