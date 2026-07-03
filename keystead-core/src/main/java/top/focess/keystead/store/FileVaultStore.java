@@ -109,6 +109,7 @@ public final class FileVaultStore implements VaultStore {
         Objects.requireNonNull(mutation, "mutation");
         synchronized (processLock(lockPath)) {
             try {
+                requireVaultDirectoryIdentity(vaultId);
                 Files.createDirectories(vaultDirectory);
                 try (FileChannel channel =
                                 FileChannel.open(
@@ -199,6 +200,7 @@ public final class FileVaultStore implements VaultStore {
     public void deleteSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Objects.requireNonNull(vaultId, "vaultId");
         Objects.requireNonNull(secretId, "secretId");
+        requireVaultDirectoryIdentity(vaultId);
         if (loadStoredSecretRecord(vaultId, secretId).isEmpty()) {
             return;
         }
@@ -260,6 +262,7 @@ public final class FileVaultStore implements VaultStore {
     public void deleteDeletedSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Objects.requireNonNull(vaultId, "vaultId");
         Objects.requireNonNull(secretId, "secretId");
+        requireVaultDirectoryIdentity(vaultId);
         if (loadStoredDeletedSecretRecord(vaultId, secretId).isEmpty()) {
             return;
         }

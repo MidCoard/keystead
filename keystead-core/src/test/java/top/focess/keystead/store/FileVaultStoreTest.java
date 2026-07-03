@@ -168,6 +168,40 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void deleteSecretRecordRejectsDifferentVaultWhenHeaderExists() {
+        VaultStore store = new FileVaultStore(tempDir);
+        EncryptedSecretRecord record = record();
+        VaultId otherVaultId = vaultId(99L);
+
+        store.saveVaultHeader(header());
+        store.saveSecretRecord(record);
+
+        assertThrows(
+                StoreException.class,
+                () -> store.deleteSecretRecord(otherVaultId, record.metadata().id()));
+        assertEquals(
+                Optional.of(record),
+                store.loadSecretRecord(record.vaultId(), record.metadata().id()));
+    }
+
+    @Test
+    void deleteDeletedSecretRecordRejectsDifferentVaultWhenHeaderExists() {
+        VaultStore store = new FileVaultStore(tempDir);
+        DeletedSecretRecord record = deleted(secretId(2L), 1L);
+        VaultId otherVaultId = vaultId(99L);
+
+        store.saveVaultHeader(header());
+        store.saveDeletedSecretRecord(record);
+
+        assertThrows(
+                StoreException.class,
+                () -> store.deleteDeletedSecretRecord(otherVaultId, record.secretId()));
+        assertEquals(
+                Optional.of(record),
+                store.loadDeletedSecretRecord(record.vaultId(), record.secretId()));
+    }
+
+    @Test
     void newerTombstoneHidesStaleSecretRecordAfterInterruptedDelete() {
         VaultStore store = new FileVaultStore(tempDir);
         EncryptedSecretRecord record = record(secretId(2L), "GitHub", 1L);
@@ -266,6 +300,32 @@ class FileVaultStoreTest {
 
         assertFalse(Files.exists(secretFile(secretId)));
         assertEquals(List.of(tombstone), store.listDeletedSecretRecords(vaultId));
+    }
+
+    @Test
+    void commitMutationRejectsDifferentVaultBeforeRecovery() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultId rootVaultId = header().vaultId();
+        VaultId otherVaultId = vaultId(99L);
+        SecretId secretId = secretId(99L);
+        EncryptedSecretRecord staleRecord = record(otherVaultId, secretId, "Wrong vault", 1L);
+        DeletedSecretRecord tombstone = deleted(otherVaultId, secretId, 2L);
+
+        store.saveSecretRecord(staleRecord);
+        String staleRecordFile = Files.readString(secretFile(secretId));
+        store.saveDeletedSecretRecord(tombstone);
+        Files.createDirectories(secretFile(secretId).getParent());
+        Files.writeString(secretFile(secretId), staleRecordFile);
+        store.saveVaultHeader(header());
+
+        assertThrows(
+                StoreException.class,
+                () ->
+                        store.commitMutation(
+                                otherVaultId, revision -> fail("mutation should not run")));
+        assertTrue(Files.exists(secretFile(secretId)));
+        assertEquals(List.of(tombstone), store.listDeletedSecretRecords(otherVaultId));
+        assertEquals(List.of(), store.listSecretRecords(rootVaultId));
     }
 
     @Test
