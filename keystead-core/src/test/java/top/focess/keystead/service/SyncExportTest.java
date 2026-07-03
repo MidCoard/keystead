@@ -14,11 +14,16 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.model.EncryptedEnvelope;
+import top.focess.keystead.model.EncryptedSecretRecord;
+import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretClassification;
 import top.focess.keystead.model.SecretId;
+import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretType;
 import top.focess.keystead.model.VaultId;
 import top.focess.keystead.store.FileVaultStore;
@@ -103,6 +108,29 @@ class SyncExportTest {
             assertEquals(1, records.size());
             assertEquals(2L, records.getFirst().revision());
             assertEquals("Second token", encryptedProfileTitle(vault, records.getFirst()));
+        }
+    }
+
+    @Test
+    void exportRecordsSinceOrdersByRevisionThenSecretId() {
+        FileVaultStore store = new FileVaultStore(tempDir);
+        VaultService service = new DefaultVaultService(store, CLOCK);
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            SecretId firstRevisionHighId = new SecretId(new UUID(0L, 99L));
+            SecretId secondRevisionLowId = new SecretId(new UUID(0L, 2L));
+            store.saveSecretRecord(storedRecord(firstRevisionHighId, 1L));
+            store.saveSecretRecord(storedRecord(secondRevisionLowId, 2L));
+
+            List<String> exportedSecretIds =
+                    vault.exportRecordsSince(0).stream()
+                            .map(EncryptedSyncRecord::secretId)
+                            .toList();
+
+            assertEquals(
+                    List.of(
+                            firstRevisionHighId.value().toString(),
+                            secondRevisionLowId.value().toString()),
+                    exportedSecretIds);
         }
     }
 
@@ -279,5 +307,29 @@ class SyncExportTest {
                 .findFirst()
                 .orElseThrow()
                 .title();
+    }
+
+    private static EncryptedSecretRecord storedRecord(@NonNull SecretId secretId, long revision) {
+        SecretMetadata metadata =
+                new SecretMetadata(
+                        secretId,
+                        SecretType.API_TOKEN,
+                        "stored-" + revision,
+                        Set.of(),
+                        CLOCK.instant(),
+                        CLOCK.instant(),
+                        revision);
+        return new EncryptedSecretRecord(VAULT_ID, metadata, envelope(revision), revision);
+    }
+
+    private static EncryptedEnvelope envelope(long revision) {
+        return new EncryptedEnvelope(
+                1,
+                "test",
+                new KeyId("test-key"),
+                new byte[] {(byte) revision},
+                new byte[0],
+                new byte[] {(byte) (revision + 1)},
+                CLOCK.instant());
     }
 }

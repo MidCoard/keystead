@@ -439,10 +439,9 @@ final class DefaultVaultHandle implements VaultHandle {
                                             .map(this::exportDeletedRecord)
                                             .forEach(records::add);
                                     records.sort(
-                                            java.util.Comparator.comparing(
-                                                            EncryptedSyncRecord::secretId)
-                                                    .thenComparingLong(
-                                                            EncryptedSyncRecord::revision));
+                                            java.util.Comparator.comparingLong(
+                                                            EncryptedSyncRecord::revision)
+                                                    .thenComparing(EncryptedSyncRecord::secretId));
                                     return List.copyOf(records);
                                 }));
     }
