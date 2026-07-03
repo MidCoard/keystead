@@ -267,6 +267,8 @@ final class DefaultVaultHandle implements VaultHandle {
         try {
             draftConsumer.accept(draft);
             draft.validate();
+            SecretTypeSchemaValidator.validate(
+                    SecretTypeSchema.forType(type), draft.fields().keySet());
 
             SecretId secretId = new SecretId(UUID.randomUUID());
             Instant now = clock.instant();
@@ -324,6 +326,8 @@ final class DefaultVaultHandle implements VaultHandle {
         try {
             draftConsumer.accept(draft);
             draft.validate();
+            SecretTypeSchemaValidator.validate(
+                    SecretTypeSchema.forType(type), draft.fields().keySet());
 
             Instant now = clock.instant();
             byte[] encodedPayload = StructuredSecretPayloadCodec.encode(draft);

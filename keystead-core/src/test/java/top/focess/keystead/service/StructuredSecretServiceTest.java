@@ -20,8 +20,10 @@ import org.junit.jupiter.api.io.TempDir;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretDestroyedException;
 import top.focess.keystead.model.SecretClassification;
+import top.focess.keystead.model.SecretFieldSchema;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretType;
+import top.focess.keystead.model.SecretTypeSchema;
 import top.focess.keystead.model.VaultId;
 import top.focess.keystead.store.FileVaultStore;
 
@@ -84,19 +86,21 @@ class StructuredSecretServiceTest {
                 SecretId secretId =
                         vault.saveSecret(
                                 type,
-                                draft ->
-                                        draft.title(type.name())
-                                                .field(
-                                                        "value",
-                                                        SecretBuffer.fromChars(
-                                                                chars("encrypted payload"))));
+                                draft -> {
+                                    draft.title(type.name());
+                                    for (String fieldName : validFieldNames(type)) {
+                                        draft.field(
+                                                fieldName,
+                                                SecretBuffer.fromChars(chars("encrypted payload")));
+                                    }
+                                });
 
                 vault.withSecret(
                         secretId,
                         view -> {
                             assertEquals(type, view.metadata().type());
                             view.withField(
-                                    "value",
+                                    validFieldNames(type).iterator().next(),
                                     chars -> assertArrayEquals(chars("encrypted payload"), chars));
                         });
             }
@@ -138,6 +142,36 @@ class StructuredSecretServiceTest {
                             vault.saveSecret(
                                     SecretType.API_TOKEN,
                                     draft -> draft.title("GitHub API token")));
+        }
+    }
+
+    @Test
+    void saveStructuredSecretEnforcesTypeSchemaFields() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            assertThrows(
+                    ValidationException.class,
+                    () ->
+                            vault.saveSecret(
+                                    SecretType.SSH_KEY,
+                                    draft ->
+                                            draft.title("Invalid SSH")
+                                                    .field(
+                                                            "value",
+                                                            SecretBuffer.fromChars(
+                                                                    chars("not-an-ssh-field")))));
+            assertThrows(
+                    ValidationException.class,
+                    () ->
+                            vault.saveSecret(
+                                    SecretType.API_TOKEN,
+                                    draft ->
+                                            draft.title("Missing token")
+                                                    .field(
+                                                            "notes",
+                                                            SecretBuffer.fromChars(
+                                                                    chars("optional only")))));
         }
     }
 
@@ -186,5 +220,16 @@ class StructuredSecretServiceTest {
 
     private static char[] chars(String value) {
         return value.toCharArray();
+    }
+
+    private static Set<String> validFieldNames(SecretType type) {
+        SecretTypeSchema schema = SecretTypeSchema.forType(type);
+        if (schema.allowsCustomFields()) {
+            return Set.of("value");
+        }
+        return schema.fields().stream()
+                .filter(SecretFieldSchema::required)
+                .map(SecretFieldSchema::name)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
     }
 }
