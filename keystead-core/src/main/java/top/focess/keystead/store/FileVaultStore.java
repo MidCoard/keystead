@@ -519,7 +519,11 @@ public final class FileVaultStore implements VaultStore {
             @NonNull VaultId vaultId, @NonNull String rowKind, @NonNull Path path) {
         Properties properties = load(path);
         @Nullable String storedVaultId = properties.getProperty("vaultId");
-        if (storedVaultId != null && !storedVaultId.equals(vaultId.value().toString())) {
+        if (storedVaultId == null) {
+            throw new StoreException(
+                    "Vault directory contains " + rowKind + " rows without a vault identity", null);
+        }
+        if (!storedVaultId.equals(vaultId.value().toString())) {
             throw new StoreException(
                     "Vault directory contains " + rowKind + " rows for another vault", null);
         }

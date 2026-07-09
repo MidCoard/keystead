@@ -91,6 +91,31 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void saveVaultHeaderRejectsExistingSecretRecordWithoutVaultIdentity() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultHeader header = header();
+        SecretId secretId = secretId(99L);
+        Files.createDirectories(secretFile(secretId).getParent());
+        Files.writeString(
+                secretFile(secretId), "metadata.id=" + secretId.value() + "\nrecord.revision=1\n");
+
+        assertThrows(StoreException.class, () -> store.saveVaultHeader(header));
+        assertEquals(Optional.empty(), store.loadVaultHeader(header.vaultId()));
+    }
+
+    @Test
+    void saveVaultHeaderRejectsExistingTombstoneWithoutVaultIdentity() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultHeader header = header();
+        SecretId secretId = secretId(99L);
+        Files.createDirectories(deletedFile(secretId).getParent());
+        Files.writeString(deletedFile(secretId), "secretId=" + secretId.value() + "\nrevision=1\n");
+
+        assertThrows(StoreException.class, () -> store.saveVaultHeader(header));
+        assertEquals(Optional.empty(), store.loadVaultHeader(header.vaultId()));
+    }
+
+    @Test
     void savesAndLoadsEncryptedSecretRecord() {
         VaultStore store = new FileVaultStore(tempDir);
         EncryptedSecretRecord record = record();
