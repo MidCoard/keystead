@@ -3,6 +3,7 @@ package top.focess.keystead.service;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -448,13 +449,28 @@ final class DefaultVaultHandle implements VaultHandle {
 
     @Override
     public int importRecords(@NonNull List<EncryptedSyncRecord> records) {
+        return importRecordsWithReport(records).imported();
+    }
+
+    @Override
+    public @NonNull SyncImportReport importRecordsWithReport(
+            @NonNull List<EncryptedSyncRecord> records) {
         Objects.requireNonNull(records, "records");
         requireOpen();
         int imported = 0;
+        int skipped = 0;
+        List<SyncImportConflict> conflicts = new ArrayList<>();
         for (EncryptedSyncRecord record : records) {
-            imported += importRecord(record) ? 1 : 0;
+            ImportOutcome outcome = importRecord(record);
+            if (outcome.imported()) {
+                imported++;
+            } else if (outcome.conflict() != null) {
+                conflicts.add(outcome.conflict());
+            } else {
+                skipped++;
+            }
         }
-        return imported;
+        return new SyncImportReport(imported, skipped, conflicts);
     }
 
     @Override
@@ -548,7 +564,7 @@ final class DefaultVaultHandle implements VaultHandle {
                 true);
     }
 
-    private boolean importRecord(@NonNull EncryptedSyncRecord record) {
+    private @NonNull ImportOutcome importRecord(@NonNull EncryptedSyncRecord record) {
         Objects.requireNonNull(record, "record");
         if (!vaultId.value().toString().equals(record.vaultId())) {
             throw new ValidationException("Sync record belongs to a different vault");
@@ -559,10 +575,10 @@ final class DefaultVaultHandle implements VaultHandle {
         @Nullable DeletedSecretRecord deleted =
                 store.loadDeletedSecretRecord(vaultId, secretId).orElse(null);
         if (deleted != null && deleted.revision() >= record.revision()) {
-            return false;
+            return skippedOrConflict(record, deleted.revision(), true);
         }
         if (existing != null && existing.revision() >= record.revision()) {
-            return false;
+            return skippedOrConflict(record, existing.revision(), false);
         }
         if (record.deleted()) {
             store.saveDeletedSecretRecord(
@@ -573,7 +589,7 @@ final class DefaultVaultHandle implements VaultHandle {
                             record.revision(),
                             clock.instant()));
             store.deleteSecretRecord(vaultId, secretId);
-            return true;
+            return ImportOutcome.importedOutcome();
         }
 
         byte[] profileAad =
@@ -591,11 +607,41 @@ final class DefaultVaultHandle implements VaultHandle {
             store.saveSecretRecord(
                     new EncryptedSecretRecord(
                             vaultId, metadata, payloadEnvelope, record.revision()));
-            return true;
+            return ImportOutcome.importedOutcome();
         } finally {
             wipe(profileAad);
             wipe(profileBytes);
             wipe(payloadAad);
+        }
+    }
+
+    private @NonNull ImportOutcome skippedOrConflict(
+            @NonNull EncryptedSyncRecord record, long localRevision, boolean localDeleted) {
+        if (localDeleted != record.deleted()) {
+            return ImportOutcome.conflict(
+                    new SyncImportConflict(
+                            record.vaultId(),
+                            record.secretId(),
+                            localRevision,
+                            record.revision(),
+                            localDeleted,
+                            record.deleted()));
+        }
+        return ImportOutcome.skippedOutcome();
+    }
+
+    private record ImportOutcome(boolean imported, @Nullable SyncImportConflict conflict) {
+
+        private static @NonNull ImportOutcome importedOutcome() {
+            return new ImportOutcome(true, null);
+        }
+
+        private static @NonNull ImportOutcome skippedOutcome() {
+            return new ImportOutcome(false, null);
+        }
+
+        private static @NonNull ImportOutcome conflict(@NonNull SyncImportConflict conflict) {
+            return new ImportOutcome(false, Objects.requireNonNull(conflict, "conflict"));
         }
     }
 

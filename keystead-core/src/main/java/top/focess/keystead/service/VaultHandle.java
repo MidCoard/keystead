@@ -39,6 +39,8 @@ public interface VaultHandle extends AutoCloseable {
 
     int importRecords(@NonNull List<EncryptedSyncRecord> records);
 
+    @NonNull SyncImportReport importRecordsWithReport(@NonNull List<EncryptedSyncRecord> records);
+
     byte @NonNull [] wrapVaultKeyForDevice(
             byte @NonNull [] devicePublicKey, byte @NonNull [] context);
 

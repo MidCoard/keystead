@@ -216,6 +216,45 @@ class SyncExportTest {
     }
 
     @Test
+    void importReportPreservesConflictWhenRemoteTombstoneIsOlderThanLocalUpdate() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            SecretId secretId;
+            try (SecretBuffer value = SecretBuffer.fromChars(chars("first"))) {
+                secretId =
+                        vault.saveSecret(
+                                SecretType.API_TOKEN,
+                                draft -> draft.title("Token").field("token", value));
+            }
+            try (SecretBuffer value = SecretBuffer.fromChars(chars("second"))) {
+                vault.updateSecret(secretId, draft -> draft.title("Token").field("token", value));
+            }
+
+            EncryptedSyncRecord staleTombstone =
+                    new EncryptedSyncRecord(
+                            VAULT_ID.value().toString(),
+                            secretId.value().toString(),
+                            1L,
+                            SecretType.API_TOKEN.name(),
+                            "",
+                            "",
+                            true);
+            SyncImportReport report = vault.importRecordsWithReport(List.of(staleTombstone));
+
+            assertEquals(0, report.imported());
+            assertEquals(0, report.skipped());
+            assertEquals(1, report.conflicts().size());
+            SyncImportConflict conflict = report.conflicts().getFirst();
+            assertEquals(secretId.value().toString(), conflict.secretId());
+            assertEquals(2L, conflict.localRevision());
+            assertEquals(1L, conflict.remoteRevision());
+            assertFalse(conflict.localDeleted());
+            assertTrue(conflict.remoteDeleted());
+            assertEquals(1, vault.listSecrets().size());
+        }
+    }
+
+    @Test
     void syncRecordRejectsZeroRevisionBecauseCommittedRowsStartAtOne() {
         assertThrows(
                 IllegalArgumentException.class,
