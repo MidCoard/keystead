@@ -194,13 +194,13 @@ final class BackupArchiveCodec {
         properties.setProperty("envelope.algorithm", envelope.algorithm());
         properties.setProperty("envelope.keyId", envelope.keyId().value());
         properties.setProperty("envelope.nonce", b64(envelope.nonce()));
-        properties.setProperty("envelope.aad", b64(envelope.aad()));
         properties.setProperty("envelope.ciphertext", b64(envelope.ciphertext()));
         properties.setProperty("envelope.encryptedAt", envelope.encryptedAt().toString());
         return properties;
     }
 
     private static @NonNull EncryptedSecretRecord readRecord(@NonNull Properties properties) {
+        VaultId vaultId = new VaultId(UUID.fromString(required(properties, "vaultId")));
         SecretMetadata metadata =
                 new SecretMetadata(
                         new SecretId(UUID.fromString(required(properties, "metadata.id"))),
@@ -213,20 +213,29 @@ final class BackupArchiveCodec {
                         Instant.parse(required(properties, "metadata.createdAt")),
                         Instant.parse(required(properties, "metadata.updatedAt")),
                         parseLong(properties, "metadata.revision"));
+        long recordRevision = parseLong(properties, "record.revision");
         EncryptedEnvelope envelope =
                 new EncryptedEnvelope(
                         parseInt(properties, "envelope.version"),
                         required(properties, "envelope.algorithm"),
                         new KeyId(required(properties, "envelope.keyId")),
                         bytes(properties, "envelope.nonce"),
-                        bytes(properties, "envelope.aad"),
+                        envelopeAad(properties, vaultId, metadata, recordRevision),
                         bytes(properties, "envelope.ciphertext"),
                         Instant.parse(required(properties, "envelope.encryptedAt")));
-        return new EncryptedSecretRecord(
-                new VaultId(UUID.fromString(required(properties, "vaultId"))),
-                metadata,
-                envelope,
-                parseLong(properties, "record.revision"));
+        return new EncryptedSecretRecord(vaultId, metadata, envelope, recordRevision);
+    }
+
+    private static byte @NonNull [] envelopeAad(
+            @NonNull Properties properties,
+            @NonNull VaultId vaultId,
+            @NonNull SecretMetadata metadata,
+            long recordRevision) {
+        @Nullable String encoded = properties.getProperty("envelope.aad");
+        if (encoded != null) {
+            return Base64.getDecoder().decode(encoded);
+        }
+        return SecretRecordAad.encode(vaultId, metadata, recordRevision);
     }
 
     private static @NonNull Properties deletedProperties(@NonNull DeletedSecretRecord record) {

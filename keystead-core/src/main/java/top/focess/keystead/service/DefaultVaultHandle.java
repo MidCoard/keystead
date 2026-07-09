@@ -1,12 +1,10 @@
 package top.focess.keystead.service;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -496,37 +494,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     private byte @NonNull [] aad(@NonNull SecretMetadata metadata, long revision) {
-        StringBuilder value = new StringBuilder();
-        appendAad(value, "keystead-secret-record-v2");
-        appendAad(value, vaultId.value().toString());
-        appendAad(value, metadata.id().value().toString());
-        appendAad(value, metadata.type().name());
-        appendAad(value, metadata.title());
-        appendAad(value, nullableAad(metadata.classification().category()));
-        appendAad(value, nullableAad(metadata.classification().provider()));
-        if (metadata.classification().software() != null) {
-            appendAad(value, metadata.classification().software());
-        }
-        appendAad(value, nullableAad(metadata.classification().account()));
-        appendAad(value, Integer.toString(metadata.classification().labels().size()));
-        metadata.classification().labels().stream()
-                .sorted()
-                .forEach(label -> appendAad(value, label));
-        appendAad(value, Integer.toString(metadata.tags().size()));
-        metadata.tags().stream().sorted().forEach(tag -> appendAad(value, tag));
-        appendAad(value, Integer.toString(metadata.profile().attributes().size()));
-        metadata.profile().attributes().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .forEach(
-                        entry -> {
-                            appendAad(value, entry.getKey());
-                            appendAad(value, entry.getValue());
-                        });
-        appendAad(value, metadata.createdAt().toString());
-        appendAad(value, metadata.updatedAt().toString());
-        appendAad(value, Long.toString(metadata.revision()));
-        appendAad(value, Long.toString(revision));
-        return value.toString().getBytes(StandardCharsets.UTF_8);
+        return SecretRecordAad.encode(vaultId, metadata, revision);
     }
 
     private @NonNull EncryptedSyncRecord exportRecord(@NonNull EncryptedSecretRecord record) {
@@ -643,14 +611,6 @@ final class DefaultVaultHandle implements VaultHandle {
         private static @NonNull ImportOutcome conflict(@NonNull SyncImportConflict conflict) {
             return new ImportOutcome(false, Objects.requireNonNull(conflict, "conflict"));
         }
-    }
-
-    private void appendAad(@NonNull StringBuilder builder, @NonNull String value) {
-        builder.append(value.length()).append(':').append(value).append('|');
-    }
-
-    private @NonNull String nullableAad(@Nullable String value) {
-        return value == null ? "" : value;
     }
 
     private void requireStructuredType(@NonNull SecretType type) {

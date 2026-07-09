@@ -164,6 +164,24 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void serializedRecordEntriesDoNotStoreEnvelopeAad() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        String recordEntry =
+                zipEntryText(
+                        out.toByteArray(),
+                        "records/00000000-0000-0000-0000-000000000002.properties");
+
+        assertFalse(recordEntry.contains("envelope.aad"));
+    }
+
+    @Test
     void readFromSkipsMalformedEntriesWithoutLosingValidOnes() throws Exception {
         FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
         source.saveVaultHeader(header());
@@ -295,7 +313,7 @@ class VaultBackupServiceTest {
                         "AES-256-GCM",
                         new KeyId("vault-key"),
                         new byte[] {1, 2, 3},
-                        new byte[] {4, 5, 6},
+                        SecretRecordAad.encode(VAULT_ID, metadata, revision),
                         new byte[] {7, 8, 9},
                         Instant.parse("2026-07-02T00:02:00Z"));
         return new EncryptedSecretRecord(VAULT_ID, metadata, envelope, revision);
@@ -308,5 +326,17 @@ class VaultBackupServiceTest {
                 SecretType.LOGIN_PASSWORD,
                 revision,
                 Instant.parse("2026-07-02T00:03:00Z"));
+    }
+
+    private static String zipEntryText(byte[] archive, String entryName) throws Exception {
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(archive))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if (entry.getName().equals(entryName)) {
+                    return new String(zip.readAllBytes(), StandardCharsets.UTF_8);
+                }
+            }
+        }
+        throw new AssertionError("Missing zip entry: " + entryName);
     }
 }
