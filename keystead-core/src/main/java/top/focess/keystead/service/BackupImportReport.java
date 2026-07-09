@@ -13,5 +13,8 @@ public record BackupImportReport(
 
     public BackupImportReport {
         conflicts = List.copyOf(Objects.requireNonNull(conflicts, "conflicts"));
+        if (imported < 0 || skipped < 0 || unsupported < 0 || tombstones < 0) {
+            throw new IllegalArgumentException("Backup import counters must not be negative");
+        }
     }
 }
