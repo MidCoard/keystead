@@ -114,8 +114,8 @@ final class BackupArchiveCodec {
             if (name.equals(MANIFEST_ENTRY)) {
                 continue;
             }
+            verifyEntryDigest(name, entry.bytes(), entryDigests);
             try {
-                verifyEntryDigest(name, entry.bytes(), entryDigests);
                 Properties properties = toProperties(entry.bytes());
                 if (name.equals(VAULT_ENTRY)) {
                     vaultHeader = readVault(properties);
