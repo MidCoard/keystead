@@ -182,6 +182,47 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void readFromRejectsTamperedRecordEntryDigest() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        String entryName = "records/00000000-0000-0000-0000-000000000002.properties";
+        String originalEntry = zipEntryText(out.toByteArray(), entryName);
+        byte[] tampered =
+                replaceZipEntryText(out.toByteArray(), entryName, originalEntry + "\n#tampered\n");
+
+        assertThrows(
+                ValidationException.class,
+                () -> backup.readFrom(new ByteArrayInputStream(tampered)));
+    }
+
+    @Test
+    void readFromRejectsTamperedRecordEntryWhenManifestIsLast() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        String entryName = "records/00000000-0000-0000-0000-000000000002.properties";
+        String originalEntry = zipEntryText(out.toByteArray(), entryName);
+        byte[] tampered =
+                replaceZipEntryText(out.toByteArray(), entryName, originalEntry + "\n#tampered\n");
+        byte[] reordered = moveManifestToEnd(tampered);
+
+        assertThrows(
+                ValidationException.class,
+                () -> backup.readFrom(new ByteArrayInputStream(reordered)));
+    }
+
+    @Test
     void readFromSkipsMalformedEntriesWithoutLosingValidOnes() throws Exception {
         FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
         source.saveVaultHeader(header());
@@ -338,5 +379,55 @@ class VaultBackupServiceTest {
             }
         }
         throw new AssertionError("Missing zip entry: " + entryName);
+    }
+
+    private static byte[] replaceZipEntryText(byte[] archive, String entryName, String replacement)
+            throws Exception {
+        ByteArrayOutputStream rebuilt = new ByteArrayOutputStream();
+        try (ZipInputStream in = new ZipInputStream(new ByteArrayInputStream(archive));
+                ZipOutputStream zip = new ZipOutputStream(rebuilt)) {
+            ZipEntry entry;
+            boolean replaced = false;
+            while ((entry = in.getNextEntry()) != null) {
+                zip.putNextEntry(new ZipEntry(entry.getName()));
+                if (entry.getName().equals(entryName)) {
+                    zip.write(replacement.getBytes(StandardCharsets.UTF_8));
+                    replaced = true;
+                } else {
+                    zip.write(in.readAllBytes());
+                }
+                zip.closeEntry();
+            }
+            if (!replaced) {
+                throw new AssertionError("Missing zip entry: " + entryName);
+            }
+        }
+        return rebuilt.toByteArray();
+    }
+
+    private static byte[] moveManifestToEnd(byte[] archive) throws Exception {
+        ByteArrayOutputStream rebuilt = new ByteArrayOutputStream();
+        byte[] manifest = null;
+        try (ZipInputStream in = new ZipInputStream(new ByteArrayInputStream(archive));
+                ZipOutputStream zip = new ZipOutputStream(rebuilt)) {
+            ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                byte[] bytes = in.readAllBytes();
+                if (entry.getName().equals("manifest.properties")) {
+                    manifest = bytes;
+                } else {
+                    zip.putNextEntry(new ZipEntry(entry.getName()));
+                    zip.write(bytes);
+                    zip.closeEntry();
+                }
+            }
+            if (manifest == null) {
+                throw new AssertionError("Missing zip entry: manifest.properties");
+            }
+            zip.putNextEntry(new ZipEntry("manifest.properties"));
+            zip.write(manifest);
+            zip.closeEntry();
+        }
+        return rebuilt.toByteArray();
     }
 }

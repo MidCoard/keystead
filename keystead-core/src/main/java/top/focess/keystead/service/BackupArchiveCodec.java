@@ -6,12 +6,16 @@ import java.io.OutputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
@@ -41,24 +45,32 @@ final class BackupArchiveCodec {
     private static final String RECORDS_PREFIX = "records/";
     private static final String DELETED_PREFIX = "deleted/";
     private static final String PROPERTIES_SUFFIX = ".properties";
+    private static final String ENTRY_DIGEST_PREFIX = "entry.sha256.";
 
     private BackupArchiveCodec() {}
 
     static void write(@NonNull BackupArchive archive, @NonNull OutputStream output) {
         try (ZipOutputStream zip = new ZipOutputStream(output)) {
-            putEntry(zip, MANIFEST_ENTRY, manifestProperties(archive.manifest()));
-            putEntry(zip, VAULT_ENTRY, vaultProperties(archive.vaultHeader()));
+            List<BackupZipEntry> entries = new ArrayList<>();
+            entries.add(backupZipEntry(VAULT_ENTRY, vaultProperties(archive.vaultHeader())));
             for (EncryptedSecretRecord record : archive.records()) {
-                putEntry(
-                        zip,
-                        RECORDS_PREFIX + record.metadata().id().value() + PROPERTIES_SUFFIX,
-                        recordProperties(record));
+                entries.add(
+                        backupZipEntry(
+                                RECORDS_PREFIX + record.metadata().id().value() + PROPERTIES_SUFFIX,
+                                recordProperties(record)));
             }
             for (DeletedSecretRecord tombstone : archive.tombstones()) {
-                putEntry(
-                        zip,
-                        DELETED_PREFIX + tombstone.secretId().value() + PROPERTIES_SUFFIX,
-                        deletedProperties(tombstone));
+                entries.add(
+                        backupZipEntry(
+                                DELETED_PREFIX + tombstone.secretId().value() + PROPERTIES_SUFFIX,
+                                deletedProperties(tombstone)));
+            }
+            putEntry(
+                    zip,
+                    MANIFEST_ENTRY,
+                    propertiesBytes(manifestProperties(archive.manifest(), entries)));
+            for (BackupZipEntry entry : entries) {
+                putEntry(zip, entry.name(), entry.bytes());
             }
         } catch (IOException e) {
             throw new ValidationException("Could not write backup archive", e);
@@ -71,36 +83,56 @@ final class BackupArchiveCodec {
         List<EncryptedSecretRecord> records = new ArrayList<>();
         List<DeletedSecretRecord> tombstones = new ArrayList<>();
         int unsupported = 0;
+        List<BackupZipEntry> entries = new ArrayList<>();
         try (ZipInputStream zip = new ZipInputStream(input)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
-                String name = entry.getName();
-                byte[] bytes = zip.readAllBytes();
-                try {
-                    Properties properties = toProperties(bytes);
-                    if (name.equals(MANIFEST_ENTRY)) {
-                        manifest = readManifest(properties);
-                    } else if (name.equals(VAULT_ENTRY)) {
-                        vaultHeader = readVault(properties);
-                    } else if (name.startsWith(RECORDS_PREFIX)
-                            && name.endsWith(PROPERTIES_SUFFIX)) {
-                        records.add(readRecord(properties));
-                    } else if (name.startsWith(DELETED_PREFIX)
-                            && name.endsWith(PROPERTIES_SUFFIX)) {
-                        tombstones.add(readDeleted(properties));
-                    }
-                } catch (RuntimeException e) {
-                    // Manifest and vault header are required; only record/tombstone entries may
-                    // be skipped so a single unsupported/corrupt record cannot brick the backup.
-                    if (name.startsWith(RECORDS_PREFIX) || name.startsWith(DELETED_PREFIX)) {
-                        unsupported++;
-                    } else {
-                        throw new ValidationException("Backup archive is corrupt: " + name, e);
-                    }
-                }
+                entries.add(new BackupZipEntry(entry.getName(), zip.readAllBytes()));
             }
         } catch (IOException e) {
             throw new ValidationException("Could not read backup archive", e);
+        }
+
+        BackupZipEntry manifestEntry =
+                findEntry(entries, MANIFEST_ENTRY)
+                        .orElseThrow(
+                                () ->
+                                        new ValidationException(
+                                                "Backup archive is missing manifest or vault"
+                                                        + " header"));
+        Map<String, String> entryDigests;
+        try {
+            Properties properties = toProperties(manifestEntry.bytes());
+            manifest = readManifest(properties);
+            entryDigests = entryDigests(properties);
+        } catch (IOException | RuntimeException e) {
+            throw new ValidationException("Backup archive is corrupt: " + MANIFEST_ENTRY, e);
+        }
+
+        for (BackupZipEntry entry : entries) {
+            String name = entry.name();
+            if (name.equals(MANIFEST_ENTRY)) {
+                continue;
+            }
+            try {
+                verifyEntryDigest(name, entry.bytes(), entryDigests);
+                Properties properties = toProperties(entry.bytes());
+                if (name.equals(VAULT_ENTRY)) {
+                    vaultHeader = readVault(properties);
+                } else if (name.startsWith(RECORDS_PREFIX) && name.endsWith(PROPERTIES_SUFFIX)) {
+                    records.add(readRecord(properties));
+                } else if (name.startsWith(DELETED_PREFIX) && name.endsWith(PROPERTIES_SUFFIX)) {
+                    tombstones.add(readDeleted(properties));
+                }
+            } catch (IOException | RuntimeException e) {
+                // Manifest and vault header are required; only record/tombstone entries may
+                // be skipped so a single unsupported/corrupt record cannot brick the backup.
+                if (name.startsWith(RECORDS_PREFIX) || name.startsWith(DELETED_PREFIX)) {
+                    unsupported++;
+                } else {
+                    throw new ValidationException("Backup archive is corrupt: " + name, e);
+                }
+            }
         }
         if (manifest == null || vaultHeader == null) {
             throw new ValidationException("Backup archive is missing manifest or vault header");
@@ -109,14 +141,29 @@ final class BackupArchiveCodec {
                 new BackupArchive(manifest, vaultHeader, records, tombstones), unsupported);
     }
 
+    private static @NonNull BackupZipEntry backupZipEntry(
+            @NonNull String name, @NonNull Properties properties) throws IOException {
+        return new BackupZipEntry(name, propertiesBytes(properties));
+    }
+
+    private static @NonNull Optional<BackupZipEntry> findEntry(
+            @NonNull List<BackupZipEntry> entries, @NonNull String name) {
+        return entries.stream().filter(entry -> entry.name().equals(name)).findFirst();
+    }
+
     private static void putEntry(
-            @NonNull ZipOutputStream zip, @NonNull String name, @NonNull Properties properties)
+            @NonNull ZipOutputStream zip, @NonNull String name, byte @NonNull [] bytes)
             throws IOException {
         zip.putNextEntry(new ZipEntry(name));
+        zip.write(bytes);
+        zip.closeEntry();
+    }
+
+    private static byte @NonNull [] propertiesBytes(@NonNull Properties properties)
+            throws IOException {
         StringWriter writer = new StringWriter();
         properties.store(writer, null);
-        zip.write(writer.toString().getBytes(StandardCharsets.UTF_8));
-        zip.closeEntry();
+        return writer.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     private static @NonNull Properties toProperties(byte @NonNull [] bytes) throws IOException {
@@ -125,13 +172,17 @@ final class BackupArchiveCodec {
         return properties;
     }
 
-    private static @NonNull Properties manifestProperties(@NonNull BackupManifest manifest) {
+    private static @NonNull Properties manifestProperties(
+            @NonNull BackupManifest manifest, @NonNull List<BackupZipEntry> entries) {
         Properties properties = new Properties();
         properties.setProperty("formatVersion", Integer.toString(manifest.formatVersion()));
         properties.setProperty("vaultId", manifest.vaultId().value().toString());
         properties.setProperty("recordCount", Integer.toString(manifest.recordCount()));
         properties.setProperty("tombstoneCount", Integer.toString(manifest.tombstoneCount()));
         properties.setProperty("createdAt", manifest.createdAt().toString());
+        for (BackupZipEntry entry : entries) {
+            properties.setProperty(ENTRY_DIGEST_PREFIX + entry.name(), sha256(entry.bytes()));
+        }
         return properties;
     }
 
@@ -142,6 +193,23 @@ final class BackupArchiveCodec {
                 parseInt(properties, "recordCount"),
                 parseInt(properties, "tombstoneCount"),
                 Instant.parse(required(properties, "createdAt")));
+    }
+
+    private static @NonNull Map<String, String> entryDigests(@NonNull Properties properties) {
+        return properties.stringPropertyNames().stream()
+                .filter(name -> name.startsWith(ENTRY_DIGEST_PREFIX))
+                .collect(
+                        Collectors.toUnmodifiableMap(
+                                name -> name.substring(ENTRY_DIGEST_PREFIX.length()),
+                                properties::getProperty));
+    }
+
+    private static void verifyEntryDigest(
+            @NonNull String name, byte @NonNull [] bytes, @NonNull Map<String, String> digests) {
+        @Nullable String expected = digests.get(name);
+        if (expected != null && !expected.equals(sha256(bytes))) {
+            throw new ValidationException("Backup archive entry digest mismatch: " + name);
+        }
     }
 
     private static @NonNull Properties vaultProperties(@NonNull VaultHeader header) {
@@ -358,5 +426,27 @@ final class BackupArchiveCodec {
 
     private static @NonNull String b64(byte @NonNull [] bytes) {
         return Base64.getEncoder().encodeToString(bytes);
+    }
+
+    private static @NonNull String sha256(byte @NonNull [] bytes) {
+        try {
+            return b64(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 digest is unavailable", e);
+        }
+    }
+
+    private record BackupZipEntry(@NonNull String name, byte @NonNull [] bytes) {
+
+        private BackupZipEntry {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(bytes, "bytes");
+            bytes = Arrays.copyOf(bytes, bytes.length);
+        }
+
+        @Override
+        public byte @NonNull [] bytes() {
+            return Arrays.copyOf(bytes, bytes.length);
+        }
     }
 }
