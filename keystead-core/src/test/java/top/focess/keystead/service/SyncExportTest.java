@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -317,6 +318,46 @@ class SyncExportTest {
     }
 
     @Test
+    void importRejectsUndecryptablePayloadBatchBeforeWritingAnyRows() {
+        FileVaultStore store = new FileVaultStore(tempDir);
+        VaultService service = new DefaultVaultService(store, CLOCK);
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret_one"))) {
+                vault.saveSecret(
+                        SecretType.API_TOKEN,
+                        draft -> draft.title("GitHub token one").field("token", value));
+            }
+            try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret_two"))) {
+                vault.saveSecret(
+                        SecretType.API_TOKEN,
+                        draft -> draft.title("GitHub token two").field("token", value));
+            }
+            List<EncryptedSyncRecord> exported = vault.exportRecordsSince(0);
+            EncryptedSyncRecord valid = exported.get(0);
+            EncryptedSyncRecord corruptBase = exported.get(1);
+            store.deleteSecretRecord(VAULT_ID, new SecretId(UUID.fromString(valid.secretId())));
+            store.deleteSecretRecord(
+                    VAULT_ID, new SecretId(UUID.fromString(corruptBase.secretId())));
+            EncryptedSyncRecord corrupt =
+                    new EncryptedSyncRecord(
+                            corruptBase.vaultId(),
+                            corruptBase.secretId(),
+                            corruptBase.revision(),
+                            corruptBase.secretType(),
+                            corruptBase.encryptedProfile(),
+                            tamperedCiphertextEnvelope(corruptBase.envelope()),
+                            false);
+
+            assertThrows(
+                    ValidationException.class,
+                    () -> vault.importRecordsWithReport(List.of(valid, corrupt)));
+
+            assertTrue(vault.listSecrets().isEmpty());
+            assertEquals(0, vault.exportRecordsSince(0).size());
+        }
+    }
+
+    @Test
     void importReportPreservesConflictWhenRemoteTombstoneIsOlderThanLocalUpdate() {
         VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
         try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
@@ -456,6 +497,20 @@ class SyncExportTest {
             return properties;
         } catch (IOException e) {
             throw new AssertionError("Sync envelope should be Java properties", e);
+        }
+    }
+
+    private static String tamperedCiphertextEnvelope(String encoded) {
+        Properties properties = syncEnvelopeProperties(encoded);
+        byte[] ciphertext = Base64.getDecoder().decode(properties.getProperty("ciphertext"));
+        ciphertext[0] = (byte) (ciphertext[0] ^ 1);
+        properties.setProperty("ciphertext", Base64.getEncoder().encodeToString(ciphertext));
+        try {
+            StringWriter writer = new StringWriter();
+            properties.store(writer, "Keystead sync v1");
+            return writer.toString();
+        } catch (IOException e) {
+            throw new AssertionError("Sync envelope should be writable", e);
         }
     }
 

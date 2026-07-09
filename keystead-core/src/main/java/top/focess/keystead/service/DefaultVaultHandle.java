@@ -606,19 +606,23 @@ final class DefaultVaultHandle implements VaultHandle {
                 SyncRecordCodec.profileAad(record.vaultId(), record.secretId(), record.revision());
         byte @Nullable [] profileBytes = null;
         byte @Nullable [] payloadAad = null;
+        byte @Nullable [] payloadBytes = null;
         try {
             EncryptedEnvelope profileEnvelope =
                     SyncRecordCodec.envelopeWithAad(record.encryptedProfile(), profileAad);
             profileBytes = crypto.decrypt(vaultKey, profileEnvelope, profileAad);
             SecretMetadata metadata = SyncRecordCodec.metadata(record, profileBytes);
             payloadAad = aad(metadata, record.revision());
-            SyncRecordCodec.envelopeWithAad(record.envelope(), payloadAad);
+            EncryptedEnvelope payloadEnvelope =
+                    SyncRecordCodec.envelopeWithAad(record.envelope(), payloadAad);
+            payloadBytes = crypto.decrypt(vaultKey, payloadEnvelope, payloadAad);
         } catch (CryptoException | IllegalArgumentException e) {
             throw new ValidationException("Active sync record cannot be decoded", e);
         } finally {
             wipe(profileAad);
             wipe(profileBytes);
             wipe(payloadAad);
+            wipe(payloadBytes);
         }
     }
 
