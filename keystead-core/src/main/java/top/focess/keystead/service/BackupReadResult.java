@@ -10,5 +10,10 @@ public record BackupReadResult(@NonNull BackupArchive archive, int unsupported) 
         if (unsupported < 0) {
             throw new IllegalArgumentException("Unsupported count must not be negative");
         }
+        int archiveRows = archive.manifest().recordCount() + archive.manifest().tombstoneCount();
+        if (unsupported > archiveRows) {
+            throw new IllegalArgumentException(
+                    "Unsupported count must not exceed archive row count");
+        }
     }
 }
