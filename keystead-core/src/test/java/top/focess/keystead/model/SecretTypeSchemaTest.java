@@ -12,6 +12,12 @@ class SecretTypeSchemaTest {
         SecretTypeSchema schema = SecretTypeSchema.forType(SecretType.LOGIN_PASSWORD);
         assertEquals(SecretType.LOGIN_PASSWORD, schema.type());
         assertEquals(List.of("username", "password", "url", "notes"), schema.fieldNames());
+        assertEquals(List.of("username", "password"), schema.requiredFieldNames());
+        assertEquals(List.of("url", "notes"), schema.optionalFieldNames());
+        assertEquals(List.of("username", "password", "notes"), schema.secretFieldNames());
+        assertEquals(List.of("url"), schema.publicFieldNames());
+        assertEquals(
+                List.of("username", "password", "url", "notes"), schema.revealableFieldNames());
         assertTrue(schema.field("username").required());
         assertEquals(SecretFieldType.SECRET, schema.field("username").type());
         assertEquals(SecretFieldType.TEXT, schema.field("url").type());
@@ -33,13 +39,48 @@ class SecretTypeSchemaTest {
     void genericSecretAllowsCustomFieldsAndHasNoFixedFields() {
         SecretTypeSchema schema = SecretTypeSchema.forType(SecretType.GENERIC_SECRET);
         assertTrue(schema.allowsCustomFields());
+        assertEquals(SecretFieldType.SECRET, schema.customFieldType());
+        assertTrue(schema.customFieldsRevealable());
         assertTrue(schema.fieldNames().isEmpty());
+        assertTrue(schema.requiredFieldNames().isEmpty());
+        assertTrue(schema.optionalFieldNames().isEmpty());
+        assertTrue(schema.secretFieldNames().isEmpty());
+        assertTrue(schema.publicFieldNames().isEmpty());
+        assertTrue(schema.revealableFieldNames().isEmpty());
     }
 
     @Test
     void typedSecretsDoNotAllowCustomFields() {
-        assertFalse(SecretTypeSchema.forType(SecretType.LOGIN_PASSWORD).allowsCustomFields());
-        assertFalse(SecretTypeSchema.forType(SecretType.SSH_KEY).allowsCustomFields());
+        SecretTypeSchema loginSchema = SecretTypeSchema.forType(SecretType.LOGIN_PASSWORD);
+        SecretTypeSchema sshKeySchema = SecretTypeSchema.forType(SecretType.SSH_KEY);
+
+        assertFalse(loginSchema.allowsCustomFields());
+        assertNull(loginSchema.customFieldType());
+        assertFalse(loginSchema.customFieldsRevealable());
+        assertFalse(sshKeySchema.allowsCustomFields());
+        assertNull(sshKeySchema.customFieldType());
+        assertFalse(sshKeySchema.customFieldsRevealable());
+    }
+
+    @Test
+    void schemaRejectsContradictoryCustomFieldPolicy() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new SecretTypeSchema(SecretType.GENERIC_SECRET, List.of(), true, null, true));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new SecretTypeSchema(
+                                SecretType.LOGIN_PASSWORD,
+                                List.of(),
+                                false,
+                                SecretFieldType.SECRET,
+                                false));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new SecretTypeSchema(
+                                SecretType.LOGIN_PASSWORD, List.of(), false, null, true));
     }
 
     @Test
