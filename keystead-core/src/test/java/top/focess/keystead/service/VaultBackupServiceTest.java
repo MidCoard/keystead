@@ -510,6 +510,27 @@ class VaultBackupServiceTest {
         assertTrue(exception.getMessage().contains("duplicate tombstone"));
     }
 
+    @Test
+    void archiveRejectsActiveAndTombstoneForSamePrimaryKey() {
+        SecretId secretId = secretId(2L);
+        ValidationException exception =
+                assertThrows(
+                        ValidationException.class,
+                        () ->
+                                new BackupArchive(
+                                        new BackupManifest(
+                                                VaultBackupService.FORMAT_VERSION,
+                                                VAULT_ID,
+                                                1,
+                                                1,
+                                                CLOCK.instant()),
+                                        header(),
+                                        List.of(record(secretId, "alpha", 1L)),
+                                        List.of(deleted(secretId, 2L))));
+
+        assertTrue(exception.getMessage().contains("active and tombstone"));
+    }
+
     private static VaultHeader header() {
         return new VaultHeader(
                 VAULT_ID,

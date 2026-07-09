@@ -39,30 +39,50 @@ public record BackupArchive(
                 throw new ValidationException("Backup archive contains record from another vault");
             }
         }
-        requireUniqueRecordIds(records);
+        Set<SecretId> recordIds = recordIds(records);
+        requireUniqueRecordIds(records, recordIds);
         for (DeletedSecretRecord tombstone : tombstones) {
             if (!manifest.vaultId().equals(tombstone.vaultId())) {
                 throw new ValidationException(
                         "Backup archive contains tombstone from another vault");
             }
         }
-        requireUniqueTombstoneIds(tombstones);
+        Set<SecretId> tombstoneIds = tombstoneIds(tombstones);
+        requireUniqueTombstoneIds(tombstones, tombstoneIds);
+        requireDisjointRecordStates(recordIds, tombstoneIds);
     }
 
-    private static void requireUniqueRecordIds(@NonNull List<EncryptedSecretRecord> records) {
-        Set<SecretId> ids =
-                records.stream().map(record -> record.metadata().id()).collect(Collectors.toSet());
+    private static @NonNull Set<SecretId> recordIds(@NonNull List<EncryptedSecretRecord> records) {
+        return records.stream().map(record -> record.metadata().id()).collect(Collectors.toSet());
+    }
+
+    private static @NonNull Set<SecretId> tombstoneIds(
+            @NonNull List<DeletedSecretRecord> tombstones) {
+        return tombstones.stream().map(DeletedSecretRecord::secretId).collect(Collectors.toSet());
+    }
+
+    private static void requireUniqueRecordIds(
+            @NonNull List<EncryptedSecretRecord> records, @NonNull Set<SecretId> ids) {
         if (ids.size() != records.size()) {
             throw new ValidationException("Backup archive contains duplicate record primary key");
         }
     }
 
-    private static void requireUniqueTombstoneIds(@NonNull List<DeletedSecretRecord> tombstones) {
-        Set<SecretId> ids =
-                tombstones.stream().map(DeletedSecretRecord::secretId).collect(Collectors.toSet());
+    private static void requireUniqueTombstoneIds(
+            @NonNull List<DeletedSecretRecord> tombstones, @NonNull Set<SecretId> ids) {
         if (ids.size() != tombstones.size()) {
             throw new ValidationException(
                     "Backup archive contains duplicate tombstone primary key");
+        }
+    }
+
+    private static void requireDisjointRecordStates(
+            @NonNull Set<SecretId> recordIds, @NonNull Set<SecretId> tombstoneIds) {
+        for (SecretId id : recordIds) {
+            if (tombstoneIds.contains(id)) {
+                throw new ValidationException(
+                        "Backup archive contains active and tombstone rows for primary key");
+            }
         }
     }
 }
