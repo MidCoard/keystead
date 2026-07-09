@@ -12,8 +12,8 @@ public record SyncImportConflict(
         boolean remoteDeleted) {
 
     public SyncImportConflict {
-        Objects.requireNonNull(vaultId, "vaultId");
-        Objects.requireNonNull(secretId, "secretId");
+        requireNotBlank(vaultId, "vaultId");
+        requireNotBlank(secretId, "secretId");
         if (localRevision <= 0) {
             throw new IllegalArgumentException("Local revision must be positive");
         }
@@ -23,6 +23,13 @@ public record SyncImportConflict(
         if (localRevision < remoteRevision) {
             throw new IllegalArgumentException(
                     "Local revision must be greater than or equal to remote revision");
+        }
+    }
+
+    private static void requireNotBlank(@NonNull String value, @NonNull String field) {
+        Objects.requireNonNull(value, field);
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(field + " must not be blank");
         }
     }
 }
