@@ -20,5 +20,9 @@ public record SyncImportConflict(
         if (remoteRevision <= 0) {
             throw new IllegalArgumentException("Remote revision must be positive");
         }
+        if (localRevision < remoteRevision) {
+            throw new IllegalArgumentException(
+                    "Local revision must be greater than or equal to remote revision");
+        }
     }
 }
