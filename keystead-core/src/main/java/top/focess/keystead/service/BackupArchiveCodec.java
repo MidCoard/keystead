@@ -105,6 +105,7 @@ final class BackupArchiveCodec {
             Properties properties = toProperties(manifestEntry.bytes());
             manifest = readManifest(properties);
             entryDigests = entryDigests(properties);
+            requireDigestEntriesExist(entries, entryDigests);
         } catch (IOException | RuntimeException e) {
             throw new ValidationException("Backup archive is corrupt: " + MANIFEST_ENTRY, e);
         }
@@ -202,6 +203,18 @@ final class BackupArchiveCodec {
                         Collectors.toUnmodifiableMap(
                                 name -> name.substring(ENTRY_DIGEST_PREFIX.length()),
                                 properties::getProperty));
+    }
+
+    private static void requireDigestEntriesExist(
+            @NonNull List<BackupZipEntry> entries, @NonNull Map<String, String> digests) {
+        Set<String> entryNames =
+                entries.stream().map(BackupZipEntry::name).collect(Collectors.toSet());
+        for (String digestEntryName : digests.keySet()) {
+            if (digestEntryName.equals(MANIFEST_ENTRY) || !entryNames.contains(digestEntryName)) {
+                throw new ValidationException(
+                        "Backup archive digest references missing entry: " + digestEntryName);
+            }
+        }
     }
 
     private static void verifyEntryDigest(

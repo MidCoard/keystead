@@ -345,6 +345,27 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void readFromRejectsManifestDigestForMissingEntry() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        byte[] danglingDigest =
+                addManifestDigest(
+                        out.toByteArray(),
+                        "entry.sha256.records/00000000-0000-0000-0000-000000000009.properties",
+                        "not-a-real-digest");
+
+        assertThrows(
+                ValidationException.class,
+                () -> backup.readFrom(new ByteArrayInputStream(danglingDigest)));
+    }
+
+    @Test
     void readFromSkipsMalformedEntriesWithoutLosingValidOnes() throws Exception {
         FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
         source.saveVaultHeader(header());
@@ -533,6 +554,17 @@ class VaultBackupServiceTest {
         Properties manifest = new Properties();
         manifest.load(new java.io.StringReader(zipEntryText(archive, "manifest.properties")));
         manifest.remove(digestKey);
+        ByteArrayOutputStream manifestBytes = new ByteArrayOutputStream();
+        manifest.store(new java.io.OutputStreamWriter(manifestBytes, StandardCharsets.UTF_8), null);
+        return replaceZipEntryText(
+                archive, "manifest.properties", manifestBytes.toString(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] addManifestDigest(byte[] archive, String digestKey, String digest)
+            throws Exception {
+        Properties manifest = new Properties();
+        manifest.load(new java.io.StringReader(zipEntryText(archive, "manifest.properties")));
+        manifest.setProperty(digestKey, digest);
         ByteArrayOutputStream manifestBytes = new ByteArrayOutputStream();
         manifest.store(new java.io.OutputStreamWriter(manifestBytes, StandardCharsets.UTF_8), null);
         return replaceZipEntryText(
