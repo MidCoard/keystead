@@ -242,6 +242,42 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void readFromRejectsTombstoneEntryMissingDigestInDigestedManifest() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveDeletedSecretRecord(deleted(secretId(3L), 2L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        String entryName = "deleted/00000000-0000-0000-0000-000000000003.properties";
+        byte[] missingDigest = removeManifestDigest(out.toByteArray(), "entry.sha256." + entryName);
+
+        assertThrows(
+                ValidationException.class,
+                () -> backup.readFrom(new ByteArrayInputStream(missingDigest)));
+    }
+
+    @Test
+    void readFromRejectsVaultHeaderEntryMissingDigestInDigestedManifest() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        byte[] missingDigest =
+                removeManifestDigest(out.toByteArray(), "entry.sha256.vault.properties");
+
+        assertThrows(
+                ValidationException.class,
+                () -> backup.readFrom(new ByteArrayInputStream(missingDigest)));
+    }
+
+    @Test
     void readFromRejectsExtraRecordEntryMissingDigestInDigestedManifest() throws Exception {
         FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
         source.saveVaultHeader(header());
@@ -264,6 +300,41 @@ class VaultBackupServiceTest {
                     new ZipEntry("records/00000000-0000-0000-0000-000000000009.properties"));
             zip.write(
                     "vaultId=00000000-0000-0000-0000-000000000001\n"
+                            .getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+
+        assertThrows(
+                ValidationException.class,
+                () -> backup.readFrom(new ByteArrayInputStream(rebuilt.toByteArray())));
+    }
+
+    @Test
+    void readFromRejectsExtraTombstoneEntryMissingDigestInDigestedManifest() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveDeletedSecretRecord(deleted(secretId(3L), 2L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        ByteArrayOutputStream rebuilt = new ByteArrayOutputStream();
+        try (ZipInputStream in = new ZipInputStream(new ByteArrayInputStream(out.toByteArray()));
+                ZipOutputStream zip = new ZipOutputStream(rebuilt)) {
+            ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                zip.putNextEntry(new ZipEntry(entry.getName()));
+                zip.write(in.readAllBytes());
+                zip.closeEntry();
+            }
+            zip.putNextEntry(
+                    new ZipEntry("deleted/00000000-0000-0000-0000-000000000009.properties"));
+            zip.write(
+                    """
+                    vaultId=00000000-0000-0000-0000-000000000001
+                    secretId=00000000-0000-0000-0000-000000000009
+                    """
                             .getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
         }
