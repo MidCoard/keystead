@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
@@ -223,6 +224,24 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void readFromRejectsRecordEntryMissingDigestInDigestedManifest() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        String entryName = "records/00000000-0000-0000-0000-000000000002.properties";
+        byte[] missingDigest = removeManifestDigest(out.toByteArray(), "entry.sha256." + entryName);
+
+        assertThrows(
+                ValidationException.class,
+                () -> backup.readFrom(new ByteArrayInputStream(missingDigest)));
+    }
+
+    @Test
     void readFromSkipsMalformedEntriesWithoutLosingValidOnes() throws Exception {
         FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
         source.saveVaultHeader(header());
@@ -403,6 +422,16 @@ class VaultBackupServiceTest {
             }
         }
         return rebuilt.toByteArray();
+    }
+
+    private static byte[] removeManifestDigest(byte[] archive, String digestKey) throws Exception {
+        Properties manifest = new Properties();
+        manifest.load(new java.io.StringReader(zipEntryText(archive, "manifest.properties")));
+        manifest.remove(digestKey);
+        ByteArrayOutputStream manifestBytes = new ByteArrayOutputStream();
+        manifest.store(new java.io.OutputStreamWriter(manifestBytes, StandardCharsets.UTF_8), null);
+        return replaceZipEntryText(
+                archive, "manifest.properties", manifestBytes.toString(StandardCharsets.UTF_8));
     }
 
     private static byte[] moveManifestToEnd(byte[] archive) throws Exception {

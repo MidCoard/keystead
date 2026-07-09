@@ -207,7 +207,13 @@ final class BackupArchiveCodec {
     private static void verifyEntryDigest(
             @NonNull String name, byte @NonNull [] bytes, @NonNull Map<String, String> digests) {
         @Nullable String expected = digests.get(name);
-        if (expected != null && !expected.equals(sha256(bytes))) {
+        if (expected == null) {
+            if (!digests.isEmpty()) {
+                throw new ValidationException("Backup archive entry digest is missing: " + name);
+            }
+            return;
+        }
+        if (!expected.equals(sha256(bytes))) {
             throw new ValidationException("Backup archive entry digest mismatch: " + name);
         }
     }
