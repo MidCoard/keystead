@@ -455,7 +455,7 @@ final class DefaultVaultHandle implements VaultHandle {
             @NonNull List<EncryptedSyncRecord> records) {
         Objects.requireNonNull(records, "records");
         requireOpen();
-        records.forEach(this::requireSyncRecordVault);
+        records.forEach(this::requireSyncRecordPreflight);
         int imported = 0;
         int skipped = 0;
         List<SyncImportConflict> conflicts = new ArrayList<>();
@@ -535,7 +535,7 @@ final class DefaultVaultHandle implements VaultHandle {
 
     private @NonNull ImportOutcome importRecord(@NonNull EncryptedSyncRecord record) {
         Objects.requireNonNull(record, "record");
-        requireSyncRecordVault(record);
+        requireSyncRecordPreflight(record);
         SecretId secretId = new SecretId(UUID.fromString(record.secretId()));
         @Nullable EncryptedSecretRecord existing =
                 store.loadSecretRecord(vaultId, secretId).orElse(null);
@@ -579,6 +579,21 @@ final class DefaultVaultHandle implements VaultHandle {
             wipe(profileAad);
             wipe(profileBytes);
             wipe(payloadAad);
+        }
+    }
+
+    private void requireSyncRecordPreflight(@NonNull EncryptedSyncRecord record) {
+        Objects.requireNonNull(record, "record");
+        requireSyncRecordVault(record);
+        try {
+            UUID.fromString(record.secretId());
+        } catch (IllegalArgumentException e) {
+            throw new ValidationException("Sync record secret id is invalid", e);
+        }
+        try {
+            SecretType.valueOf(record.secretType());
+        } catch (IllegalArgumentException e) {
+            throw new ValidationException("Sync record secret type is unsupported", e);
         }
     }
 
