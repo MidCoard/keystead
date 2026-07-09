@@ -358,6 +358,38 @@ class SyncExportTest {
     }
 
     @Test
+    void importRejectsDuplicateSecretBatchBeforeWritingAnyRows() {
+        FileVaultStore store = new FileVaultStore(tempDir);
+        VaultService service = new DefaultVaultService(store, CLOCK);
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
+                vault.saveSecret(
+                        SecretType.API_TOKEN,
+                        draft -> draft.title("GitHub token").field("token", value));
+            }
+            EncryptedSyncRecord valid = vault.exportRecordsSince(0).getFirst();
+            SecretId validSecretId = new SecretId(UUID.fromString(valid.secretId()));
+            store.deleteSecretRecord(VAULT_ID, validSecretId);
+            EncryptedSyncRecord duplicateTombstone =
+                    new EncryptedSyncRecord(
+                            VAULT_ID.value().toString(),
+                            valid.secretId(),
+                            valid.revision() + 1,
+                            SecretType.API_TOKEN.name(),
+                            "",
+                            "",
+                            true);
+
+            assertThrows(
+                    ValidationException.class,
+                    () -> vault.importRecordsWithReport(List.of(valid, duplicateTombstone)));
+
+            assertTrue(vault.listSecrets().isEmpty());
+            assertEquals(0, vault.exportRecordsSince(0).size());
+        }
+    }
+
+    @Test
     void importReportPreservesConflictWhenRemoteTombstoneIsOlderThanLocalUpdate() {
         VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
         try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {

@@ -4,8 +4,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
@@ -456,7 +458,7 @@ final class DefaultVaultHandle implements VaultHandle {
             @NonNull List<EncryptedSyncRecord> records) {
         Objects.requireNonNull(records, "records");
         requireOpen();
-        records.forEach(this::requireSyncRecordPreflight);
+        requireSyncImportBatchPreflight(records);
         int imported = 0;
         int skipped = 0;
         List<SyncImportConflict> conflicts = new ArrayList<>();
@@ -580,6 +582,16 @@ final class DefaultVaultHandle implements VaultHandle {
             wipe(profileAad);
             wipe(profileBytes);
             wipe(payloadAad);
+        }
+    }
+
+    private void requireSyncImportBatchPreflight(@NonNull List<EncryptedSyncRecord> records) {
+        Set<String> secretIds = new HashSet<>();
+        for (EncryptedSyncRecord record : records) {
+            requireSyncRecordPreflight(record);
+            if (!secretIds.add(record.secretId())) {
+                throw new ValidationException("Sync import batch contains duplicate secret id");
+            }
         }
     }
 
