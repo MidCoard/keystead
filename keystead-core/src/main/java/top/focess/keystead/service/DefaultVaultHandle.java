@@ -455,6 +455,7 @@ final class DefaultVaultHandle implements VaultHandle {
             @NonNull List<EncryptedSyncRecord> records) {
         Objects.requireNonNull(records, "records");
         requireOpen();
+        records.forEach(this::requireSyncRecordVault);
         int imported = 0;
         int skipped = 0;
         List<SyncImportConflict> conflicts = new ArrayList<>();
@@ -534,9 +535,7 @@ final class DefaultVaultHandle implements VaultHandle {
 
     private @NonNull ImportOutcome importRecord(@NonNull EncryptedSyncRecord record) {
         Objects.requireNonNull(record, "record");
-        if (!vaultId.value().toString().equals(record.vaultId())) {
-            throw new ValidationException("Sync record belongs to a different vault");
-        }
+        requireSyncRecordVault(record);
         SecretId secretId = new SecretId(UUID.fromString(record.secretId()));
         @Nullable EncryptedSecretRecord existing =
                 store.loadSecretRecord(vaultId, secretId).orElse(null);
@@ -580,6 +579,12 @@ final class DefaultVaultHandle implements VaultHandle {
             wipe(profileAad);
             wipe(profileBytes);
             wipe(payloadAad);
+        }
+    }
+
+    private void requireSyncRecordVault(@NonNull EncryptedSyncRecord record) {
+        if (!vaultId.value().toString().equals(record.vaultId())) {
+            throw new ValidationException("Sync record belongs to a different vault");
         }
     }
 
