@@ -466,6 +466,50 @@ class VaultBackupServiceTest {
         assertTrue(exception.getMessage().contains("vault"));
     }
 
+    @Test
+    void archiveRejectsDuplicateRecordPrimaryKey() {
+        SecretId secretId = secretId(2L);
+        ValidationException exception =
+                assertThrows(
+                        ValidationException.class,
+                        () ->
+                                new BackupArchive(
+                                        new BackupManifest(
+                                                VaultBackupService.FORMAT_VERSION,
+                                                VAULT_ID,
+                                                2,
+                                                0,
+                                                CLOCK.instant()),
+                                        header(),
+                                        List.of(
+                                                record(secretId, "alpha", 1L),
+                                                record(secretId, "beta", 2L)),
+                                        List.of()));
+
+        assertTrue(exception.getMessage().contains("duplicate record"));
+    }
+
+    @Test
+    void archiveRejectsDuplicateTombstonePrimaryKey() {
+        SecretId secretId = secretId(2L);
+        ValidationException exception =
+                assertThrows(
+                        ValidationException.class,
+                        () ->
+                                new BackupArchive(
+                                        new BackupManifest(
+                                                VaultBackupService.FORMAT_VERSION,
+                                                VAULT_ID,
+                                                0,
+                                                2,
+                                                CLOCK.instant()),
+                                        header(),
+                                        List.of(),
+                                        List.of(deleted(secretId, 1L), deleted(secretId, 2L))));
+
+        assertTrue(exception.getMessage().contains("duplicate tombstone"));
+    }
+
     private static VaultHeader header() {
         return new VaultHeader(
                 VAULT_ID,
