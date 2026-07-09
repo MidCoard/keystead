@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -12,6 +14,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.NonNull;
@@ -65,7 +68,7 @@ class SyncExportTest {
             assertFalse(record.deleted());
             assertFalse(record.encryptedProfile().contains("GitHub"));
             assertFalse(record.encryptedProfile().contains("github"));
-            assertFalse(record.envelope().contains("aad"));
+            assertFalse(syncEnvelopeProperties(record.envelope()).containsKey("aad"));
             assertFalse(record.envelope().contains(encoded("GitHub")));
         }
     }
@@ -346,6 +349,16 @@ class SyncExportTest {
                 .findFirst()
                 .orElseThrow()
                 .title();
+    }
+
+    private static Properties syncEnvelopeProperties(String encoded) {
+        try {
+            Properties properties = new Properties();
+            properties.load(new StringReader(encoded));
+            return properties;
+        } catch (IOException e) {
+            throw new AssertionError("Sync envelope should be Java properties", e);
+        }
     }
 
     private static EncryptedSecretRecord storedRecord(@NonNull SecretId secretId, long revision) {

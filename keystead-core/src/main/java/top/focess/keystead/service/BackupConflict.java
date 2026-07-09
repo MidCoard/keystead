@@ -9,5 +9,15 @@ public record BackupConflict(
 
     public BackupConflict {
         Objects.requireNonNull(secretId, "secretId");
+        if (existingRevision <= 0) {
+            throw new IllegalArgumentException("Existing revision must be positive");
+        }
+        if (incomingRevision <= 0) {
+            throw new IllegalArgumentException("Incoming revision must be positive");
+        }
+        if (existingRevision < incomingRevision) {
+            throw new IllegalArgumentException(
+                    "Existing revision must be greater than or equal to incoming revision");
+        }
     }
 }
