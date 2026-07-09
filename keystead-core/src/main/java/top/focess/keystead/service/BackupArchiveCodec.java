@@ -29,6 +29,7 @@ import top.focess.keystead.model.SecretClassification;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretProfile;
+import top.focess.keystead.model.SecretRecordAad;
 import top.focess.keystead.model.SecretType;
 import top.focess.keystead.model.VaultHeader;
 import top.focess.keystead.model.VaultId;

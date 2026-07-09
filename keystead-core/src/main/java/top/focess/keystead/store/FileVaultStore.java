@@ -151,7 +151,6 @@ public final class FileVaultStore implements VaultStore {
         properties.setProperty("envelope.algorithm", envelope.algorithm());
         properties.setProperty("envelope.keyId", envelope.keyId().value());
         properties.setProperty("envelope.nonce", b64(envelope.nonce()));
-        properties.setProperty("envelope.aad", b64(envelope.aad()));
         properties.setProperty("envelope.ciphertext", b64(envelope.ciphertext()));
         properties.setProperty("envelope.encryptedAt", envelope.encryptedAt().toString());
         store(properties, secretPath(record.metadata().id()));
@@ -181,6 +180,7 @@ public final class FileVaultStore implements VaultStore {
             return Optional.empty();
         }
         SecretMetadata metadata = readMetadata(properties);
+        long recordRevision = longValue(properties, "record.revision");
         requireSecretPathMatches(secretId, metadata.id(), "Secret record");
         EncryptedEnvelope envelope =
                 new EncryptedEnvelope(
@@ -188,15 +188,11 @@ public final class FileVaultStore implements VaultStore {
                         required(properties, "envelope.algorithm"),
                         new KeyId(required(properties, "envelope.keyId")),
                         bytes(properties, "envelope.nonce"),
-                        bytes(properties, "envelope.aad"),
+                        envelopeAad(properties, storedVaultId, metadata, recordRevision),
                         bytes(properties, "envelope.ciphertext"),
                         Instant.parse(required(properties, "envelope.encryptedAt")));
         EncryptedSecretRecord record =
-                new EncryptedSecretRecord(
-                        storedVaultId,
-                        metadata,
-                        envelope,
-                        longValue(properties, "record.revision"));
+                new EncryptedSecretRecord(storedVaultId, metadata, envelope, recordRevision);
         return Optional.of(record);
     }
 
@@ -371,22 +367,31 @@ public final class FileVaultStore implements VaultStore {
     private @NonNull EncryptedSecretRecord readRecord(@NonNull Properties properties) {
         VaultId storedVaultId = new VaultId(UUID.fromString(required(properties, "vaultId")));
         SecretMetadata metadata = readMetadata(properties);
+        long recordRevision = longValue(properties, "record.revision");
         EncryptedEnvelope envelope =
                 new EncryptedEnvelope(
                         intValue(properties, "envelope.version"),
                         required(properties, "envelope.algorithm"),
                         new KeyId(required(properties, "envelope.keyId")),
                         bytes(properties, "envelope.nonce"),
-                        bytes(properties, "envelope.aad"),
+                        envelopeAad(properties, storedVaultId, metadata, recordRevision),
                         bytes(properties, "envelope.ciphertext"),
                         Instant.parse(required(properties, "envelope.encryptedAt")));
         EncryptedSecretRecord record =
-                new EncryptedSecretRecord(
-                        storedVaultId,
-                        metadata,
-                        envelope,
-                        longValue(properties, "record.revision"));
+                new EncryptedSecretRecord(storedVaultId, metadata, envelope, recordRevision);
         return record;
+    }
+
+    private byte @NonNull [] envelopeAad(
+            @NonNull Properties properties,
+            @NonNull VaultId vaultId,
+            @NonNull SecretMetadata metadata,
+            long recordRevision) {
+        @Nullable String encoded = properties.getProperty("envelope.aad");
+        if (encoded != null) {
+            return Base64.getDecoder().decode(encoded);
+        }
+        return SecretRecordAad.encode(vaultId, metadata, recordRevision);
     }
 
     private boolean isHiddenByNewerTombstone(@NonNull EncryptedSecretRecord record) {

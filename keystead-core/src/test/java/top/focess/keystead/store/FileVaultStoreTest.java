@@ -505,6 +505,32 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void secretRecordFileDoesNotStoreEnvelopeAad() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        EncryptedSecretRecord record = record();
+
+        store.saveSecretRecord(record);
+
+        String file = Files.readString(secretFile(record.metadata().id()));
+        assertFalse(file.contains("envelope.aad"));
+    }
+
+    @Test
+    void loadSecretRecordPreservesLegacySerializedEnvelopeAad() throws IOException {
+        VaultStore store = new FileVaultStore(tempDir);
+        EncryptedSecretRecord record = record();
+        byte[] legacyAad = new byte[] {4, 5, 6};
+
+        store.saveSecretRecord(record);
+        Path path = secretFile(record.metadata().id());
+        Files.writeString(path, Files.readString(path) + "\nenvelope.aad=BAUG\n");
+
+        EncryptedSecretRecord loaded =
+                store.loadSecretRecord(record.vaultId(), record.metadata().id()).orElseThrow();
+        assertArrayEquals(legacyAad, loaded.payload().aad());
+    }
+
+    @Test
     void nextRevisionDoesNotAdvanceDurableRevisionUntilRecordCommits() {
         VaultStore store = new FileVaultStore(tempDir);
         EncryptedSecretRecord record = record();
@@ -849,7 +875,7 @@ class FileVaultStoreTest {
                         "AES-256-GCM",
                         new KeyId("vault-key"),
                         new byte[] {1, 2, 3},
-                        new byte[] {4, 5, 6},
+                        SecretRecordAad.encode(vaultId, metadata, revision),
                         new byte[] {7, 8, 9},
                         Instant.parse("2026-07-02T00:02:00Z"));
         return new EncryptedSecretRecord(vaultId, metadata, envelope, revision);

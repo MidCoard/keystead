@@ -1,17 +1,15 @@
-package top.focess.keystead.service;
+package top.focess.keystead.model;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
-import top.focess.keystead.model.SecretMetadata;
-import top.focess.keystead.model.VaultId;
 
-final class SecretRecordAad {
+public final class SecretRecordAad {
 
     private SecretRecordAad() {}
 
-    static byte @NonNull [] encode(
+    public static byte @NonNull [] encode(
             @NonNull VaultId vaultId, @NonNull SecretMetadata metadata, long revision) {
         StringBuilder value = new StringBuilder();
         append(value, "keystead-secret-record-v2");

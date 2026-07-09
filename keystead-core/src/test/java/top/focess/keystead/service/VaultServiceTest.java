@@ -365,9 +365,7 @@ class VaultServiceTest {
 
         Path secretFile = tempDir.resolve("secrets").resolve(secretId.value() + ".properties");
         String file = Files.readString(secretFile);
-        Files.writeString(
-                secretFile,
-                file.replaceAll("(?m)^envelope\\.aad=.*$", "envelope.aad=" + b64("tampered-aad")));
+        Files.writeString(secretFile, file + "\nenvelope.aad=" + b64("tampered-aad") + "\n");
 
         try (VaultHandle vault = service.openVault(VAULT_ID, master())) {
             assertThrows(
