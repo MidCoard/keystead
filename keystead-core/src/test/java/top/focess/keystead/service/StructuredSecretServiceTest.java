@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -67,6 +68,58 @@ class StructuredSecretServiceTest {
                                                 chars("-----BEGIN OPENSSH PRIVATE KEY-----"),
                                                 chars));
                     });
+        }
+    }
+
+    @Test
+    void structuredSecretViewOrdersTypedFieldsBySchema() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            SecretId secretId;
+            try (SecretBuffer passphrase = SecretBuffer.fromChars(chars("private-passphrase"));
+                    SecretBuffer privateKey =
+                            SecretBuffer.fromChars(chars("-----BEGIN OPENSSH PRIVATE KEY-----"));
+                    SecretBuffer publicKey = SecretBuffer.fromChars(chars("ssh-ed25519 AAAA"))) {
+                secretId =
+                        vault.saveSecret(
+                                SecretType.SSH_KEY,
+                                draft ->
+                                        draft.title("Work SSH")
+                                                .field("passphrase", passphrase)
+                                                .field("privateKey", privateKey)
+                                                .field("publicKey", publicKey));
+            }
+
+            vault.withSecret(
+                    secretId,
+                    view ->
+                            assertEquals(
+                                    List.of("publicKey", "privateKey", "passphrase"),
+                                    view.orderedFieldNames()));
+        }
+    }
+
+    @Test
+    void structuredSecretViewKeepsGenericCustomFieldsInPayloadOrder() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            SecretId secretId;
+            try (SecretBuffer second = SecretBuffer.fromChars(chars("second-value"));
+                    SecretBuffer first = SecretBuffer.fromChars(chars("first-value"))) {
+                secretId =
+                        vault.saveSecret(
+                                SecretType.GENERIC_SECRET,
+                                draft ->
+                                        draft.title("Generic")
+                                                .field("second", second)
+                                                .field("first", first));
+            }
+
+            vault.withSecret(
+                    secretId,
+                    view -> assertEquals(List.of("second", "first"), view.orderedFieldNames()));
         }
     }
 

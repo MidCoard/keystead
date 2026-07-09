@@ -1,7 +1,9 @@
 package top.focess.keystead.service;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -10,6 +12,7 @@ import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.model.SecretMetadata;
+import top.focess.keystead.model.SecretTypeSchema;
 
 final class StructuredSecretViewImpl implements StructuredSecretView, AutoCloseable {
 
@@ -32,6 +35,22 @@ final class StructuredSecretViewImpl implements StructuredSecretView, AutoClosea
     public @NonNull Set<String> fieldNames() {
         requireOpen();
         return Set.copyOf(fields.keySet());
+    }
+
+    @Override
+    public @NonNull List<String> orderedFieldNames() {
+        requireOpen();
+        SecretTypeSchema schema = SecretTypeSchema.forType(metadata.type());
+        if (schema.allowsCustomFields()) {
+            return List.copyOf(fields.keySet());
+        }
+        List<String> ordered = new ArrayList<>();
+        for (String fieldName : schema.fieldNames()) {
+            if (fields.containsKey(fieldName)) {
+                ordered.add(fieldName);
+            }
+        }
+        return List.copyOf(ordered);
     }
 
     @Override
