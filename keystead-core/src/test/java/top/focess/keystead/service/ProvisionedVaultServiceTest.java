@@ -65,6 +65,43 @@ class ProvisionedVaultServiceTest {
         }
     }
 
+    @Test
+    void provisionedVaultPullsTombstoneAndDeletesSyncedSecret() {
+        DefaultCryptoService crypto = new DefaultCryptoService();
+        DefaultVaultService sourceService =
+                new DefaultVaultService(
+                        new FileVaultStore(tempDir.resolve("delete-source")), CLOCK);
+        DefaultVaultService targetService =
+                new DefaultVaultService(
+                        new FileVaultStore(tempDir.resolve("delete-target")), CLOCK);
+        byte[] context = "vault:vault-delete:device:laptop-1".getBytes(StandardCharsets.UTF_8);
+
+        try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
+                VaultHandle source =
+                        sourceService.createVault(
+                                new CreateVaultRequest(VAULT_ID), masterPassword())) {
+            SecretId secretId = saveLogin(source);
+            List<EncryptedSyncRecord> created = source.exportRecordsSince(0);
+            byte[] packageBytes = source.wrapVaultKeyForDevice(device.publicKey(), context);
+
+            try (VaultHandle target =
+                    targetService.provisionVault(
+                            VAULT_ID, packageBytes, device.privateKey(), context)) {
+                assertEquals(1, target.importRecords(created));
+                assertEquals(1, target.listSecrets().size());
+            }
+
+            source.deleteSecret(secretId);
+            List<EncryptedSyncRecord> deleted = source.exportRecordsSince(1);
+
+            try (VaultHandle target =
+                    targetService.openVaultWithDeviceKey(VAULT_ID, device.privateKey(), context)) {
+                assertEquals(1, target.importRecords(deleted));
+                assertEquals(0, target.listSecrets().size());
+            }
+        }
+    }
+
     private static SecretId saveLogin(VaultHandle vault) {
         try (SecretBuffer username = SecretBuffer.fromChars("alice@example.com".toCharArray());
                 SecretBuffer password = SecretBuffer.fromChars("secret-password".toCharArray())) {
