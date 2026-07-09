@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.VaultKey;
 import top.focess.keystead.model.*;
@@ -594,6 +595,30 @@ final class DefaultVaultHandle implements VaultHandle {
             SecretType.valueOf(record.secretType());
         } catch (IllegalArgumentException e) {
             throw new ValidationException("Sync record secret type is unsupported", e);
+        }
+        if (!record.deleted()) {
+            requireActiveSyncRecordDecodable(record);
+        }
+    }
+
+    private void requireActiveSyncRecordDecodable(@NonNull EncryptedSyncRecord record) {
+        byte[] profileAad =
+                SyncRecordCodec.profileAad(record.vaultId(), record.secretId(), record.revision());
+        byte @Nullable [] profileBytes = null;
+        byte @Nullable [] payloadAad = null;
+        try {
+            EncryptedEnvelope profileEnvelope =
+                    SyncRecordCodec.envelopeWithAad(record.encryptedProfile(), profileAad);
+            profileBytes = crypto.decrypt(vaultKey, profileEnvelope, profileAad);
+            SecretMetadata metadata = SyncRecordCodec.metadata(record, profileBytes);
+            payloadAad = aad(metadata, record.revision());
+            SyncRecordCodec.envelopeWithAad(record.envelope(), payloadAad);
+        } catch (CryptoException | IllegalArgumentException e) {
+            throw new ValidationException("Active sync record cannot be decoded", e);
+        } finally {
+            wipe(profileAad);
+            wipe(profileBytes);
+            wipe(payloadAad);
         }
     }
 
