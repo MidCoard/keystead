@@ -444,6 +444,55 @@ class SyncExportTest {
     }
 
     @Test
+    void syncRecordRejectsBlankIdentityAndSecretType() {
+        String vaultId = VAULT_ID.value().toString();
+        String secretId = UUID.randomUUID().toString();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                " ",
+                                secretId,
+                                1L,
+                                SecretType.API_TOKEN.name(),
+                                "profile",
+                                "envelope",
+                                false));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                vaultId,
+                                " ",
+                                1L,
+                                SecretType.API_TOKEN.name(),
+                                "profile",
+                                "envelope",
+                                false));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                vaultId, secretId, 1L, " ", "profile", "envelope", false));
+    }
+
+    @Test
+    void syncRecordRejectsUnsupportedSecretType() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                VAULT_ID.value().toString(),
+                                UUID.randomUUID().toString(),
+                                1L,
+                                "OAUTH_REFRESH_TOKEN",
+                                "profile",
+                                "envelope",
+                                false));
+    }
+
+    @Test
     void activeSyncRecordRejectsMissingEncryptedProfileOrEnvelope() {
         String vaultId = VAULT_ID.value().toString();
         String secretId = UUID.randomUUID().toString();
