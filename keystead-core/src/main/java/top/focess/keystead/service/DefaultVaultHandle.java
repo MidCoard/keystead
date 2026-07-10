@@ -485,6 +485,18 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
+    public @NonNull DeviceVaultKeyPackage wrapVaultKeyPackageForDevice(
+            byte @NonNull [] devicePublicKey, byte @NonNull [] context) {
+        Objects.requireNonNull(devicePublicKey, "devicePublicKey");
+        Objects.requireNonNull(context, "context");
+        requireOpen();
+        return new DeviceVaultKeyPackage(
+                vaultKey.keyId(),
+                DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
+                crypto.wrapVaultKeyForDevice(vaultKey, devicePublicKey, context));
+    }
+
+    @Override
     public boolean isClosed() {
         return closed;
     }

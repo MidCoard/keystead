@@ -16,6 +16,12 @@ public interface VaultService {
             byte @NonNull [] devicePrivateKey,
             byte @NonNull [] context);
 
+    @NonNull VaultHandle provisionVault(
+            @NonNull VaultId vaultId,
+            @NonNull DeviceVaultKeyPackage keyPackage,
+            byte @NonNull [] devicePrivateKey,
+            byte @NonNull [] context);
+
     @NonNull VaultHandle openVaultWithDeviceKey(
             @NonNull VaultId vaultId, byte @NonNull [] devicePrivateKey, byte @NonNull [] context);
 }

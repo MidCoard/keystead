@@ -111,7 +111,28 @@ public final class DefaultVaultService implements VaultService {
         Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
         Objects.requireNonNull(context, "context");
 
-        KeyId keyId = defaultVaultKeyId(vaultId);
+        return provisionVault(
+                vaultId,
+                new DeviceVaultKeyPackage(
+                        defaultVaultKeyId(vaultId),
+                        DEVICE_KEY_PACKAGE_ALGORITHM,
+                        encryptedVaultKey),
+                devicePrivateKey,
+                context);
+    }
+
+    @Override
+    public @NonNull VaultHandle provisionVault(
+            @NonNull VaultId vaultId,
+            @NonNull DeviceVaultKeyPackage keyPackage,
+            byte @NonNull [] devicePrivateKey,
+            byte @NonNull [] context) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(keyPackage, "keyPackage");
+        Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
+        Objects.requireNonNull(context, "context");
+        KeyId keyId = keyPackage.vaultKeyId();
+        byte[] encryptedVaultKey = keyPackage.encryptedVaultKey();
         VaultKey vaultKey =
                 crypto.unwrapVaultKeyFromDevicePackage(
                         keyId, encryptedVaultKey, devicePrivateKey, context);
@@ -123,7 +144,7 @@ public final class DefaultVaultService implements VaultService {
                     new VaultHeader(
                             vaultId,
                             1,
-                            DEVICE_KEY_PACKAGE_ALGORITHM,
+                            keyPackage.keyAlgorithm(),
                             new byte[0],
                             1,
                             keyId,
