@@ -611,8 +611,14 @@ public final class FileVaultStore implements VaultStore {
         try {
             Properties journal = load(journalPath);
             if (!"COMMITTED".equals(journal.getProperty("state"))) {
-                moveIfExists(backup.resolve(VAULT_FILE), vaultDirectory.resolve(VAULT_FILE));
-                moveIfExists(backup.resolve("secrets"), secretsDirectory);
+                if (Files.exists(backup.resolve(VAULT_FILE))) {
+                    Files.deleteIfExists(vaultDirectory.resolve(VAULT_FILE));
+                    moveIfExists(backup.resolve(VAULT_FILE), vaultDirectory.resolve(VAULT_FILE));
+                }
+                if (Files.exists(backup.resolve("secrets"))) {
+                    deleteDirectory(secretsDirectory);
+                    moveIfExists(backup.resolve("secrets"), secretsDirectory);
+                }
             }
             deleteDirectory(vaultDirectory.resolve(ROTATION_STAGE_DIRECTORY));
             deleteDirectory(backup);
