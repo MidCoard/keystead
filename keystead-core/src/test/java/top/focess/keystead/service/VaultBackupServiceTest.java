@@ -61,6 +61,23 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void readRejectsEntryThatExceedsArchiveEntryLimit() throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(output)) {
+            zip.putNextEntry(new ZipEntry("oversized.properties"));
+            zip.write(new byte[1_048_577]);
+            zip.closeEntry();
+        }
+
+        ValidationException exception =
+                assertThrows(
+                        ValidationException.class,
+                        () -> backup.readFrom(new ByteArrayInputStream(output.toByteArray())));
+
+        assertTrue(exception.getMessage().contains("entry exceeds size limit"));
+    }
+
+    @Test
     void restoreSkipsConflictingRecordsWithoutDestroyingExistingData() {
         FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
         source.saveVaultHeader(header());

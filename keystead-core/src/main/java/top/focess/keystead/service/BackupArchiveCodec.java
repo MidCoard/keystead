@@ -1,5 +1,6 @@
 package top.focess.keystead.service;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -46,6 +47,7 @@ final class BackupArchiveCodec {
     private static final String DELETED_PREFIX = "deleted/";
     private static final String PROPERTIES_SUFFIX = ".properties";
     private static final String ENTRY_DIGEST_PREFIX = "entry.sha256.";
+    private static final int MAX_ENTRY_BYTES = 1_048_576;
 
     private BackupArchiveCodec() {}
 
@@ -89,7 +91,7 @@ final class BackupArchiveCodec {
         try (ZipInputStream zip = new ZipInputStream(input)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
-                entries.add(new BackupZipEntry(entry.getName(), zip.readAllBytes()));
+                entries.add(new BackupZipEntry(entry.getName(), readEntry(zip, entry.getName())));
             }
         } catch (IOException e) {
             throw new ValidationException("Could not read backup archive", e);
@@ -150,6 +152,22 @@ final class BackupArchiveCodec {
                         manifest, records, tombstones, unsupportedRecords, unsupportedTombstones);
         return new BackupReadResult(
                 new BackupArchive(manifest, vaultHeader, records, tombstones), unsupported);
+    }
+
+    private static byte @NonNull [] readEntry(@NonNull ZipInputStream zip, @NonNull String name)
+            throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8_192];
+        int total = 0;
+        int read;
+        while ((read = zip.read(buffer)) != -1) {
+            total += read;
+            if (total > MAX_ENTRY_BYTES) {
+                throw new ValidationException("Backup entry exceeds size limit: " + name);
+            }
+            output.write(buffer, 0, read);
+        }
+        return output.toByteArray();
     }
 
     private static @NonNull BackupManifest manifestForSupportedRows(
