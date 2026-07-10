@@ -81,6 +81,33 @@ class VaultServiceTest {
     }
 
     @Test
+    void rotateVaultKeyReencryptsRecordsAndPersistsNewKeyId() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        SecretId secretId;
+        KeyId originalKeyId;
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            secretId = saveGitHubLogin(vault);
+            originalKeyId = vault.vaultKeyId();
+        }
+
+        KeyId rotatedKeyId;
+        try (VaultHandle rotated = service.rotateVaultKey(VAULT_ID, master())) {
+            rotatedKeyId = rotated.vaultKeyId();
+            assertNotEquals(originalKeyId, rotatedKeyId);
+            rotated.withLogin(
+                    secretId,
+                    view -> view.withPassword(chars -> assertArrayEquals(chars("secret-password"), chars)));
+        }
+
+        try (VaultHandle reopened = service.openVault(VAULT_ID, master())) {
+            assertEquals(rotatedKeyId, reopened.vaultKeyId());
+            reopened.withLogin(
+                    secretId,
+                    view -> view.withUsername(chars -> assertArrayEquals(chars("alice@example.com"), chars)));
+        }
+    }
+
+    @Test
     void wrongMasterPasswordCannotOpenVault() {
         VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
 
