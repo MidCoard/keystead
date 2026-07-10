@@ -46,6 +46,12 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
+    public @NonNull KeyId vaultKeyId() {
+        requireOpen();
+        return vaultKey.keyId();
+    }
+
+    @Override
     public @NonNull SecretId saveLogin(@NonNull Consumer<LoginDraft> draftConsumer) {
         Objects.requireNonNull(draftConsumer, "draftConsumer");
         requireOpen();

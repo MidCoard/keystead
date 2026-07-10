@@ -7,10 +7,13 @@ import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretType;
 import top.focess.keystead.model.VaultId;
+import top.focess.keystead.model.KeyId;
 
 public interface VaultHandle extends AutoCloseable {
 
     @NonNull VaultId vaultId();
+
+    @NonNull KeyId vaultKeyId();
 
     @NonNull SecretId saveLogin(@NonNull Consumer<LoginDraft> draftConsumer);
 
