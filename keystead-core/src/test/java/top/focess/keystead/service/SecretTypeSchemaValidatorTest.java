@@ -42,6 +42,15 @@ class SecretTypeSchemaValidatorTest {
     }
 
     @Test
+    void rejectsBlankCustomFieldNames() {
+        SecretTypeSchema schema = SecretTypeSchema.forType(SecretType.GENERIC_SECRET);
+
+        assertThrows(
+                ValidationException.class,
+                () -> SecretTypeSchemaValidator.validate(schema, Set.of(" ")));
+    }
+
+    @Test
     void rejectsBlankRequiredFieldEvenWhenSetNameMatches() {
         SecretTypeSchema schema = SecretTypeSchema.forType(SecretType.LOGIN_PASSWORD);
         assertThrows(

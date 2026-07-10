@@ -13,6 +13,11 @@ public final class SecretTypeSchemaValidator {
     public static void validate(@NonNull SecretTypeSchema schema, @NonNull Set<String> fieldNames) {
         Objects.requireNonNull(schema, "schema");
         Objects.requireNonNull(fieldNames, "fieldNames");
+        for (String name : fieldNames) {
+            if (name == null || name.isBlank()) {
+                throw new ValidationException("Secret field name must not be blank");
+            }
+        }
         for (SecretFieldSchema field : schema.fields()) {
             if (field.required() && !fieldNames.contains(field.name())) {
                 throw new ValidationException(
