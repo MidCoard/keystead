@@ -144,7 +144,11 @@ public final class FileVaultStore implements VaultStore {
             try {
                 requireVaultDirectoryIdentity(vaultId);
                 Files.createDirectories(vaultDirectory);
-                try (FileChannel channel = FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+                try (FileChannel channel =
+                                FileChannel.open(
+                                        lockPath,
+                                        StandardOpenOption.CREATE,
+                                        StandardOpenOption.WRITE);
                         FileLock lock = channel.lock()) {
                     recoverRotation();
                     Path stage = vaultDirectory.resolve(ROTATION_STAGE_DIRECTORY);
@@ -153,18 +157,29 @@ public final class FileVaultStore implements VaultStore {
                     deleteDirectory(backup);
                     Files.createDirectories(stage.resolve("secrets"));
                     writeHeader(rotation.header(), stage.resolve(VAULT_FILE));
-                    for (EncryptedSecretRecord record : rotation.activeRecords()) writeRecord(record, stage.resolve("secrets").resolve(record.metadata().id().value() + ".properties"));
-                    Properties journal = new Properties(); journal.setProperty("state", "PREPARED"); store(journal, vaultDirectory.resolve(ROTATION_JOURNAL_FILE));
+                    for (EncryptedSecretRecord record : rotation.activeRecords())
+                        writeRecord(
+                                record,
+                                stage.resolve("secrets")
+                                        .resolve(record.metadata().id().value() + ".properties"));
+                    Properties journal = new Properties();
+                    journal.setProperty("state", "PREPARED");
+                    store(journal, vaultDirectory.resolve(ROTATION_JOURNAL_FILE));
                     Files.createDirectories(backup);
                     moveIfExists(vaultDirectory.resolve(VAULT_FILE), backup.resolve(VAULT_FILE));
                     moveIfExists(secretsDirectory, backup.resolve("secrets"));
                     moveIfExists(stage.resolve(VAULT_FILE), vaultDirectory.resolve(VAULT_FILE));
                     moveIfExists(stage.resolve("secrets"), secretsDirectory);
-                    journal.setProperty("state", "COMMITTED"); store(journal, vaultDirectory.resolve(ROTATION_JOURNAL_FILE));
-                    deleteDirectory(backup); deleteDirectory(stage); deleteIfExistsDurably(vaultDirectory.resolve(ROTATION_JOURNAL_FILE));
+                    journal.setProperty("state", "COMMITTED");
+                    store(journal, vaultDirectory.resolve(ROTATION_JOURNAL_FILE));
+                    deleteDirectory(backup);
+                    deleteDirectory(stage);
+                    deleteIfExistsDurably(vaultDirectory.resolve(ROTATION_JOURNAL_FILE));
                     channel.force(true);
                 }
-            } catch (IOException e) { throw new StoreException("Could not commit vault key rotation", e); }
+            } catch (IOException e) {
+                throw new StoreException("Could not commit vault key rotation", e);
+            }
         }
     }
 
@@ -623,7 +638,9 @@ public final class FileVaultStore implements VaultStore {
             deleteDirectory(vaultDirectory.resolve(ROTATION_STAGE_DIRECTORY));
             deleteDirectory(backup);
             deleteIfExistsDurably(journalPath);
-        } catch (IOException e) { throw new StoreException("Could not recover vault key rotation", e); }
+        } catch (IOException e) {
+            throw new StoreException("Could not recover vault key rotation", e);
+        }
     }
 
     private void writeHeader(@NonNull VaultHeader header, @NonNull Path path) {
@@ -641,21 +658,39 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private void writeRecord(@NonNull EncryptedSecretRecord record, @NonNull Path path) {
-        Properties properties = new Properties(); writeMetadata(properties, record.vaultId(), record.metadata());
+        Properties properties = new Properties();
+        writeMetadata(properties, record.vaultId(), record.metadata());
         properties.setProperty("record.revision", Long.toString(record.revision()));
         EncryptedEnvelope envelope = record.payload();
-        properties.setProperty("envelope.version", Integer.toString(envelope.version())); properties.setProperty("envelope.algorithm", envelope.algorithm());
-        properties.setProperty("envelope.keyId", envelope.keyId().value()); properties.setProperty("envelope.nonce", b64(envelope.nonce()));
-        properties.setProperty("envelope.ciphertext", b64(envelope.ciphertext())); properties.setProperty("envelope.encryptedAt", envelope.encryptedAt().toString()); store(properties, path);
+        properties.setProperty("envelope.version", Integer.toString(envelope.version()));
+        properties.setProperty("envelope.algorithm", envelope.algorithm());
+        properties.setProperty("envelope.keyId", envelope.keyId().value());
+        properties.setProperty("envelope.nonce", b64(envelope.nonce()));
+        properties.setProperty("envelope.ciphertext", b64(envelope.ciphertext()));
+        properties.setProperty("envelope.encryptedAt", envelope.encryptedAt().toString());
+        store(properties, path);
     }
 
     private void moveIfExists(@NonNull Path source, @NonNull Path target) throws IOException {
-        if (Files.exists(source)) { Files.createDirectories(target.getParent()); Files.move(source, target, StandardCopyOption.REPLACE_EXISTING); }
+        if (Files.exists(source)) {
+            Files.createDirectories(target.getParent());
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private void deleteDirectory(@NonNull Path directory) throws IOException {
         if (!Files.exists(directory)) return;
-        try (var paths = Files.walk(directory)) { paths.sorted(Comparator.reverseOrder()).forEach(path -> { try { Files.deleteIfExists(path); } catch (IOException e) { throw new StoreException("Could not delete rotation files", e); } }); }
+        try (var paths = Files.walk(directory)) {
+            paths.sorted(Comparator.reverseOrder())
+                    .forEach(
+                            path -> {
+                                try {
+                                    Files.deleteIfExists(path);
+                                } catch (IOException e) {
+                                    throw new StoreException("Could not delete rotation files", e);
+                                }
+                            });
+        }
     }
 
     private static @NonNull Object processLock(@NonNull Path lockPath) {

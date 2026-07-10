@@ -3,11 +3,11 @@ package top.focess.keystead.service;
 import java.util.List;
 import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
+import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretType;
 import top.focess.keystead.model.VaultId;
-import top.focess.keystead.model.KeyId;
 
 public interface VaultHandle extends AutoCloseable {
 
