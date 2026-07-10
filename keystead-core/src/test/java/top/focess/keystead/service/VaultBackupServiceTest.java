@@ -6,9 +6,11 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
@@ -406,6 +408,39 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void readFromSkipsDigestedUnsupportedRecordWithoutLosingValidOnes() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+        source.saveSecretRecord(record(secretId(3L), "beta", 2L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        String entryName = "records/00000000-0000-0000-0000-000000000002.properties";
+        String unsupportedRecord =
+                zipEntryText(out.toByteArray(), entryName)
+                        .replace("metadata.type=LOGIN_PASSWORD", "metadata.type=FUTURE_SECRET");
+        byte[] tampered = replaceZipEntryText(out.toByteArray(), entryName, unsupportedRecord);
+        byte[] redigested =
+                addManifestDigest(
+                        tampered,
+                        "entry.sha256." + entryName,
+                        sha256(unsupportedRecord.getBytes(StandardCharsets.UTF_8)));
+
+        BackupReadResult read = backup.readFrom(new ByteArrayInputStream(redigested));
+
+        assertEquals(1, read.unsupported());
+        assertEquals(1, read.archive().records().size());
+        assertEquals(1, read.archive().manifest().recordCount());
+
+        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        BackupImportReport report = backup.restore(target, read.archive());
+        assertEquals(1, report.imported());
+    }
+
+    @Test
     void archiveRejectsManifestRecordCountMismatch() {
         BackupManifest manifest =
                 new BackupManifest(
@@ -673,5 +708,10 @@ class VaultBackupServiceTest {
             zip.closeEntry();
         }
         return rebuilt.toByteArray();
+    }
+
+    private static String sha256(byte[] bytes) throws Exception {
+        return Base64.getEncoder()
+                .encodeToString(MessageDigest.getInstance("SHA-256").digest(bytes));
     }
 }

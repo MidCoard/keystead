@@ -83,6 +83,8 @@ final class BackupArchiveCodec {
         List<EncryptedSecretRecord> records = new ArrayList<>();
         List<DeletedSecretRecord> tombstones = new ArrayList<>();
         int unsupported = 0;
+        int unsupportedRecords = 0;
+        int unsupportedTombstones = 0;
         List<BackupZipEntry> entries = new ArrayList<>();
         try (ZipInputStream zip = new ZipInputStream(input)) {
             ZipEntry entry;
@@ -130,6 +132,11 @@ final class BackupArchiveCodec {
                 // be skipped so a single unsupported/corrupt record cannot brick the backup.
                 if (name.startsWith(RECORDS_PREFIX) || name.startsWith(DELETED_PREFIX)) {
                     unsupported++;
+                    if (name.startsWith(RECORDS_PREFIX)) {
+                        unsupportedRecords++;
+                    } else {
+                        unsupportedTombstones++;
+                    }
                 } else {
                     throw new ValidationException("Backup archive is corrupt: " + name, e);
                 }
@@ -138,8 +145,33 @@ final class BackupArchiveCodec {
         if (manifest == null || vaultHeader == null) {
             throw new ValidationException("Backup archive is missing manifest or vault header");
         }
+        manifest =
+                manifestForSupportedRows(
+                        manifest, records, tombstones, unsupportedRecords, unsupportedTombstones);
         return new BackupReadResult(
                 new BackupArchive(manifest, vaultHeader, records, tombstones), unsupported);
+    }
+
+    private static @NonNull BackupManifest manifestForSupportedRows(
+            @NonNull BackupManifest manifest,
+            @NonNull List<EncryptedSecretRecord> records,
+            @NonNull List<DeletedSecretRecord> tombstones,
+            int unsupportedRecords,
+            int unsupportedTombstones) {
+        if (records.size() == manifest.recordCount()
+                && tombstones.size() == manifest.tombstoneCount()) {
+            return manifest;
+        }
+        if (records.size() + unsupportedRecords == manifest.recordCount()
+                && tombstones.size() + unsupportedTombstones == manifest.tombstoneCount()) {
+            return new BackupManifest(
+                    manifest.formatVersion(),
+                    manifest.vaultId(),
+                    records.size(),
+                    tombstones.size(),
+                    manifest.createdAt());
+        }
+        return manifest;
     }
 
     private static @NonNull BackupZipEntry backupZipEntry(
