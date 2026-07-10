@@ -48,6 +48,7 @@ final class BackupArchiveCodec {
     private static final String PROPERTIES_SUFFIX = ".properties";
     private static final String ENTRY_DIGEST_PREFIX = "entry.sha256.";
     private static final int MAX_ENTRY_BYTES = 1_048_576;
+    private static final int MAX_ENTRY_COUNT = 4_096;
 
     private BackupArchiveCodec() {}
 
@@ -91,6 +92,9 @@ final class BackupArchiveCodec {
         try (ZipInputStream zip = new ZipInputStream(input)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
+                if (entries.size() >= MAX_ENTRY_COUNT) {
+                    throw new ValidationException("Backup archive entry count exceeds limit");
+                }
                 entries.add(new BackupZipEntry(entry.getName(), readEntry(zip, entry.getName())));
             }
         } catch (IOException e) {

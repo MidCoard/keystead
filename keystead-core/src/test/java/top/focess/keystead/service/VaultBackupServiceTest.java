@@ -78,6 +78,24 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void readRejectsArchiveThatExceedsEntryCountLimit() throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(output)) {
+            for (int index = 0; index <= 4_096; index++) {
+                zip.putNextEntry(new ZipEntry("records/" + index + ".properties"));
+                zip.closeEntry();
+            }
+        }
+
+        ValidationException exception =
+                assertThrows(
+                        ValidationException.class,
+                        () -> backup.readFrom(new ByteArrayInputStream(output.toByteArray())));
+
+        assertTrue(exception.getMessage().contains("entry count exceeds limit"));
+    }
+
+    @Test
     void restoreSkipsConflictingRecordsWithoutDestroyingExistingData() {
         FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
         source.saveVaultHeader(header());
