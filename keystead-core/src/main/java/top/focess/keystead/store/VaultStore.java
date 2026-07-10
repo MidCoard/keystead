@@ -24,6 +24,10 @@ public interface VaultStore {
         }
     }
 
+    default void commitVaultKeyRotation(@NonNull VaultKeyRotation rotation) {
+        throw new UnsupportedOperationException("Vault key rotation is not supported by this store");
+    }
+
     void saveSecretRecord(@NonNull EncryptedSecretRecord record);
 
     @NonNull Optional<EncryptedSecretRecord> loadSecretRecord(

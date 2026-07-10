@@ -10,6 +10,8 @@ public interface VaultService {
 
     @NonNull VaultHandle openVault(@NonNull VaultId vaultId, char @NonNull [] masterPassword);
 
+    @NonNull VaultHandle rotateVaultKey(@NonNull VaultId vaultId, char @NonNull [] masterPassword);
+
     @NonNull VaultHandle provisionVault(
             @NonNull VaultId vaultId,
             byte @NonNull [] encryptedVaultKey,

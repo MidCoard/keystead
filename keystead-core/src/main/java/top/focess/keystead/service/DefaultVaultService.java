@@ -2,6 +2,8 @@ package top.focess.keystead.service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -9,9 +11,11 @@ import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.VaultKey;
 import top.focess.keystead.model.KeyId;
+import top.focess.keystead.model.SecretRecordAad;
 import top.focess.keystead.model.VaultHeader;
 import top.focess.keystead.model.VaultId;
 import top.focess.keystead.store.VaultStore;
+import top.focess.keystead.store.VaultKeyRotation;
 
 public final class DefaultVaultService implements VaultService {
 
@@ -98,6 +102,32 @@ public final class DefaultVaultService implements VaultService {
                         header.kdfIterations(),
                         header.kdfAlgorithm());
         return new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
+    }
+
+    @Override
+    public @NonNull VaultHandle rotateVaultKey(
+            @NonNull VaultId vaultId, char @NonNull [] masterPassword) {
+        Objects.requireNonNull(vaultId, "vaultId"); Objects.requireNonNull(masterPassword, "masterPassword");
+        VaultHeader previous = store.loadVaultHeader(vaultId).orElseThrow(() -> new ValidationException("Vault does not exist"));
+        VaultKey oldKey = crypto.unwrapVaultKey(previous.vaultKeyId(), previous.wrappedVaultKey(), masterPassword, previous.kdfSalt(), previous.kdfIterations(), previous.kdfAlgorithm());
+        KeyId nextKeyId = new KeyId("vault-key-" + vaultId.value() + "-" + java.util.UUID.randomUUID());
+        VaultKey nextKey = crypto.generateVaultKey(nextKeyId);
+        byte[] wrapped = null;
+        List<top.focess.keystead.model.EncryptedSecretRecord> rotated = new ArrayList<>();
+        try {
+            for (top.focess.keystead.model.EncryptedSecretRecord record : store.listSecretRecords(vaultId)) {
+                byte[] aad = SecretRecordAad.encode(vaultId, record.metadata(), record.revision());
+                byte[] plaintext = null;
+                try { plaintext = crypto.decrypt(oldKey, record.payload(), aad); rotated.add(new top.focess.keystead.model.EncryptedSecretRecord(vaultId, record.metadata(), crypto.encrypt(nextKey, plaintext, aad, clock.instant()), record.revision())); }
+                finally { wipe(aad); wipe(plaintext); }
+            }
+            wrapped = crypto.wrapVaultKey(nextKey, masterPassword, previous.kdfSalt(), previous.kdfIterations(), previous.kdfAlgorithm());
+            Instant now = clock.instant();
+            store.commitVaultKeyRotation(new VaultKeyRotation(new VaultHeader(vaultId, previous.formatVersion(), previous.kdfAlgorithm(), previous.kdfSalt(), previous.kdfIterations(), nextKeyId, wrapped, previous.createdAt(), now), rotated));
+            oldKey.close();
+            return new DefaultVaultHandle(vaultId, nextKey, store, crypto, clock);
+        } catch (RuntimeException e) { nextKey.close(); throw e; }
+        finally { oldKey.close(); wipe(wrapped); }
     }
 
     @Override
