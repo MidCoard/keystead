@@ -55,6 +55,9 @@ public final class FileVaultStore implements VaultStore {
             if (!existing.vaultId().equals(header.vaultId())) {
                 throw new StoreException("Vault directory already belongs to another vault", null);
             }
+            if (header.updatedAt().isBefore(existing.updatedAt())) {
+                throw new StoreException("Vault header updated time must not move backwards", null);
+            }
         }
         requireStoredRowsBelongTo(header.vaultId(), secretsDirectory, "secret");
         requireStoredRowsBelongTo(header.vaultId(), deletedDirectory, "tombstone");

@@ -67,6 +67,28 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void saveVaultHeaderRejectsUpdatedTimeRegression() {
+        VaultStore store = new FileVaultStore(tempDir);
+        VaultHeader first = header();
+        VaultHeader stale =
+                new VaultHeader(
+                        first.vaultId(),
+                        first.formatVersion(),
+                        first.kdfAlgorithm(),
+                        first.kdfSalt(),
+                        first.kdfIterations(),
+                        first.vaultKeyId(),
+                        first.wrappedVaultKey(),
+                        first.createdAt(),
+                        first.updatedAt().minusSeconds(1));
+
+        store.saveVaultHeader(first);
+
+        assertThrows(StoreException.class, () -> store.saveVaultHeader(stale));
+        assertEquals(Optional.of(first), store.loadVaultHeader(first.vaultId()));
+    }
+
+    @Test
     void saveVaultHeaderRejectsExistingSecretRecordFromDifferentVault() {
         VaultStore store = new FileVaultStore(tempDir);
         VaultHeader header = header();
