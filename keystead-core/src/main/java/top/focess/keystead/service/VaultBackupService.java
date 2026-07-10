@@ -51,6 +51,17 @@ public final class VaultBackupService {
 
     public @NonNull BackupImportReport restore(
             @NonNull VaultStore target, @NonNull BackupArchive archive) {
+        return restore(target, archive, 0);
+    }
+
+    public @NonNull BackupImportReport restore(
+            @NonNull VaultStore target, @NonNull BackupReadResult readResult) {
+        Objects.requireNonNull(readResult, "readResult");
+        return restore(target, readResult.archive(), readResult.unsupported());
+    }
+
+    private @NonNull BackupImportReport restore(
+            @NonNull VaultStore target, @NonNull BackupArchive archive, int unsupported) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(archive, "archive");
         target.saveVaultHeader(archive.vaultHeader());
@@ -110,7 +121,7 @@ public final class VaultBackupService {
             target.saveDeletedSecretRecord(tombstone);
             tombstones++;
         }
-        return new BackupImportReport(imported, skipped, 0, tombstones, conflicts);
+        return new BackupImportReport(imported, skipped, unsupported, tombstones, conflicts);
     }
 
     public void writeTo(@NonNull BackupArchive archive, @NonNull OutputStream output) {

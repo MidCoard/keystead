@@ -441,6 +441,36 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void restoreFromReadResultPreservesUnsupportedRowCount() throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
+        source.saveSecretRecord(record(secretId(3L), "beta", 2L));
+
+        BackupArchive archive = backup.export(source, VAULT_ID);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        backup.writeTo(archive, out);
+
+        String entryName = "records/00000000-0000-0000-0000-000000000002.properties";
+        String unsupportedRecord =
+                zipEntryText(out.toByteArray(), entryName)
+                        .replace("metadata.type=LOGIN_PASSWORD", "metadata.type=FUTURE_SECRET");
+        byte[] tampered = replaceZipEntryText(out.toByteArray(), entryName, unsupportedRecord);
+        byte[] redigested =
+                addManifestDigest(
+                        tampered,
+                        "entry.sha256." + entryName,
+                        sha256(unsupportedRecord.getBytes(StandardCharsets.UTF_8)));
+        BackupReadResult read = backup.readFrom(new ByteArrayInputStream(redigested));
+
+        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        BackupImportReport report = backup.restore(target, read);
+
+        assertEquals(1, report.imported());
+        assertEquals(1, report.unsupported());
+    }
+
+    @Test
     void archiveRejectsManifestRecordCountMismatch() {
         BackupManifest manifest =
                 new BackupManifest(
