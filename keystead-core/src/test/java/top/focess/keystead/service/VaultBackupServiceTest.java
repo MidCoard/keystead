@@ -96,6 +96,26 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void readRejectsArchiveThatExceedsTotalExpandedSizeLimit() throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] entry = new byte[1_048_576];
+        try (ZipOutputStream zip = new ZipOutputStream(output)) {
+            for (int index = 0; index < 17; index++) {
+                zip.putNextEntry(new ZipEntry("records/" + index + ".properties"));
+                zip.write(entry);
+                zip.closeEntry();
+            }
+        }
+
+        ValidationException exception =
+                assertThrows(
+                        ValidationException.class,
+                        () -> backup.readFrom(new ByteArrayInputStream(output.toByteArray())));
+
+        assertTrue(exception.getMessage().contains("archive exceeds size limit"));
+    }
+
+    @Test
     void restoreSkipsConflictingRecordsWithoutDestroyingExistingData() {
         FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
         source.saveVaultHeader(header());

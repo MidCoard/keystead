@@ -49,6 +49,7 @@ final class BackupArchiveCodec {
     private static final String ENTRY_DIGEST_PREFIX = "entry.sha256.";
     private static final int MAX_ENTRY_BYTES = 1_048_576;
     private static final int MAX_ENTRY_COUNT = 4_096;
+    private static final int MAX_ARCHIVE_BYTES = 16 * 1_024 * 1_024;
 
     private BackupArchiveCodec() {}
 
@@ -89,13 +90,19 @@ final class BackupArchiveCodec {
         int unsupportedRecords = 0;
         int unsupportedTombstones = 0;
         List<BackupZipEntry> entries = new ArrayList<>();
+        int totalBytes = 0;
         try (ZipInputStream zip = new ZipInputStream(input)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
                 if (entries.size() >= MAX_ENTRY_COUNT) {
                     throw new ValidationException("Backup archive entry count exceeds limit");
                 }
-                entries.add(new BackupZipEntry(entry.getName(), readEntry(zip, entry.getName())));
+                byte[] bytes = readEntry(zip, entry.getName());
+                totalBytes += bytes.length;
+                if (totalBytes > MAX_ARCHIVE_BYTES) {
+                    throw new ValidationException("Backup archive exceeds size limit");
+                }
+                entries.add(new BackupZipEntry(entry.getName(), bytes));
             }
         } catch (IOException e) {
             throw new ValidationException("Could not read backup archive", e);
