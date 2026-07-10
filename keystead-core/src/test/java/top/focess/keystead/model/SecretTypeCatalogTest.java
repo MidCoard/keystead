@@ -59,4 +59,22 @@ class SecretTypeCatalogTest {
                 IllegalArgumentException.class,
                 () -> new SecretTypeCatalogEntry(login, null, null, null, SecretFieldType.SECRET));
     }
+
+    @Test
+    void catalogEntryCanonicalizesDefaultTaxonomyFields() {
+        SecretTypeSchema login = SecretTypeSchema.forType(SecretType.LOGIN_PASSWORD);
+
+        SecretTypeCatalogEntry canonical =
+                new SecretTypeCatalogEntry(
+                        login, " Development ", " GitHub ", " GitHub.COM ", null);
+        SecretTypeCatalogEntry blankDefaults =
+                new SecretTypeCatalogEntry(login, " ", "", null, null);
+
+        assertEquals(SecretTaxonomy.CATEGORY_DEVELOPMENT, canonical.defaultCategory());
+        assertEquals(SecretTaxonomy.PROVIDER_GITHUB, canonical.defaultProvider());
+        assertEquals(SecretTaxonomy.SOFTWARE_GITHUB, canonical.defaultSoftware());
+        assertNull(blankDefaults.defaultCategory());
+        assertNull(blankDefaults.defaultProvider());
+        assertNull(blankDefaults.defaultSoftware());
+    }
 }
