@@ -23,6 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -819,6 +820,111 @@ class FileVaultStoreTest {
         store.deleteSecretRecord(record.vaultId(), record.metadata().id());
 
         assertEquals(List.of("secrets:true"), forcedPaths);
+    }
+
+    @Test
+    void rotationRecoveryRestoresPreviousVaultWhenCrashFollowsPreparedJournal() {
+        VaultHeader previous = header();
+        EncryptedSecretRecord previousRecord = record();
+        FileVaultStore setup = new FileVaultStore(tempDir);
+        setup.saveVaultHeader(previous);
+        setup.saveSecretRecord(previousRecord);
+
+        assertThrows(
+                StoreException.class,
+                () -> crashDuringRotation(6).commitVaultKeyRotation(rotation(previousRecord)));
+
+        assertRecoveredRotation(previous, previousRecord);
+    }
+
+    @Test
+    void rotationRecoveryRestoresPreviousVaultWhenCrashPreventsCommittedJournal() {
+        VaultHeader previous = header();
+        EncryptedSecretRecord previousRecord = record();
+        FileVaultStore setup = new FileVaultStore(tempDir);
+        setup.saveVaultHeader(previous);
+        setup.saveSecretRecord(previousRecord);
+
+        assertThrows(
+                StoreException.class,
+                () -> crashDuringRotation(7).commitVaultKeyRotation(rotation(previousRecord)));
+
+        assertRecoveredRotation(previous, previousRecord);
+    }
+
+    @Test
+    void rotationRecoveryKeepsReplacementVaultWhenCrashFollowsCommittedJournal() {
+        VaultHeader previous = header();
+        EncryptedSecretRecord previousRecord = record();
+        FileVaultStore setup = new FileVaultStore(tempDir);
+        setup.saveVaultHeader(previous);
+        setup.saveSecretRecord(previousRecord);
+        VaultKeyRotation rotation = rotation(previousRecord);
+
+        assertThrows(
+                StoreException.class,
+                () -> crashDuringRotation(8).commitVaultKeyRotation(rotation));
+
+        FileVaultStore recovered = new FileVaultStore(tempDir);
+        assertEquals(Optional.of(rotation.header()), recovered.loadVaultHeader(previous.vaultId()));
+        assertEquals(
+                Optional.of(rotation.activeRecords().getFirst()),
+                recovered.loadSecretRecord(previous.vaultId(), previousRecord.metadata().id()));
+    }
+
+    private @NonNull FileVaultStore crashDuringRotation(int durabilityForce) {
+        AtomicInteger durabilityForces = new AtomicInteger();
+        return new FileVaultStore(
+                tempDir,
+                (path, metadata) -> {
+                    if (durabilityForces.incrementAndGet() == durabilityForce) {
+                        throw new IOException(
+                                "simulated crash after rotation journal durability boundary");
+                    }
+                });
+    }
+
+    private void assertRecoveredRotation(
+            @NonNull VaultHeader previous, @NonNull EncryptedSecretRecord previousRecord) {
+        FileVaultStore recovered = new FileVaultStore(tempDir);
+        assertEquals(Optional.of(previous), recovered.loadVaultHeader(previous.vaultId()));
+        assertEquals(
+                Optional.of(previousRecord),
+                recovered.loadSecretRecord(previous.vaultId(), previousRecord.metadata().id()));
+    }
+
+    private static @NonNull VaultKeyRotation rotation(
+            @NonNull EncryptedSecretRecord previousRecord) {
+        VaultHeader previous = header();
+        VaultHeader replacement =
+                new VaultHeader(
+                        previous.vaultId(),
+                        previous.formatVersion(),
+                        previous.kdfAlgorithm(),
+                        previous.kdfSalt(),
+                        previous.kdfIterations(),
+                        new KeyId("rotated-vault-key"),
+                        new byte[] {9, 8, 7},
+                        previous.createdAt(),
+                        previous.updatedAt().plusSeconds(1));
+        EncryptedEnvelope previousEnvelope = previousRecord.payload();
+        EncryptedEnvelope envelope =
+                new EncryptedEnvelope(
+                        previousEnvelope.version(),
+                        previousEnvelope.algorithm(),
+                        replacement.vaultKeyId(),
+                        previousEnvelope.nonce(),
+                        previousEnvelope.aad(),
+                        previousEnvelope.ciphertext(),
+                        previousEnvelope.encryptedAt());
+        return new VaultKeyRotation(
+                replacement,
+                List.of(
+                        new EncryptedSecretRecord(
+                                previousRecord.vaultId(),
+                                previousRecord.metadata(),
+                                envelope,
+                                previousRecord.revision())));
     }
 
     private static boolean restrictDirectoryNewFileCreation(Path directory) {
