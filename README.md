@@ -267,19 +267,6 @@ Requires JDK 21.
 
 On Windows, use `gradlew.bat`. The current complete suite contains 220 tests.
 
-## Comparison with established products
-
-Keystead Core is a library and protocol foundation, while the products below
-are mature end-user applications or services. The useful comparison is design
-orientation, not a claim of feature parity.
-
-| Project | Design orientation | Where Keystead differs today |
-| --- | --- | --- |
-| [Bitwarden](https://contributing.bitwarden.com/architecture/security/principles/servers-are-zero-knowledge/) | Zero-knowledge synchronization with a mature hosted and self-hosted ecosystem. | Keystead makes typed record schemas, deterministic revision/tombstone rules, and crash-journaled local rotation unusually explicit, but lacks Bitwarden's browser/mobile ecosystem and production history. |
-| [1Password](https://1password.com/files/1Password-White-Paper.pdf) | Managed multi-platform service whose design combines an account password with a locally created Secret Key. | Keystead is self-hostable and library-first; it does not yet offer 1Password's polished recovery, device coverage, administration, or integrations. |
-| [KeePassXC](https://keepassxc.org/docs/) | Mature offline KDBX desktop vault; cloud synchronization is delegated to file-sync providers and browser integration is well established. | Keystead defines a first-party encrypted row-sync protocol and server, but its desktop/browser experience is much less mature. |
-| [Proton Pass](https://proton.me/pass/security) | Consumer-focused end-to-end encrypted service with encrypted metadata, cross-platform apps, aliases, passkeys, and sharing. | Keystead exposes its core data model and self-hosted server boundary directly, but lacks Proton Pass's platform reach, audits, alias service, and consumer polish. |
-
 ## Honest project assessment
 
 ### What is strong
@@ -294,23 +281,56 @@ orientation, not a claim of feature parity.
 - The server can remain operationally useful without receiving decryption
   capability.
 
-### What is not yet mature
+### Current boundaries
 
-- No browser extension or browser autofill.
-- No Android or iOS client.
-- No passkey/WebAuthn login or native biometric unlock.
-- No independent security audit, public bug-bounty history, or long-running
-  production deployment evidence.
-- No polished account-recovery system; loss of key material can mean permanent
-  loss of access.
-- Desktop secure storage currently has an abstraction and encrypted file
-  fallback, not completed OS-native adapters.
-- Sharing and rotation primitives exist, but the full collaborative user
-  experience is still narrower than established products.
+**Browser and mobile integration.** Keystead currently has a JVM desktop
+client. There is no browser extension, browser autofill bridge, Android client,
+or iOS client. The core can support another client implementation, but those
+applications and their platform-specific plaintext boundaries have not been
+built.
+
+**Passkeys and biometric unlock.** Keystead does not currently register or
+authenticate WebAuthn credentials, store passkeys, or use a platform
+authenticator. It also does not unlock vault material through Windows Hello,
+Touch ID, or a Linux biometric service. Adding biometric unlock requires an
+OS-protected key design that releases wrapping material only after local user
+verification; it cannot safely be implemented as a cosmetic alternative to
+the master-password field.
+
+**External security validation.** The project has automated tests for crypto
+boundaries, malformed inputs, persistence recovery, authorization, redaction,
+and lifecycle transitions. Those tests are evidence of intended behavior, not
+an independent security assessment. No external audit has reviewed the whole
+system, no public bug-bounty program has exercised its disclosure process, and
+there is no long-running production record from which to evaluate operational
+failure modes.
+
+**Account recovery.** The server cannot reset a master password and recover a
+vault by itself because it does not possess the raw vault key. Access can be
+restored only from key material the user still controls, such as a valid
+password-wrapped vault header, an eligible device package, or a usable backup.
+If every usable password, device key, wrapped-key path, and backup is lost,
+permanent data loss is the expected zero-knowledge outcome. A guided recovery
+and emergency-access workflow has not yet been built around these primitives.
+
+**OS-native secure storage.** The desktop code defines capability-aware secure
+storage and currently provides memory-only storage plus a passphrase-protected
+encrypted-file fallback. It does not yet have completed adapters for Windows
+Credential Manager or DPAPI, macOS Keychain, or Linux Secret Service. As a
+result, local device identity protection depends on a separate passphrase
+rather than an operating-system account or biometric gate.
+
+**Collaborative lifecycle.** The encrypted protocol includes membership roles,
+device-specific vault-key packages, revocation checks, key generations, and
+rotation operations. The complete user journey is still incomplete: inviting
+and removing members, confirming every eligible device, rotating after access
+changes, redistributing packages, handling offline devices, and explaining
+irreversible access consequences are not yet one guided end-to-end workflow.
 
 Keystead should currently be evaluated as a serious, test-heavy engineering
-foundation and an experimental password-manager system, not as a drop-in
-replacement for a widely audited production password manager.
+foundation and an experimental password-manager system. Production adoption
+requires an explicit review of these boundaries and the deployment threat
+model.
 
 ## Contributing
 
