@@ -8,6 +8,32 @@ import org.junit.jupiter.api.Test;
 class SecretTypeSchemaTest {
 
     @Test
+    void fieldSchemaCarriesImportExportAndLengthContract() {
+        SecretFieldSchema field =
+                new SecretFieldSchema(
+                        " privateKey ",
+                        SecretFieldType.SECRET,
+                        true,
+                        true,
+                        List.of("private_key", "key"),
+                        "privateKey",
+                        8192);
+
+        assertEquals("privateKey", field.name());
+        assertEquals(List.of("private_key", "key"), field.importAliases());
+        assertEquals("privateKey", field.exportName());
+        assertEquals(8192, field.maxLength());
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new SecretFieldSchema(
+                                "x", SecretFieldType.TEXT, false, false, List.of(" "), "x", null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new SecretFieldSchema("x", SecretFieldType.TEXT, false, false, List.of(), "x", 0));
+    }
+
+    @Test
     void loginPasswordSchemaDefinesExpectedFields() {
         SecretTypeSchema schema = SecretTypeSchema.forType(SecretType.LOGIN_PASSWORD);
         assertEquals(SecretType.LOGIN_PASSWORD, schema.type());

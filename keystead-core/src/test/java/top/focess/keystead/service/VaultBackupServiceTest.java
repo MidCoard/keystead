@@ -144,6 +144,33 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void restoreRejectsDifferentExistingVaultHeaderBeforeWriting() {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        source.saveVaultHeader(header());
+        BackupArchive archive = backup.export(source, VAULT_ID);
+
+        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        VaultHeader different =
+                new VaultHeader(
+                        VAULT_ID,
+                        1,
+                        "PBKDF2WithHmacSHA256",
+                        new byte[] {9, 8, 7},
+                        120_000,
+                        new KeyId("different-vault-key"),
+                        new byte[] {6, 5, 4},
+                        Instant.parse("2026-06-01T00:00:00Z"),
+                        Instant.parse("2026-06-01T00:01:00Z"));
+        target.saveVaultHeader(different);
+
+        ValidationException exception =
+                assertThrows(ValidationException.class, () -> backup.restore(target, archive));
+
+        assertTrue(exception.getMessage().contains("different local vault header"));
+        assertEquals(Optional.of(different), target.loadVaultHeader(VAULT_ID));
+    }
+
+    @Test
     void restoreSkipsRecordOlderThanExistingTombstone() {
         FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
         source.saveVaultHeader(header());

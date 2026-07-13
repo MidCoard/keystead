@@ -64,6 +64,12 @@ public final class VaultBackupService {
             @NonNull VaultStore target, @NonNull BackupArchive archive, int unsupported) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(archive, "archive");
+        Optional<VaultHeader> existingHeader = target.loadVaultHeader(archive.manifest().vaultId());
+        if (existingHeader.isPresent()
+                && !existingHeader.get().equals(archive.vaultHeader())) {
+            throw new ValidationException(
+                    "Backup restore would overwrite a different local vault header");
+        }
         target.saveVaultHeader(archive.vaultHeader());
         int imported = 0;
         int skipped = 0;
