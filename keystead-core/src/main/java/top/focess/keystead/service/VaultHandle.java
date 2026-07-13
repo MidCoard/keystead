@@ -50,6 +50,13 @@ public interface VaultHandle extends AutoCloseable {
     @NonNull DeviceVaultKeyPackage wrapVaultKeyPackageForDevice(
             byte @NonNull [] devicePublicKey, byte @NonNull [] context);
 
+    @NonNull PreparedVaultKeyRotation prepareVaultKeyRotation();
+
+    @NonNull PreparedVaultKeyRotation resumeVaultKeyRotation(
+            @NonNull DeviceVaultKeyPackage stagedPackage,
+            byte @NonNull [] devicePrivateKey,
+            byte @NonNull [] context);
+
     boolean isClosed();
 
     @Override

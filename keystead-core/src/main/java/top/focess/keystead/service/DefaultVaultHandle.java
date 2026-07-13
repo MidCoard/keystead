@@ -1,9 +1,13 @@
 package top.focess.keystead.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -16,6 +20,7 @@ import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.VaultKey;
 import top.focess.keystead.model.*;
+import top.focess.keystead.store.VaultKeyRotation;
 import top.focess.keystead.store.VaultStore;
 
 final class DefaultVaultHandle implements VaultHandle {
@@ -26,6 +31,7 @@ final class DefaultVaultHandle implements VaultHandle {
     private final DefaultCryptoService crypto;
     private final Clock clock;
     private boolean closed;
+    private boolean rotationPrepared;
 
     DefaultVaultHandle(
             @NonNull VaultId vaultId,
@@ -55,6 +61,7 @@ final class DefaultVaultHandle implements VaultHandle {
     public @NonNull SecretId saveLogin(@NonNull Consumer<LoginDraft> draftConsumer) {
         Objects.requireNonNull(draftConsumer, "draftConsumer");
         requireOpen();
+        requireMutable();
 
         LoginDraftImpl draft = new LoginDraftImpl();
         byte @Nullable [] payload = null;
@@ -105,6 +112,7 @@ final class DefaultVaultHandle implements VaultHandle {
         Objects.requireNonNull(secretId, "secretId");
         Objects.requireNonNull(draftConsumer, "draftConsumer");
         requireOpen();
+        requireMutable();
 
         EncryptedSecretRecord existing =
                 store.loadSecretRecord(vaultId, secretId)
@@ -188,6 +196,7 @@ final class DefaultVaultHandle implements VaultHandle {
     public @NonNull SecretId saveSecureNote(@NonNull Consumer<SecureNoteDraft> draftConsumer) {
         Objects.requireNonNull(draftConsumer, "draftConsumer");
         requireOpen();
+        requireMutable();
 
         SecureNoteDraftImpl draft = new SecureNoteDraftImpl();
         byte @Nullable [] payload = null;
@@ -268,6 +277,7 @@ final class DefaultVaultHandle implements VaultHandle {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(draftConsumer, "draftConsumer");
         requireOpen();
+        requireMutable();
         requireStructuredType(type);
 
         StructuredSecretDraftImpl draft = new StructuredSecretDraftImpl();
@@ -321,6 +331,7 @@ final class DefaultVaultHandle implements VaultHandle {
         Objects.requireNonNull(secretId, "secretId");
         Objects.requireNonNull(draftConsumer, "draftConsumer");
         requireOpen();
+        requireMutable();
 
         EncryptedSecretRecord existing =
                 store.loadSecretRecord(vaultId, secretId)
@@ -405,6 +416,7 @@ final class DefaultVaultHandle implements VaultHandle {
     public void deleteSecret(@NonNull SecretId secretId) {
         Objects.requireNonNull(secretId, "secretId");
         requireOpen();
+        requireMutable();
         store.commitMutation(
                 vaultId,
                 revision -> {
@@ -464,6 +476,7 @@ final class DefaultVaultHandle implements VaultHandle {
             @NonNull List<EncryptedSyncRecord> records) {
         Objects.requireNonNull(records, "records");
         requireOpen();
+        requireMutable();
         requireSyncImportBatchPreflight(records);
         int imported = 0;
         int skipped = 0;
@@ -500,6 +513,45 @@ final class DefaultVaultHandle implements VaultHandle {
                 vaultKey.keyId(),
                 DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
                 crypto.wrapVaultKeyForDevice(vaultKey, devicePublicKey, context));
+    }
+
+    @Override
+    public @NonNull PreparedVaultKeyRotation prepareVaultKeyRotation() {
+        requireOpen();
+        KeyId targetKeyId = new KeyId("vault-key-" + vaultId.value() + "-" + UUID.randomUUID());
+        VaultKey targetKey = crypto.generateVaultKey(targetKeyId);
+        return beginPreparedRotation(targetKey, null);
+    }
+
+    @Override
+    public @NonNull PreparedVaultKeyRotation resumeVaultKeyRotation(
+            @NonNull DeviceVaultKeyPackage stagedPackage,
+            byte @NonNull [] devicePrivateKey,
+            byte @NonNull [] context) {
+        Objects.requireNonNull(stagedPackage, "stagedPackage");
+        Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
+        Objects.requireNonNull(context, "context");
+        requireOpen();
+        if (vaultKey.keyId().equals(stagedPackage.vaultKeyId())) {
+            throw new ValidationException("Staged package must contain a new vault key");
+        }
+        if (!DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM.equals(
+                stagedPackage.keyAlgorithm())) {
+            throw new ValidationException("Staged package algorithm is unsupported");
+        }
+        byte[] encryptedVaultKey = stagedPackage.encryptedVaultKey();
+        VaultKey targetKey;
+        try {
+            targetKey =
+                    crypto.unwrapVaultKeyFromDevicePackage(
+                            stagedPackage.vaultKeyId(),
+                            encryptedVaultKey,
+                            devicePrivateKey,
+                            context);
+        } finally {
+            wipe(encryptedVaultKey);
+        }
+        return beginPreparedRotation(targetKey, stagedPackage);
     }
 
     @Override
@@ -702,6 +754,223 @@ final class DefaultVaultHandle implements VaultHandle {
         if (closed) {
             throw new IllegalStateException("Vault handle is closed");
         }
+    }
+
+    private void requireMutable() {
+        if (rotationPrepared) {
+            throw new IllegalStateException("Vault key rotation is prepared");
+        }
+    }
+
+    private synchronized @NonNull PreparedVaultKeyRotation beginPreparedRotation(
+            @NonNull VaultKey targetKey, @Nullable DeviceVaultKeyPackage stagedPackage) {
+        requireOpen();
+        if (rotationPrepared) {
+            targetKey.close();
+            throw new IllegalStateException("Vault key rotation is already prepared");
+        }
+        rotationPrepared = true;
+        try {
+            return new DefaultPreparedVaultKeyRotation(targetKey, stagedPackage);
+        } catch (RuntimeException | Error e) {
+            rotationPrepared = false;
+            targetKey.close();
+            throw e;
+        }
+    }
+
+    private synchronized void releasePreparedRotation() {
+        rotationPrepared = false;
+    }
+
+    private synchronized void completePreparedRotation() {
+        requireOpen();
+        vaultKey.close();
+        closed = true;
+        rotationPrepared = false;
+    }
+
+    private final class DefaultPreparedVaultKeyRotation implements PreparedVaultKeyRotation {
+
+        private final KeyId sourceKeyId = vaultKey.keyId();
+        private final VaultKey targetKey;
+        private final VaultHeader previousHeader;
+        private final List<EncryptedSecretRecord> rotatedRecords;
+        private final Set<String> acceptedPackageFingerprints = new HashSet<>();
+        private boolean committed;
+        private boolean closed;
+        private boolean targetTransferred;
+
+        private DefaultPreparedVaultKeyRotation(
+                @NonNull VaultKey targetKey, @Nullable DeviceVaultKeyPackage stagedPackage) {
+            this.targetKey = targetKey;
+            this.previousHeader =
+                    store.loadVaultHeader(vaultId)
+                            .orElseThrow(() -> new ValidationException("Vault does not exist"));
+            if (!previousHeader.vaultKeyId().equals(sourceKeyId)) {
+                throw new ValidationException("Vault key changed before rotation preparation");
+            }
+            this.rotatedRecords = rotateRecords(targetKey);
+            if (stagedPackage != null) {
+                acceptedPackageFingerprints.add(packageFingerprint(stagedPackage));
+            }
+        }
+
+        @Override
+        public @NonNull VaultId vaultId() {
+            return vaultId;
+        }
+
+        @Override
+        public @NonNull KeyId sourceVaultKeyId() {
+            return sourceKeyId;
+        }
+
+        @Override
+        public @NonNull KeyId targetVaultKeyId() {
+            return targetKey.keyId();
+        }
+
+        @Override
+        public @NonNull DeviceVaultKeyPackage wrapVaultKeyPackageForDevice(
+                byte @NonNull [] publicKey, byte @NonNull [] context) {
+            Objects.requireNonNull(publicKey, "publicKey");
+            Objects.requireNonNull(context, "context");
+            requirePreparedOpen();
+            DeviceVaultKeyPackage keyPackage =
+                    new DeviceVaultKeyPackage(
+                            targetKey.keyId(),
+                            DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
+                            crypto.wrapVaultKeyForDevice(targetKey, publicKey, context));
+            acceptedPackageFingerprints.add(packageFingerprint(keyPackage));
+            return keyPackage;
+        }
+
+        @Override
+        public @NonNull VaultHandle commitWithDevicePackage(
+                @NonNull DeviceVaultKeyPackage localPackage) {
+            Objects.requireNonNull(localPackage, "localPackage");
+            requirePreparedOpen();
+            if (!targetKey.keyId().equals(localPackage.vaultKeyId())
+                    || !DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM.equals(
+                            localPackage.keyAlgorithm())
+                    || !acceptedPackageFingerprints.contains(packageFingerprint(localPackage))) {
+                throw new ValidationException(
+                        "Local device package was not produced by this rotation");
+            }
+
+            byte[] wrapped = localPackage.encryptedVaultKey();
+            try {
+                Instant now = clock.instant();
+                store.commitVaultKeyRotation(
+                        new VaultKeyRotation(
+                                new VaultHeader(
+                                        vaultId,
+                                        previousHeader.formatVersion(),
+                                        localPackage.keyAlgorithm(),
+                                        new byte[0],
+                                        1,
+                                        targetKey.keyId(),
+                                        wrapped,
+                                        previousHeader.createdAt(),
+                                        now),
+                                rotatedRecords));
+                completePreparedRotation();
+                committed = true;
+                targetTransferred = true;
+                return new DefaultVaultHandle(vaultId, targetKey, store, crypto, clock);
+            } finally {
+                wipe(wrapped);
+            }
+        }
+
+        @Override
+        public boolean isCommitted() {
+            return committed;
+        }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                if (!targetTransferred) {
+                    targetKey.close();
+                }
+                rotatedRecords.clear();
+                acceptedPackageFingerprints.clear();
+                if (!committed) {
+                    releasePreparedRotation();
+                }
+                closed = true;
+            }
+        }
+
+        @Override
+        public @NonNull String toString() {
+            return "PreparedVaultKeyRotation[vaultId=%s, sourceVaultKeyId=%s, targetVaultKeyId=%s, packages=%d, committed=%s, closed=%s]"
+                    .formatted(
+                            vaultId,
+                            sourceKeyId,
+                            targetKey.keyId(),
+                            acceptedPackageFingerprints.size(),
+                            committed,
+                            closed);
+        }
+
+        private @NonNull List<EncryptedSecretRecord> rotateRecords(@NonNull VaultKey nextKey) {
+            List<EncryptedSecretRecord> records = new ArrayList<>();
+            for (EncryptedSecretRecord record : store.listSecretRecords(vaultId)) {
+                byte[] aad = SecretRecordAad.encode(vaultId, record.metadata(), record.revision());
+                byte @Nullable [] plaintext = null;
+                try {
+                    plaintext = crypto.decrypt(vaultKey, record.payload(), aad);
+                    records.add(
+                            new EncryptedSecretRecord(
+                                    vaultId,
+                                    record.metadata(),
+                                    crypto.encrypt(nextKey, plaintext, aad, clock.instant()),
+                                    record.revision()));
+                } finally {
+                    wipe(aad);
+                    wipe(plaintext);
+                }
+            }
+            return records;
+        }
+
+        private void requirePreparedOpen() {
+            if (closed) {
+                throw new IllegalStateException("Prepared vault key rotation is closed");
+            }
+            if (committed) {
+                throw new IllegalStateException("Prepared vault key rotation is committed");
+            }
+            requireOpen();
+        }
+    }
+
+    private @NonNull String packageFingerprint(@NonNull DeviceVaultKeyPackage keyPackage) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateDigest(digest, keyPackage.vaultKeyId().value().getBytes(StandardCharsets.UTF_8));
+            updateDigest(digest, keyPackage.keyAlgorithm().getBytes(StandardCharsets.UTF_8));
+            byte[] encryptedVaultKey = keyPackage.encryptedVaultKey();
+            try {
+                updateDigest(digest, encryptedVaultKey);
+                return Base64.getUrlEncoder().withoutPadding().encodeToString(digest.digest());
+            } finally {
+                wipe(encryptedVaultKey);
+            }
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private void updateDigest(@NonNull MessageDigest digest, byte @NonNull [] value) {
+        digest.update((byte) (value.length >>> 24));
+        digest.update((byte) (value.length >>> 16));
+        digest.update((byte) (value.length >>> 8));
+        digest.update((byte) value.length);
+        digest.update(value);
     }
 
     private void wipe(byte @Nullable [] value) {
