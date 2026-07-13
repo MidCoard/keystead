@@ -15,7 +15,10 @@ public record SecretFieldSchema(
         @Nullable Integer maxLength) {
 
     public SecretFieldSchema(
-            @NonNull String name, @NonNull SecretFieldType type, boolean required, boolean revealable) {
+            @NonNull String name,
+            @NonNull SecretFieldType type,
+            boolean required,
+            boolean revealable) {
         this(name, type, required, revealable, List.of(), name, null);
     }
 

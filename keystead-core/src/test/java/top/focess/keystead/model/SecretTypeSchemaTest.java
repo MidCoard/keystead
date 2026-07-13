@@ -30,7 +30,9 @@ class SecretTypeSchemaTest {
                                 "x", SecretFieldType.TEXT, false, false, List.of(" "), "x", null));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new SecretFieldSchema("x", SecretFieldType.TEXT, false, false, List.of(), "x", 0));
+                () ->
+                        new SecretFieldSchema(
+                                "x", SecretFieldType.TEXT, false, false, List.of(), "x", 0));
     }
 
     @Test

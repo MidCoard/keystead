@@ -111,6 +111,19 @@ Generated private material is owned by `SecretBuffer`-based or
 - Safe restore that rejects a conflicting existing vault header before writing.
 - Device-specific wrapped vault-key packages for zero-knowledge provisioning.
 
+### Recovery and collaborative key lifecycle
+
+- Offline recovery-kit material whose account credential and recovery private
+  key are derived and encrypted on the client side.
+- Recovery-bound vault-key packages that let a valid kit rewrap the current
+  vault key without disclosing it to a server.
+- Canonical verified-device recovery requests that can be signed by an
+  existing trusted device.
+- Prepared vault-key rotations that generate the next key without changing
+  the live vault until all required recipient packages are ready.
+- Restart-safe resumption from a device-wrapped staged package, followed by an
+  atomic local commit.
+
 ## Secret type model
 
 Keystead does not treat every item as an arbitrary collection of strings.
@@ -265,9 +278,9 @@ Requires JDK 21.
 ./gradlew :keystead-core:spotlessCheck
 ```
 
-On Windows, use `gradlew.bat`. The current complete suite contains 220 tests.
+On Windows, use `gradlew.bat`. The current complete suite contains 241 tests.
 
-## Honest project assessment
+## Engineering assessment
 
 ### What is strong
 
@@ -281,7 +294,7 @@ On Windows, use `gradlew.bat`. The current complete suite contains 220 tests.
 - The server can remain operationally useful without receiving decryption
   capability.
 
-### Current boundaries
+### System boundaries
 
 **Browser and mobile integration.** Keystead currently has a JVM desktop
 client. There is no browser extension, browser autofill bridge, Android client,
@@ -297,35 +310,24 @@ OS-protected key design that releases wrapping material only after local user
 verification; it cannot safely be implemented as a cosmetic alternative to
 the master-password field.
 
-**External security validation.** The project has automated tests for crypto
-boundaries, malformed inputs, persistence recovery, authorization, redaction,
-and lifecycle transitions. Those tests are evidence of intended behavior, not
-an independent security assessment. No external audit has reviewed the whole
-system, no public bug-bounty program has exercised its disclosure process, and
-there is no long-running production record from which to evaluate operational
-failure modes.
+**Recovery remains possession based.** Keystead now supports an offline
+recovery kit and approval from an existing verified device. Both paths keep
+vault-key recovery on clients. The server cannot manufacture recovery if the
+user loses the kit, every eligible device, every usable password-wrapped
+header, and every backup; permanent loss is the intended consequence of that
+zero-knowledge boundary.
 
-**Account recovery.** The server cannot reset a master password and recover a
-vault by itself because it does not possess the raw vault key. Access can be
-restored only from key material the user still controls, such as a valid
-password-wrapped vault header, an eligible device package, or a usable backup.
-If every usable password, device key, wrapped-key path, and backup is lost,
-permanent data loss is the expected zero-knowledge outcome. A guided recovery
-and emergency-access workflow has not yet been built around these primitives.
+**OS protection belongs to the client layer.** Keystead Client can place device
+identity material behind Windows DPAPI, macOS Keychain, or Linux Secret
+Service, with explicit passphrase-file and memory-only alternatives. Core does
+not call operating-system credential APIs and does not treat OS-user protection
+as biometric verification.
 
-**OS-native secure storage.** The desktop code defines capability-aware secure
-storage and currently provides memory-only storage plus a passphrase-protected
-encrypted-file fallback. It does not yet have completed adapters for Windows
-Credential Manager or DPAPI, macOS Keychain, or Linux Secret Service. As a
-result, local device identity protection depends on a separate passphrase
-rather than an operating-system account or biometric gate.
-
-**Collaborative lifecycle.** The encrypted protocol includes membership roles,
-device-specific vault-key packages, revocation checks, key generations, and
-rotation operations. The complete user journey is still incomplete: inviting
-and removing members, confirming every eligible device, rotating after access
-changes, redistributing packages, handling offline devices, and explaining
-irreversible access consequences are not yet one guided end-to-end workflow.
+**Collaboration protects future versions.** Membership, per-device packaging,
+and prepared rotation form a complete lifecycle: invitation, acceptance,
+package coverage, role enforcement, removal, mandatory rotation, resumption,
+and commit. Removing a member cannot erase data already decrypted or copied;
+rotation prevents that member from receiving future vault-key generations.
 
 Keystead should currently be evaluated as a serious, test-heavy engineering
 foundation and an experimental password-manager system. Production adoption
