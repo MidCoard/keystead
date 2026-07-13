@@ -42,6 +42,16 @@ class SyncExportTest {
     @TempDir Path tempDir;
 
     @Test
+    void exportRejectsNegativeSyncCursorBeforeReadingRows() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            ValidationException failure =
+                    assertThrows(ValidationException.class, () -> vault.exportRecordsSince(-1));
+            assertEquals("Since revision must not be negative", failure.getMessage());
+        }
+    }
+
+    @Test
     void exportsEncryptedRecordsWithoutServerVisibleProfileOrAad() {
         VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
         try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
