@@ -34,6 +34,10 @@ public record DeviceVaultKeyPackage(
         return Arrays.copyOf(encryptedVaultKey, encryptedVaultKey.length);
     }
 
+    void destroy() {
+        Arrays.fill(encryptedVaultKey, (byte) 0);
+    }
+
     @Override
     public @NonNull String toString() {
         return "DeviceVaultKeyPackage[vaultKeyId=%s, keyAlgorithm=%s, encryptedVaultKey=[REDACTED %d bytes]]"

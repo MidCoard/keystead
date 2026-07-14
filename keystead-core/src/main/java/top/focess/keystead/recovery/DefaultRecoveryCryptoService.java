@@ -152,14 +152,13 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
                 || kit.generation() != keyPackage.generation()) {
             throw new CryptoException("Recovery material does not match");
         }
-        byte[] privateKey = decryptPrivateKey(kit, encryptedPrivateKey);
-        byte[] ciphertext = keyPackage.encryptedVaultKey();
+        byte @Nullable [] privateKey = null;
+        byte @Nullable [] ciphertext = null;
         byte @Nullable [] version2Context = null;
         byte @Nullable [] legacyContext = null;
         try {
-            DeviceVaultKeyPackage devicePackage =
-                    new DeviceVaultKeyPackage(
-                            keyPackage.vaultKeyId(), keyPackage.keyAlgorithm(), ciphertext);
+            privateKey = decryptPrivateKey(kit, encryptedPrivateKey);
+            ciphertext = keyPackage.encryptedVaultKey();
             version2Context =
                     RecoveryContextCodec.version2(
                             keyPackage.username(),
@@ -169,7 +168,12 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
                             keyPackage.vaultKeyId().value());
             try {
                 return vaultService.provisionVault(
-                        vaultId, devicePackage, privateKey, version2Context);
+                        vaultId,
+                        keyPackage.vaultKeyId(),
+                        keyPackage.keyAlgorithm(),
+                        ciphertext,
+                        privateKey,
+                        version2Context);
             } catch (CryptoException version2Failure) {
                 legacyContext =
                         RecoveryContextCodec.legacyVersion1(
@@ -180,7 +184,12 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
                                 keyPackage.vaultKeyId().value());
                 try {
                     return vaultService.provisionVault(
-                            vaultId, devicePackage, privateKey, legacyContext);
+                            vaultId,
+                            keyPackage.vaultKeyId(),
+                            keyPackage.keyAlgorithm(),
+                            ciphertext,
+                            privateKey,
+                            legacyContext);
                 } catch (CryptoException legacyFailure) {
                     throw new CryptoException(
                             "Could not open recovery vault package", legacyFailure);
@@ -201,41 +210,49 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
 
     private byte @NonNull [] encryptPrivateKey(
             @NonNull RecoveryKit kit, byte @NonNull [] privateKey) {
-        byte[] key = derive(kit, "private-envelope-key");
-        byte[] nonce = new byte[NONCE_BYTES];
-        random.nextBytes(nonce);
-        byte[] aad = privateEnvelopeAad(kit);
+        byte @Nullable [] key = null;
+        byte @Nullable [] nonce = null;
+        byte @Nullable [] aad = null;
+        byte @Nullable [] ciphertext = null;
+        byte @Nullable [] output = null;
+        boolean completed = false;
         try {
+            key = derive(kit, "private-envelope-key");
+            nonce = new byte[NONCE_BYTES];
+            random.nextBytes(nonce);
+            aad = privateEnvelopeAad(kit);
             Cipher cipher = Cipher.getInstance(CIPHER_ALGORITHM);
             cipher.init(
                     Cipher.ENCRYPT_MODE,
                     new SecretKeySpec(key, "AES"),
                     new GCMParameterSpec(GCM_TAG_BITS, nonce));
             cipher.updateAAD(aad);
-            byte[] ciphertext = cipher.doFinal(privateKey);
-            try {
-                ByteBuffer output =
-                        ByteBuffer.allocate(
-                                PRIVATE_ENVELOPE_MAGIC.length
-                                        + Integer.BYTES
-                                        + NONCE_BYTES
-                                        + Integer.BYTES
-                                        + ciphertext.length);
-                output.put(PRIVATE_ENVELOPE_MAGIC)
-                        .putInt(PRIVATE_ENVELOPE_VERSION)
-                        .put(nonce)
-                        .putInt(ciphertext.length)
-                        .put(ciphertext);
-                return output.array();
-            } finally {
-                wipe(ciphertext);
-            }
+            ciphertext = cipher.doFinal(privateKey);
+            output =
+                    new byte
+                            [PRIVATE_ENVELOPE_MAGIC.length
+                                    + Integer.BYTES
+                                    + NONCE_BYTES
+                                    + Integer.BYTES
+                                    + ciphertext.length];
+            ByteBuffer.wrap(output)
+                    .put(PRIVATE_ENVELOPE_MAGIC)
+                    .putInt(PRIVATE_ENVELOPE_VERSION)
+                    .put(nonce)
+                    .putInt(ciphertext.length)
+                    .put(ciphertext);
+            completed = true;
+            return output;
         } catch (GeneralSecurityException error) {
             throw new CryptoException("Could not encrypt recovery private key", error);
         } finally {
             wipe(key);
             wipe(nonce);
             wipe(aad);
+            wipe(ciphertext);
+            if (!completed) {
+                wipe(output);
+            }
         }
     }
 
@@ -250,58 +267,76 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
                 || encryptedPrivateKey.length > MAX_PRIVATE_ENVELOPE_BYTES) {
             throw new CryptoException("Recovery private key envelope is invalid");
         }
-        ByteBuffer input =
-                ByteBuffer.wrap(Arrays.copyOf(encryptedPrivateKey, encryptedPrivateKey.length));
-        byte[] magic = new byte[PRIVATE_ENVELOPE_MAGIC.length];
-        input.get(magic);
-        int version = input.getInt();
-        byte[] nonce = new byte[NONCE_BYTES];
-        input.get(nonce);
-        int ciphertextLength = input.getInt();
-        if (!Arrays.equals(magic, PRIVATE_ENVELOPE_MAGIC)
-                || version != PRIVATE_ENVELOPE_VERSION
-                || ciphertextLength != input.remaining()) {
-            wipe(magic);
-            wipe(nonce);
-            throw new CryptoException("Recovery private key envelope is invalid");
-        }
-        byte[] ciphertext = new byte[ciphertextLength];
-        input.get(ciphertext);
-        byte[] key = derive(kit, "private-envelope-key");
-        byte[] aad = privateEnvelopeAad(kit);
+        byte @Nullable [] inputCopy = null;
+        byte @Nullable [] magic = null;
+        byte @Nullable [] nonce = null;
+        byte @Nullable [] ciphertext = null;
+        byte @Nullable [] key = null;
+        byte @Nullable [] aad = null;
+        byte @Nullable [] plaintext = null;
+        boolean completed = false;
         try {
+            inputCopy = Arrays.copyOf(encryptedPrivateKey, encryptedPrivateKey.length);
+            ByteBuffer input = ByteBuffer.wrap(inputCopy);
+            magic = new byte[PRIVATE_ENVELOPE_MAGIC.length];
+            input.get(magic);
+            int version = input.getInt();
+            nonce = new byte[NONCE_BYTES];
+            input.get(nonce);
+            int ciphertextLength = input.getInt();
+            if (!Arrays.equals(magic, PRIVATE_ENVELOPE_MAGIC)
+                    || version != PRIVATE_ENVELOPE_VERSION
+                    || ciphertextLength != input.remaining()) {
+                throw new CryptoException("Recovery private key envelope is invalid");
+            }
+            ciphertext = new byte[ciphertextLength];
+            input.get(ciphertext);
+            key = derive(kit, "private-envelope-key");
+            aad = privateEnvelopeAad(kit);
             Cipher cipher = Cipher.getInstance(CIPHER_ALGORITHM);
             cipher.init(
                     Cipher.DECRYPT_MODE,
                     new SecretKeySpec(key, "AES"),
                     new GCMParameterSpec(GCM_TAG_BITS, nonce));
             cipher.updateAAD(aad);
-            return cipher.doFinal(ciphertext);
+            plaintext = cipher.doFinal(ciphertext);
+            completed = true;
+            return plaintext;
         } catch (GeneralSecurityException error) {
             throw new CryptoException("Could not decrypt recovery private key", error);
         } finally {
+            wipe(inputCopy);
             wipe(magic);
             wipe(nonce);
             wipe(ciphertext);
             wipe(key);
             wipe(aad);
-            if (input.hasArray()) {
-                wipe(input.array());
+            if (!completed) {
+                wipe(plaintext);
             }
         }
     }
 
     private byte @NonNull [] derive(@NonNull RecoveryKit kit, @NonNull String info) {
-        byte[] secret = kit.recoverySecret();
-        byte[] salt = digest(binding(kit));
-        byte[] pseudoRandomKey = hmac(salt, secret);
-        byte[] input = ("keystead-recovery-v1|" + info).getBytes(StandardCharsets.UTF_8);
-        byte[] expandInput = Arrays.copyOf(input, input.length + 1);
-        expandInput[expandInput.length - 1] = 1;
+        byte @Nullable [] secret = null;
+        byte @Nullable [] salt = null;
+        byte @Nullable [] pseudoRandomKey = null;
+        byte @Nullable [] input = null;
+        byte @Nullable [] expandInput = null;
         byte @Nullable [] expanded = null;
+        byte @Nullable [] output = null;
+        boolean completed = false;
         try {
+            secret = kit.recoverySecret();
+            salt = digest(binding(kit));
+            pseudoRandomKey = hmac(salt, secret);
+            input = ("keystead-recovery-v1|" + info).getBytes(StandardCharsets.UTF_8);
+            expandInput = Arrays.copyOf(input, input.length + 1);
+            expandInput[expandInput.length - 1] = 1;
             expanded = hmac(pseudoRandomKey, expandInput);
-            return Arrays.copyOf(expanded, DERIVED_KEY_BYTES);
+            output = Arrays.copyOf(expanded, DERIVED_KEY_BYTES);
+            completed = true;
+            return output;
         } finally {
             wipe(secret);
             wipe(salt);
@@ -309,6 +344,9 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
             wipe(input);
             wipe(expandInput);
             wipe(expanded);
+            if (!completed) {
+                wipe(output);
+            }
         }
     }
 

@@ -60,6 +60,41 @@ class RecoveryContextCodecTest {
                 () -> RecoveryContextCodec.version2("\uD800", "v", "e", 1L, "k"));
     }
 
+    @Test
+    void legacyVersion1MatchesHistoricalBytesForValidBoundedText() {
+        byte[] expected =
+                ("keystead-recovery-vault-package-v1|user:alice"
+                                + "|vault:vault-1"
+                                + "|enrollment:enrollment-1"
+                                + "|generation:7"
+                                + "|key:key-1")
+                        .getBytes(StandardCharsets.UTF_8);
+        byte[] actual =
+                RecoveryContextCodec.legacyVersion1(
+                        "alice", "vault-1", "enrollment-1", 7L, "key-1");
+        try {
+            assertArrayEquals(expected, actual);
+        } finally {
+            Arrays.fill(expected, (byte) 0);
+            Arrays.fill(actual, (byte) 0);
+        }
+    }
+
+    @Test
+    void legacyCompatibilityRejectsNonPositiveGenerationMalformedTextAndOversizedFields() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RecoveryContextCodec.legacyVersion1("u", "v", "e", 0L, "k"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RecoveryContextCodec.legacyVersion1("\uD800", "v", "e", 1L, "k"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        RecoveryContextCodec.legacyVersion1(
+                                "u", "v", "e", 1L, "a".repeat(64 * 1024 + 1)));
+    }
+
     private static String readText(ByteBuffer input) {
         byte[] encoded = new byte[input.getInt()];
         input.get(encoded);

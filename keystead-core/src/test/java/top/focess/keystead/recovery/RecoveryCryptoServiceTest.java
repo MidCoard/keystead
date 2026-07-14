@@ -289,7 +289,7 @@ class RecoveryCryptoServiceTest {
             VaultHandle source, RecoveryPublicKey recoveryKey, String username) {
         byte[] publicKey = recoveryKey.publicKey();
         byte[] context =
-                RecoveryContextCodec.legacyVersion1(
+                historicalLegacyContext(
                         username,
                         VAULT_ID.value().toString(),
                         recoveryKey.enrollmentId(),
@@ -312,6 +312,50 @@ class RecoveryCryptoServiceTest {
             Arrays.fill(context, (byte) 0);
             if (ciphertext != null) {
                 Arrays.fill(ciphertext, (byte) 0);
+            }
+        }
+    }
+
+    @Test
+    void nonceRandomFailureStillWipesAllocatedNonce() {
+        FailingNonceRandom random = new FailingNonceRandom();
+        RecoveryCryptoService recovery = new DefaultRecoveryCryptoService(random);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> recovery.enroll("random-failure-enrollment", 1L));
+
+        assertNotNull(random.failedNonce);
+        assertArrayEquals(new byte[12], random.failedNonce);
+    }
+
+    private static byte[] historicalLegacyContext(
+            String username, String vaultId, String enrollmentId, long generation, String keyId) {
+        return ("keystead-recovery-vault-package-v1|user:"
+                        + username
+                        + "|vault:"
+                        + vaultId
+                        + "|enrollment:"
+                        + enrollmentId
+                        + "|generation:"
+                        + generation
+                        + "|key:"
+                        + keyId)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static final class FailingNonceRandom extends SecureRandom {
+
+        private int calls;
+        private byte[] failedNonce;
+
+        @Override
+        public void nextBytes(byte[] bytes) {
+            calls++;
+            Arrays.fill(bytes, (byte) calls);
+            if (calls == 2) {
+                failedNonce = bytes;
+                throw new IllegalStateException("deliberate nonce failure");
             }
         }
     }

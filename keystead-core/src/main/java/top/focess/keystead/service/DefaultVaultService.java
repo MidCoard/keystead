@@ -12,6 +12,7 @@ import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.VaultKey;
 import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretRecordAad;
+import top.focess.keystead.model.SecurityLimits;
 import top.focess.keystead.model.VaultHeader;
 import top.focess.keystead.model.VaultId;
 import top.focess.keystead.store.VaultKeyRotation;
@@ -179,10 +180,9 @@ public final class DefaultVaultService implements VaultService {
 
         return provisionVault(
                 vaultId,
-                new DeviceVaultKeyPackage(
-                        defaultVaultKeyId(vaultId),
-                        DEVICE_KEY_PACKAGE_ALGORITHM,
-                        encryptedVaultKey),
+                defaultVaultKeyId(vaultId),
+                DEVICE_KEY_PACKAGE_ALGORITHM,
+                encryptedVaultKey,
                 devicePrivateKey,
                 context);
     }
@@ -197,12 +197,50 @@ public final class DefaultVaultService implements VaultService {
         Objects.requireNonNull(keyPackage, "keyPackage");
         Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
         Objects.requireNonNull(context, "context");
-        KeyId keyId = keyPackage.vaultKeyId();
-        byte[] encryptedVaultKey = keyPackage.encryptedVaultKey();
-        VaultKey vaultKey =
-                crypto.unwrapVaultKeyFromDevicePackage(
-                        keyId, encryptedVaultKey, devicePrivateKey, context);
+        byte @Nullable [] encryptedVaultKey = null;
         try {
+            encryptedVaultKey = keyPackage.encryptedVaultKey();
+            return provisionVault(
+                    vaultId,
+                    keyPackage.vaultKeyId(),
+                    keyPackage.keyAlgorithm(),
+                    encryptedVaultKey,
+                    devicePrivateKey,
+                    context);
+        } finally {
+            wipe(encryptedVaultKey);
+        }
+    }
+
+    @Override
+    public @NonNull VaultHandle provisionVault(
+            @NonNull VaultId vaultId,
+            @NonNull KeyId vaultKeyId,
+            @NonNull String keyAlgorithm,
+            byte @NonNull [] encryptedVaultKey,
+            byte @NonNull [] devicePrivateKey,
+            byte @NonNull [] context) {
+        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(vaultKeyId, "vaultKeyId");
+        Objects.requireNonNull(keyAlgorithm, "keyAlgorithm");
+        Objects.requireNonNull(encryptedVaultKey, "encryptedVaultKey");
+        Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
+        Objects.requireNonNull(context, "context");
+        if (!CryptoAlgorithmRegistry.isApprovedDeviceKeyPackage(keyAlgorithm)) {
+            throw new IllegalArgumentException("Device key package algorithm is unsupported");
+        }
+        if (encryptedVaultKey.length == 0) {
+            throw new IllegalArgumentException("Encrypted vault key must not be empty");
+        }
+        if (encryptedVaultKey.length > SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES) {
+            throw new IllegalArgumentException("Encrypted vault key exceeds the size limit");
+        }
+        @Nullable VaultKey vaultKey = null;
+        boolean transferred = false;
+        try {
+            vaultKey =
+                    crypto.unwrapVaultKeyFromDevicePackage(
+                            vaultKeyId, encryptedVaultKey, devicePrivateKey, context);
             Instant now = clock.instant();
             Instant createdAt =
                     store.loadVaultHeader(vaultId).map(VaultHeader::createdAt).orElse(now);
@@ -210,17 +248,20 @@ public final class DefaultVaultService implements VaultService {
                     new VaultHeader(
                             vaultId,
                             1,
-                            keyPackage.keyAlgorithm(),
+                            keyAlgorithm,
                             new byte[0],
                             1,
-                            keyId,
+                            vaultKeyId,
                             encryptedVaultKey,
                             createdAt,
                             now));
-            return new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
-        } catch (RuntimeException e) {
-            vaultKey.close();
-            throw e;
+            VaultHandle handle = new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
+            transferred = true;
+            return handle;
+        } finally {
+            if (!transferred && vaultKey != null) {
+                vaultKey.close();
+            }
         }
     }
 
