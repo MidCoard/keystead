@@ -5,6 +5,7 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
 import top.focess.keystead.model.KeyId;
+import top.focess.keystead.model.SecurityLimits;
 
 /** Opaque vault-key material wrapped for one trusted device. */
 public record DeviceVaultKeyPackage(
@@ -21,6 +22,9 @@ public record DeviceVaultKeyPackage(
         }
         if (encryptedVaultKey.length == 0) {
             throw new IllegalArgumentException("Encrypted vault key must not be empty");
+        }
+        if (encryptedVaultKey.length > SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES) {
+            throw new IllegalArgumentException("Encrypted vault key exceeds the size limit");
         }
         encryptedVaultKey = Arrays.copyOf(encryptedVaultKey, encryptedVaultKey.length);
     }

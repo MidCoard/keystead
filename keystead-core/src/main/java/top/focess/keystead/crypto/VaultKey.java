@@ -7,6 +7,7 @@ import top.focess.keystead.memory.SecretDestroyedException;
 import top.focess.keystead.memory.SecretMemory;
 import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.model.KeyId;
+import top.focess.keystead.model.SecurityLimits;
 
 public final class VaultKey implements AutoCloseable {
 
@@ -24,6 +25,9 @@ public final class VaultKey implements AutoCloseable {
             @NonNull SecretMemoryProvider memoryProvider) {
         this.keyId = Objects.requireNonNull(keyId, "keyId");
         Objects.requireNonNull(keyBytes, "keyBytes");
+        if (keyBytes.length != SecurityLimits.AES_256_KEY_BYTES) {
+            throw new IllegalArgumentException("Vault key must be exactly 32 bytes");
+        }
         this.keyBytesLength = keyBytes.length;
         this.keyBytes =
                 Objects.requireNonNull(

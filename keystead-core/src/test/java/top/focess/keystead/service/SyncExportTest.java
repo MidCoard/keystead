@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static top.focess.keystead.model.SecurityLimits.MAX_ENCODED_SYNC_CHARACTERS;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -558,6 +559,45 @@ class SyncExportTest {
                                 "",
                                 "payload",
                                 true));
+    }
+
+    @Test
+    void activeSyncRecordEnforcesEncodedFieldLimits() {
+        String exact = "x".repeat(MAX_ENCODED_SYNC_CHARACTERS);
+        EncryptedSyncRecord record =
+                new EncryptedSyncRecord(
+                        VAULT_ID.value().toString(),
+                        UUID.randomUUID().toString(),
+                        1L,
+                        SecretType.API_TOKEN.name(),
+                        exact,
+                        exact,
+                        false);
+
+        assertEquals(MAX_ENCODED_SYNC_CHARACTERS, record.encryptedProfile().length());
+        assertEquals(MAX_ENCODED_SYNC_CHARACTERS, record.envelope().length());
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                VAULT_ID.value().toString(),
+                                UUID.randomUUID().toString(),
+                                1L,
+                                SecretType.API_TOKEN.name(),
+                                "x".repeat(MAX_ENCODED_SYNC_CHARACTERS + 1),
+                                "envelope",
+                                false));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                VAULT_ID.value().toString(),
+                                UUID.randomUUID().toString(),
+                                1L,
+                                SecretType.API_TOKEN.name(),
+                                "profile",
+                                "x".repeat(MAX_ENCODED_SYNC_CHARACTERS + 1),
+                                false));
     }
 
     private static char[] master() {

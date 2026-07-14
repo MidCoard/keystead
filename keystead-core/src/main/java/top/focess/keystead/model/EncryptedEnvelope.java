@@ -24,6 +24,13 @@ public record EncryptedEnvelope(
         if (version <= 0) {
             throw new IllegalArgumentException("Envelope version must be positive");
         }
+        if (aad.length > SecurityLimits.MAX_ENVELOPE_AAD_BYTES) {
+            throw new IllegalArgumentException("Encrypted envelope AAD exceeds the size limit");
+        }
+        if (ciphertext.length > SecurityLimits.MAX_ENVELOPE_CIPHERTEXT_BYTES) {
+            throw new IllegalArgumentException(
+                    "Encrypted envelope ciphertext exceeds the size limit");
+        }
         nonce = Arrays.copyOf(nonce, nonce.length);
         aad = Arrays.copyOf(aad, aad.length);
         ciphertext = Arrays.copyOf(ciphertext, ciphertext.length);

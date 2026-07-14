@@ -1,6 +1,10 @@
 package top.focess.keystead.model;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static top.focess.keystead.model.SecurityLimits.MAX_ENVELOPE_AAD_BYTES;
+import static top.focess.keystead.model.SecurityLimits.MAX_ENVELOPE_CIPHERTEXT_BYTES;
+import static top.focess.keystead.model.SecurityLimits.MAX_KDF_SALT_BYTES;
+import static top.focess.keystead.model.SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES;
 
 import java.time.Instant;
 import java.util.Map;
@@ -286,6 +290,48 @@ class ModelTest {
     }
 
     @Test
+    void encryptedEnvelopeAcceptsExactResourceLimits() {
+        EncryptedEnvelope envelope =
+                new EncryptedEnvelope(
+                        1,
+                        "AES-256-GCM",
+                        new KeyId("vault-key"),
+                        new byte[12],
+                        new byte[MAX_ENVELOPE_AAD_BYTES],
+                        new byte[MAX_ENVELOPE_CIPHERTEXT_BYTES],
+                        Instant.parse("2026-07-02T00:00:00Z"));
+
+        assertEquals(MAX_ENVELOPE_AAD_BYTES, envelope.aad().length);
+        assertEquals(MAX_ENVELOPE_CIPHERTEXT_BYTES, envelope.ciphertext().length);
+    }
+
+    @Test
+    void encryptedEnvelopeRejectsInputsOverResourceLimits() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedEnvelope(
+                                1,
+                                "AES-256-GCM",
+                                new KeyId("vault-key"),
+                                new byte[12],
+                                new byte[MAX_ENVELOPE_AAD_BYTES + 1],
+                                new byte[1],
+                                Instant.parse("2026-07-02T00:00:00Z")));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedEnvelope(
+                                1,
+                                "AES-256-GCM",
+                                new KeyId("vault-key"),
+                                new byte[12],
+                                new byte[1],
+                                new byte[MAX_ENVELOPE_CIPHERTEXT_BYTES + 1],
+                                Instant.parse("2026-07-02T00:00:00Z")));
+    }
+
+    @Test
     void vaultHeaderRedactsWrappedVaultKey() {
         VaultHeader header =
                 new VaultHeader(
@@ -318,5 +364,53 @@ class ModelTest {
                                 new byte[] {3, 4},
                                 Instant.parse("2026-07-02T00:01:00Z"),
                                 Instant.parse("2026-07-02T00:00:00Z")));
+    }
+
+    @Test
+    void vaultHeaderAcceptsExactSaltAndWrappedKeyLimits() {
+        VaultHeader header =
+                new VaultHeader(
+                        new VaultId(UUID.randomUUID()),
+                        1,
+                        "PBKDF2WithHmacSHA256",
+                        new byte[MAX_KDF_SALT_BYTES],
+                        120_000,
+                        new KeyId("vault-key"),
+                        new byte[MAX_WRAPPED_KEY_PACKAGE_BYTES],
+                        Instant.parse("2026-07-02T00:00:00Z"),
+                        Instant.parse("2026-07-02T00:01:00Z"));
+
+        assertEquals(MAX_KDF_SALT_BYTES, header.kdfSalt().length);
+        assertEquals(MAX_WRAPPED_KEY_PACKAGE_BYTES, header.wrappedVaultKey().length);
+    }
+
+    @Test
+    void vaultHeaderRejectsSaltAndWrappedKeyOverResourceLimits() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new VaultHeader(
+                                new VaultId(UUID.randomUUID()),
+                                1,
+                                "PBKDF2WithHmacSHA256",
+                                new byte[MAX_KDF_SALT_BYTES + 1],
+                                120_000,
+                                new KeyId("vault-key"),
+                                new byte[1],
+                                Instant.parse("2026-07-02T00:00:00Z"),
+                                Instant.parse("2026-07-02T00:01:00Z")));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new VaultHeader(
+                                new VaultId(UUID.randomUUID()),
+                                1,
+                                "PBKDF2WithHmacSHA256",
+                                new byte[1],
+                                120_000,
+                                new KeyId("vault-key"),
+                                new byte[MAX_WRAPPED_KEY_PACKAGE_BYTES + 1],
+                                Instant.parse("2026-07-02T00:00:00Z"),
+                                Instant.parse("2026-07-02T00:01:00Z")));
     }
 }

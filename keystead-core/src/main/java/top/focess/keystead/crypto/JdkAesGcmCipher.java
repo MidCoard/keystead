@@ -7,6 +7,7 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import org.jspecify.annotations.NonNull;
+import top.focess.keystead.model.SecurityLimits;
 
 public final class JdkAesGcmCipher implements AeadCipher {
 
@@ -35,6 +36,7 @@ public final class JdkAesGcmCipher implements AeadCipher {
         Objects.requireNonNull(nonce, "nonce");
         Objects.requireNonNull(plaintext, "plaintext");
         Objects.requireNonNull(aad, "aad");
+        requireAes256Key(keyBytes);
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(
@@ -58,6 +60,7 @@ public final class JdkAesGcmCipher implements AeadCipher {
         Objects.requireNonNull(nonce, "nonce");
         Objects.requireNonNull(ciphertext, "ciphertext");
         Objects.requireNonNull(aad, "aad");
+        requireAes256Key(keyBytes);
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(
@@ -70,6 +73,12 @@ public final class JdkAesGcmCipher implements AeadCipher {
             throw new CryptoException("Could not decrypt payload", e);
         } catch (GeneralSecurityException e) {
             throw new CryptoException("Could not decrypt payload", e);
+        }
+    }
+
+    private static void requireAes256Key(byte @NonNull [] keyBytes) {
+        if (keyBytes.length != SecurityLimits.AES_256_KEY_BYTES) {
+            throw new IllegalArgumentException("AES-256 key must be exactly 32 bytes");
         }
     }
 }

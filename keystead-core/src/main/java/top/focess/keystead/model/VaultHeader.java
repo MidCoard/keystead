@@ -34,6 +34,12 @@ public record VaultHeader(
         if (kdfIterations <= 0) {
             throw new IllegalArgumentException("KDF iterations must be positive");
         }
+        if (kdfSalt.length > SecurityLimits.MAX_KDF_SALT_BYTES) {
+            throw new IllegalArgumentException("KDF salt exceeds the size limit");
+        }
+        if (wrappedVaultKey.length > SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES) {
+            throw new IllegalArgumentException("Wrapped vault key exceeds the size limit");
+        }
         kdfSalt = Arrays.copyOf(kdfSalt, kdfSalt.length);
         wrappedVaultKey = Arrays.copyOf(wrappedVaultKey, wrappedVaultKey.length);
     }

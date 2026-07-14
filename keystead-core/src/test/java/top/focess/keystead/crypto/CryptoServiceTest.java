@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.model.EncryptedEnvelope;
@@ -115,6 +116,86 @@ class CryptoServiceTest {
     }
 
     @Test
+    void decryptRejectsUnsupportedEnvelopeVersionBeforeCipherUse() {
+        AtomicInteger decryptCalls = new AtomicInteger();
+        AeadCipher recordingCipher =
+                new AeadCipher() {
+                    @Override
+                    public @NonNull String algorithm() {
+                        return JdkAesGcmCipher.ALGORITHM;
+                    }
+
+                    @Override
+                    public int nonceSizeBytes() {
+                        return 12;
+                    }
+
+                    @Override
+                    public byte @NonNull [] encrypt(
+                            byte @NonNull [] keyBytes,
+                            byte @NonNull [] nonce,
+                            byte @NonNull [] plaintext,
+                            byte @NonNull [] aad) {
+                        return plaintext.clone();
+                    }
+
+                    @Override
+                    public byte @NonNull [] decrypt(
+                            byte @NonNull [] keyBytes,
+                            byte @NonNull [] nonce,
+                            byte @NonNull [] ciphertext,
+                            byte @NonNull [] aad) {
+                        decryptCalls.incrementAndGet();
+                        return ciphertext.clone();
+                    }
+                };
+        DefaultCryptoService recordingCrypto =
+                new DefaultCryptoService(new SecureRandom(), recordingCipher);
+        try (VaultKey key = recordingCrypto.generateVaultKey(new KeyId("vault-key"))) {
+            EncryptedEnvelope versionOne =
+                    recordingCrypto.encrypt(
+                            key,
+                            new byte[] {1, 2, 3},
+                            new byte[] {4, 5, 6},
+                            Instant.parse("2026-07-02T00:00:00Z"));
+            EncryptedEnvelope versionTwo =
+                    new EncryptedEnvelope(
+                            2,
+                            versionOne.algorithm(),
+                            versionOne.keyId(),
+                            versionOne.nonce(),
+                            versionOne.aad(),
+                            versionOne.ciphertext(),
+                            versionOne.encryptedAt());
+
+            CryptoException failure =
+                    assertThrows(
+                            CryptoException.class,
+                            () -> recordingCrypto.decrypt(key, versionTwo, versionTwo.aad()));
+
+            assertEquals("Unsupported encrypted envelope version", failure.getMessage());
+            assertEquals(0, decryptCalls.get());
+        }
+    }
+
+    @Test
+    void vaultKeyRejectsNonAes256KeySizesBeforeProtectingMemory() {
+        for (int invalidLength : new int[] {16, 24, 31, 33}) {
+            AtomicInteger protectCalls = new AtomicInteger();
+            SecretMemoryProvider provider =
+                    value -> {
+                        protectCalls.incrementAndGet();
+                        return SecretMemoryProvider.heap().protect(value);
+                    };
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new VaultKey(new KeyId("vault-key"), new byte[invalidLength], provider));
+            assertEquals(0, protectCalls.get());
+        }
+    }
+
+    @Test
     void wrongMasterPasswordCannotUnwrapVaultKey() {
         try (VaultKey key = crypto.generateVaultKey(new KeyId("vault-key"))) {
             byte[] salt = crypto.randomSalt();
@@ -176,9 +257,12 @@ class CryptoServiceTest {
 
     @Test
     void vaultKeyCloseWaitsForInFlightCallback() throws Exception {
+        byte[] expected = new byte[32];
+        expected[0] = 1;
+        expected[1] = 2;
+        expected[2] = 3;
         VaultKey key =
-                new VaultKey(
-                        new KeyId("vault-key"), new byte[] {1, 2, 3}, SecretMemoryProvider.heap());
+                new VaultKey(new KeyId("vault-key"), expected.clone(), SecretMemoryProvider.heap());
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         CountDownLatch closeStarted = new CountDownLatch(1);
@@ -191,7 +275,7 @@ class CryptoServiceTest {
                                             bytes -> {
                                                 entered.countDown();
                                                 await(release);
-                                                assertArrayEquals(new byte[] {1, 2, 3}, bytes);
+                                                assertArrayEquals(expected, bytes);
                                             }));
             assertTrue(entered.await(2, TimeUnit.SECONDS));
 
@@ -207,7 +291,7 @@ class CryptoServiceTest {
             release.countDown();
             access.get(2, TimeUnit.SECONDS);
             close.get(2, TimeUnit.SECONDS);
-            assertTrue(key.toString().contains("keyBytes=[REDACTED 3 bytes]"));
+            assertTrue(key.toString().contains("keyBytes=[REDACTED 32 bytes]"));
             assertTrue(key.toString().contains("closed=true"));
             assertThrows(
                     SecretKeyDestroyedException.class,
@@ -316,7 +400,11 @@ class CryptoServiceTest {
                     calls.incrementAndGet();
                     return SecretMemoryProvider.heap().protect(value);
                 };
-        byte[] vaultInput = new byte[] {1, 2, 3};
+        byte[] expectedVaultInput = new byte[32];
+        expectedVaultInput[0] = 1;
+        expectedVaultInput[1] = 2;
+        expectedVaultInput[2] = 3;
+        byte[] vaultInput = expectedVaultInput.clone();
         byte[] publicInput = new byte[] {4, 5};
         byte[] privateInput = new byte[] {6, 7, 8};
 
@@ -328,7 +416,7 @@ class CryptoServiceTest {
             Arrays.fill(privateInput, (byte) 0);
 
             assertEquals(2, calls.get());
-            vaultKey.copyBytes(bytes -> assertArrayEquals(new byte[] {1, 2, 3}, bytes));
+            vaultKey.copyBytes(bytes -> assertArrayEquals(expectedVaultInput, bytes));
             assertArrayEquals(new byte[] {4, 5}, device.publicKey());
             device.copyPrivateKey(bytes -> assertArrayEquals(new byte[] {6, 7, 8}, bytes));
         }

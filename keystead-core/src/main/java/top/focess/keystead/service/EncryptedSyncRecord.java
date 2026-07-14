@@ -3,6 +3,7 @@ package top.focess.keystead.service;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.SecretType;
+import top.focess.keystead.model.SecurityLimits;
 
 public record EncryptedSyncRecord(
         @NonNull String vaultId,
@@ -19,6 +20,12 @@ public record EncryptedSyncRecord(
         requireNotBlank(secretType, "secretType");
         Objects.requireNonNull(encryptedProfile, "encryptedProfile");
         Objects.requireNonNull(envelope, "envelope");
+        if (encryptedProfile.length() > SecurityLimits.MAX_ENCODED_SYNC_CHARACTERS) {
+            throw new IllegalArgumentException("Encrypted sync profile exceeds the size limit");
+        }
+        if (envelope.length() > SecurityLimits.MAX_ENCODED_SYNC_CHARACTERS) {
+            throw new IllegalArgumentException("Encrypted sync envelope exceeds the size limit");
+        }
         if (revision <= 0) {
             throw new IllegalArgumentException("Record revision must be positive");
         }

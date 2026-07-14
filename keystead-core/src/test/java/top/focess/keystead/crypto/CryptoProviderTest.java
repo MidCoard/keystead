@@ -3,6 +3,7 @@ package top.focess.keystead.crypto;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -12,6 +13,23 @@ import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.KeyId;
 
 class CryptoProviderTest {
+
+    @Test
+    void aes256CipherEntryPointsRejectNonAes256KeySizes() {
+        for (AeadCipher cipher : new AeadCipher[] {new JdkAesGcmCipher(), new TinkAesGcmCipher()}) {
+            byte[] nonce = new byte[cipher.nonceSizeBytes()];
+            for (int invalidLength : new int[] {16, 24, 31, 33}) {
+                byte[] key = new byte[invalidLength];
+
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> cipher.encrypt(key, nonce, new byte[] {1}, new byte[] {2}));
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> cipher.decrypt(key, nonce, new byte[] {1}, new byte[] {2}));
+            }
+        }
+    }
 
     @Test
     void tinkAeadCipherEncryptsAndDecryptsAesGcmPayloads() {

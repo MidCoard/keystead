@@ -126,6 +126,9 @@ public final class DefaultCryptoService {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(envelope, "envelope");
         Objects.requireNonNull(aad, "aad");
+        if (envelope.version() != 1) {
+            throw new CryptoException("Unsupported encrypted envelope version");
+        }
         if (!key.keyId().equals(envelope.keyId())) {
             throw new CryptoException(
                     "Vault key id "
