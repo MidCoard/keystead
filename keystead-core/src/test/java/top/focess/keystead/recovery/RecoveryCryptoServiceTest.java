@@ -12,9 +12,13 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import top.focess.keystead.crypto.CryptoException;
+import top.focess.keystead.crypto.DefaultCryptoService;
+import top.focess.keystead.crypto.DeviceKeyPair;
+import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.VaultId;
 import top.focess.keystead.service.CreateVaultRequest;
 import top.focess.keystead.service.DefaultVaultService;
+import top.focess.keystead.service.DeviceVaultKeyPackage;
 import top.focess.keystead.service.VaultHandle;
 import top.focess.keystead.store.FileVaultStore;
 
@@ -61,15 +65,145 @@ class RecoveryCryptoServiceTest {
                             keyPackage.generation(),
                             keyPackage.keyAlgorithm(),
                             keyPackage.encryptedVaultKey());
+            CryptoException wrongUserFailure =
+                    assertThrows(
+                            CryptoException.class,
+                            () ->
+                                    recovery.openVault(
+                                            recoveredService,
+                                            VAULT_ID,
+                                            wrongUser,
+                                            enrollment.kit(),
+                                            enrollment.encryptedPrivateKey()));
+            assertEquals("Could not open recovery vault package", wrongUserFailure.getMessage());
+            assertInstanceOf(CryptoException.class, wrongUserFailure.getCause());
+            assertFalse(wrongUserFailure.toString().contains("mallory"));
+
+            RecoveryVaultKeyPackage wrongKeyId =
+                    new RecoveryVaultKeyPackage(
+                            keyPackage.username(),
+                            keyPackage.vaultId(),
+                            new KeyId("different-vault-key"),
+                            keyPackage.enrollmentId(),
+                            keyPackage.generation(),
+                            keyPackage.keyAlgorithm(),
+                            keyPackage.encryptedVaultKey());
             assertThrows(
                     CryptoException.class,
                     () ->
                             recovery.openVault(
                                     recoveredService,
                                     VAULT_ID,
-                                    wrongUser,
+                                    wrongKeyId,
                                     enrollment.kit(),
                                     enrollment.encryptedPrivateKey()));
+        }
+    }
+
+    @Test
+    void opensManuallyConstructedLegacyVersion1Package() {
+        RecoveryCryptoService recovery = new DefaultRecoveryCryptoService();
+        DefaultVaultService sourceService =
+                new DefaultVaultService(
+                        new FileVaultStore(tempDir.resolve("legacy-source")), CLOCK);
+        DefaultVaultService recoveredService =
+                new DefaultVaultService(
+                        new FileVaultStore(tempDir.resolve("legacy-target")), CLOCK);
+
+        try (RecoveryEnrollmentMaterial enrollment = recovery.enroll("legacy-enrollment", 3L);
+                VaultHandle source =
+                        sourceService.createVault(
+                                new CreateVaultRequest(VAULT_ID), masterPassword())) {
+            RecoveryVaultKeyPackage legacyPackage =
+                    legacyPackage(source, enrollment.publicKey(), "alice");
+
+            try (VaultHandle recovered =
+                    recovery.openVault(
+                            recoveredService,
+                            VAULT_ID,
+                            legacyPackage,
+                            enrollment.kit(),
+                            enrollment.encryptedPrivateKey())) {
+                assertEquals(source.vaultKeyId(), recovered.vaultKeyId());
+            }
+        }
+    }
+
+    @Test
+    void newlyWrappedPackagesUseVersion2Context() {
+        RecoveryCryptoService recovery = new DefaultRecoveryCryptoService();
+        DefaultVaultService sourceService =
+                new DefaultVaultService(new FileVaultStore(tempDir.resolve("v2-source")), CLOCK);
+        DefaultVaultService legacyTarget =
+                new DefaultVaultService(
+                        new FileVaultStore(tempDir.resolve("v1-context-target")), CLOCK);
+        DefaultVaultService version2Target =
+                new DefaultVaultService(
+                        new FileVaultStore(tempDir.resolve("v2-context-target")), CLOCK);
+
+        try (DeviceKeyPair keyPair = new DefaultCryptoService().generateDeviceKeyPair();
+                VaultHandle source =
+                        sourceService.createVault(
+                                new CreateVaultRequest(VAULT_ID), masterPassword())) {
+            byte[] publicKeyBytes = keyPair.publicKey();
+            byte[] version2Context = null;
+            byte[] legacyContext = null;
+            try {
+                RecoveryPublicKey publicKey =
+                        new RecoveryPublicKey(
+                                "v2-enrollment", 2L, keyPair.keyAlgorithm(), publicKeyBytes);
+                RecoveryVaultKeyPackage keyPackage =
+                        recovery.wrapVaultKey(
+                                source, publicKey, "alice", VAULT_ID.value().toString());
+                DeviceVaultKeyPackage devicePackage =
+                        new DeviceVaultKeyPackage(
+                                keyPackage.vaultKeyId(),
+                                keyPackage.keyAlgorithm(),
+                                keyPackage.encryptedVaultKey());
+                version2Context =
+                        RecoveryContextCodec.version2(
+                                keyPackage.username(),
+                                keyPackage.vaultId(),
+                                keyPackage.enrollmentId(),
+                                keyPackage.generation(),
+                                keyPackage.vaultKeyId().value());
+                legacyContext =
+                        RecoveryContextCodec.legacyVersion1(
+                                keyPackage.username(),
+                                keyPackage.vaultId(),
+                                keyPackage.enrollmentId(),
+                                keyPackage.generation(),
+                                keyPackage.vaultKeyId().value());
+                byte[] finalVersion2Context = version2Context;
+                byte[] finalLegacyContext = legacyContext;
+                keyPair.copyPrivateKey(
+                        privateKey -> {
+                            assertThrows(
+                                    CryptoException.class,
+                                    () ->
+                                            legacyTarget.provisionVault(
+                                                    VAULT_ID,
+                                                    devicePackage,
+                                                    privateKey,
+                                                    finalLegacyContext));
+                            try (VaultHandle recovered =
+                                    version2Target.provisionVault(
+                                            VAULT_ID,
+                                            devicePackage,
+                                            privateKey,
+                                            finalVersion2Context)) {
+                                assertEquals(source.vaultKeyId(), recovered.vaultKeyId());
+                            }
+                        });
+            } finally {
+                Arrays.fill(publicKeyBytes, (byte) 0);
+                if (version2Context != null) {
+                    Arrays.fill(version2Context, (byte) 0);
+                }
+                if (legacyContext != null) {
+                    Arrays.fill(legacyContext, (byte) 0);
+                }
+            }
         }
     }
 
@@ -149,5 +283,36 @@ class RecoveryCryptoServiceTest {
         byte[] result = new byte[length];
         Arrays.fill(result, value);
         return result;
+    }
+
+    private static RecoveryVaultKeyPackage legacyPackage(
+            VaultHandle source, RecoveryPublicKey recoveryKey, String username) {
+        byte[] publicKey = recoveryKey.publicKey();
+        byte[] context =
+                RecoveryContextCodec.legacyVersion1(
+                        username,
+                        VAULT_ID.value().toString(),
+                        recoveryKey.enrollmentId(),
+                        recoveryKey.generation(),
+                        source.vaultKeyId().value());
+        byte[] ciphertext = null;
+        try {
+            DeviceVaultKeyPackage wrapped = source.wrapVaultKeyPackageForDevice(publicKey, context);
+            ciphertext = wrapped.encryptedVaultKey();
+            return new RecoveryVaultKeyPackage(
+                    username,
+                    VAULT_ID.value().toString(),
+                    wrapped.vaultKeyId(),
+                    recoveryKey.enrollmentId(),
+                    recoveryKey.generation(),
+                    wrapped.keyAlgorithm(),
+                    ciphertext);
+        } finally {
+            Arrays.fill(publicKey, (byte) 0);
+            Arrays.fill(context, (byte) 0);
+            if (ciphertext != null) {
+                Arrays.fill(ciphertext, (byte) 0);
+            }
+        }
     }
 }

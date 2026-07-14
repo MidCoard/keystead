@@ -108,7 +108,7 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
         }
         byte[] publicKey = recoveryKey.publicKey();
         byte[] context =
-                packageContext(
+                RecoveryContextCodec.version2(
                         username,
                         vaultId,
                         recoveryKey.enrollmentId(),
@@ -154,24 +154,43 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
         }
         byte[] privateKey = decryptPrivateKey(kit, encryptedPrivateKey);
         byte[] ciphertext = keyPackage.encryptedVaultKey();
-        byte[] context =
-                packageContext(
-                        keyPackage.username(),
-                        keyPackage.vaultId(),
-                        keyPackage.enrollmentId(),
-                        keyPackage.generation(),
-                        keyPackage.vaultKeyId().value());
+        byte @Nullable [] version2Context = null;
+        byte @Nullable [] legacyContext = null;
         try {
-            return vaultService.provisionVault(
-                    vaultId,
+            DeviceVaultKeyPackage devicePackage =
                     new DeviceVaultKeyPackage(
-                            keyPackage.vaultKeyId(), keyPackage.keyAlgorithm(), ciphertext),
-                    privateKey,
-                    context);
+                            keyPackage.vaultKeyId(), keyPackage.keyAlgorithm(), ciphertext);
+            version2Context =
+                    RecoveryContextCodec.version2(
+                            keyPackage.username(),
+                            keyPackage.vaultId(),
+                            keyPackage.enrollmentId(),
+                            keyPackage.generation(),
+                            keyPackage.vaultKeyId().value());
+            try {
+                return vaultService.provisionVault(
+                        vaultId, devicePackage, privateKey, version2Context);
+            } catch (CryptoException version2Failure) {
+                legacyContext =
+                        RecoveryContextCodec.legacyVersion1(
+                                keyPackage.username(),
+                                keyPackage.vaultId(),
+                                keyPackage.enrollmentId(),
+                                keyPackage.generation(),
+                                keyPackage.vaultKeyId().value());
+                try {
+                    return vaultService.provisionVault(
+                            vaultId, devicePackage, privateKey, legacyContext);
+                } catch (CryptoException legacyFailure) {
+                    throw new CryptoException(
+                            "Could not open recovery vault package", legacyFailure);
+                }
+            }
         } finally {
             wipe(privateKey);
             wipe(ciphertext);
-            wipe(context);
+            wipe(version2Context);
+            wipe(legacyContext);
         }
     }
 
@@ -327,25 +346,6 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
                 + kit.enrollmentId()
                 + "|generation:"
                 + kit.generation();
-    }
-
-    private byte @NonNull [] packageContext(
-            @NonNull String username,
-            @NonNull String vaultId,
-            @NonNull String enrollmentId,
-            long generation,
-            @NonNull String keyId) {
-        return ("keystead-recovery-vault-package-v1|user:"
-                        + username
-                        + "|vault:"
-                        + vaultId
-                        + "|enrollment:"
-                        + enrollmentId
-                        + "|generation:"
-                        + generation
-                        + "|key:"
-                        + keyId)
-                .getBytes(StandardCharsets.UTF_8);
     }
 
     private void wipe(byte @Nullable [] value) {
