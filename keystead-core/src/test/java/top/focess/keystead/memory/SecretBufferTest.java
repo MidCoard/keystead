@@ -32,6 +32,7 @@ class SecretBufferTest {
         buffer.close();
 
         assertTrue(buffer.isClosed());
+        assertEquals("[REDACTED SECRET]", buffer.toString());
         assertThrows(
                 SecretDestroyedException.class,
                 () -> buffer.copyChars(chars -> fail("closed buffer should not be readable")));

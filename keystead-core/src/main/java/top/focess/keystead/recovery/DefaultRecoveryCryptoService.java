@@ -8,6 +8,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.GCMParameterSpec;
@@ -59,13 +60,18 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
                 new RecoveryKit(RecoveryKit.FORMAT_VERSION, enrollmentId, generation, secret);
         byte @Nullable [] credential = null;
         byte @Nullable [] publicKeyBytes = null;
-        byte @Nullable [] privateKey = null;
         byte @Nullable [] encryptedPrivateKey = null;
         try (DeviceKeyPair keyPair = crypto.generateDeviceKeyPair()) {
             credential = accountCredential(kit);
             publicKeyBytes = keyPair.publicKey();
-            privateKey = keyPair.privateKey();
-            encryptedPrivateKey = encryptPrivateKey(kit, privateKey);
+            AtomicReference<byte @Nullable []> encryptedPrivateKeyResult = new AtomicReference<>();
+            keyPair.copyPrivateKey(
+                    privateKey ->
+                            encryptedPrivateKeyResult.set(encryptPrivateKey(kit, privateKey)));
+            encryptedPrivateKey =
+                    Objects.requireNonNull(
+                            encryptedPrivateKeyResult.get(),
+                            "Device private-key encryption did not produce a result");
             RecoveryPublicKey publicKey =
                     new RecoveryPublicKey(
                             enrollmentId, generation, keyPair.keyAlgorithm(), publicKeyBytes);
@@ -77,7 +83,6 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
             wipe(secret);
             wipe(credential);
             wipe(publicKeyBytes);
-            wipe(privateKey);
             wipe(encryptedPrivateKey);
         }
     }

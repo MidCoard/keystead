@@ -15,6 +15,19 @@ import org.junit.jupiter.api.Test;
 class SecretMemoryProviderTest {
 
     @Test
+    void heapMemoryReportsLifecycleAndRejectsLengthAfterClose() {
+        SecretMemory memory = SecretMemoryProvider.heap().protect(new byte[] {1, 2, 3});
+
+        assertEquals(3, memory.length());
+        assertFalse(memory.isClosed());
+
+        memory.close();
+
+        assertTrue(memory.isClosed());
+        assertThrows(SecretDestroyedException.class, memory::length);
+    }
+
+    @Test
     void heapProviderCopiesCallerOwnedInputAndWipesCallbackCopy() {
         byte[] input = new byte[] {1, 2, 3};
         AtomicReference<byte[]> callbackCopy = new AtomicReference<>();
@@ -79,6 +92,7 @@ class SecretMemoryProviderTest {
             release.countDown();
             access.get(2, TimeUnit.SECONDS);
             close.get(2, TimeUnit.SECONDS);
+            assertTrue(memory.isClosed());
             assertThrows(
                     SecretDestroyedException.class,
                     () -> memory.copyBytes(bytes -> fail("closed memory should not be readable")));

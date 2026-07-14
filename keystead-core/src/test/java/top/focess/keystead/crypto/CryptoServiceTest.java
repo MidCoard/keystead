@@ -166,6 +166,8 @@ class CryptoServiceTest {
         key.close();
 
         assertTrue(key.isClosed());
+        assertTrue(key.toString().contains("keyBytes=[REDACTED 32 bytes]"));
+        assertTrue(key.toString().contains("closed=true"));
         assertArrayEquals(new byte[32], rawKeyBytes(key));
         assertThrows(
                 SecretKeyDestroyedException.class,
@@ -205,6 +207,8 @@ class CryptoServiceTest {
             release.countDown();
             access.get(2, TimeUnit.SECONDS);
             close.get(2, TimeUnit.SECONDS);
+            assertTrue(key.toString().contains("keyBytes=[REDACTED 3 bytes]"));
+            assertTrue(key.toString().contains("closed=true"));
             assertThrows(
                     SecretKeyDestroyedException.class,
                     () -> key.copyBytes(bytes -> fail("closed key should not be readable")));
@@ -251,6 +255,8 @@ class CryptoServiceTest {
             release.countDown();
             access.get(2, TimeUnit.SECONDS);
             close.get(2, TimeUnit.SECONDS);
+            assertTrue(keyPair.toString().contains("privateKey=[REDACTED 3 bytes]"));
+            assertTrue(keyPair.toString().contains("closed=true"));
             assertThrows(
                     SecretKeyDestroyedException.class,
                     () ->
