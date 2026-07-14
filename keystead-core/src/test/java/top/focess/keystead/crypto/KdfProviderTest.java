@@ -121,6 +121,105 @@ class KdfProviderTest {
     }
 
     @Test
+    void pbkdf2ConstructorFailureLeavesCallerPasswordIntact() {
+        Pbkdf2KeyDerivation provider =
+                new Pbkdf2KeyDerivation(CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256);
+        char[] password = new char[] {'s', 'e', 'c', 'r', 'e', 't'};
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        provider.derive(
+                                password,
+                                KdfParameters.pbkdf2(provider.algorithm(), new byte[0], 1),
+                                32));
+        assertArrayEquals(new char[] {'s', 'e', 'c', 'r', 'e', 't'}, password);
+    }
+
+    @Test
+    void wrapWipesDerivedKeyWhenRandomFails() {
+        AtomicReference<byte[]> derived = new AtomicReference<>();
+        PasswordKeyDerivation provider = keyRecordingProvider("TEST-KDF", derived);
+        SecureRandom throwingRandom =
+                new SecureRandom() {
+                    @Override
+                    public void nextBytes(byte @NonNull [] bytes) {
+                        throw new TestFailure();
+                    }
+                };
+        DefaultCryptoService crypto =
+                new DefaultCryptoService(
+                        throwingRandom,
+                        new TinkAesGcmCipher(),
+                        SecretMemoryProvider.heap(),
+                        List.of(provider));
+        KdfParameters parameters =
+                new KdfParameters("TEST-KDF", new byte[] {1}, Map.of("iterations", 1));
+
+        try (VaultKey key =
+                new VaultKey(new KeyId("vault-key"), new byte[32], SecretMemoryProvider.heap())) {
+            assertThrows(
+                    TestFailure.class,
+                    () -> crypto.wrapVaultKey(key, new char[] {'x'}, parameters));
+        }
+        assertArrayEquals(new byte[32], derived.get());
+    }
+
+    @Test
+    void unwrapWipesDerivedKeyWhenNonceCopyFails() {
+        AtomicReference<byte[]> derived = new AtomicReference<>();
+        PasswordKeyDerivation provider = keyRecordingProvider("TEST-KDF", derived);
+        AeadCipher invalidNonceCipher =
+                new AeadCipher() {
+                    @Override
+                    public @NonNull String algorithm() {
+                        return DefaultCryptoService.PAYLOAD_ALGORITHM;
+                    }
+
+                    @Override
+                    public int nonceSizeBytes() {
+                        return -1;
+                    }
+
+                    @Override
+                    public byte @NonNull [] encrypt(
+                            byte @NonNull [] keyBytes,
+                            byte @NonNull [] nonce,
+                            byte @NonNull [] plaintext,
+                            byte @NonNull [] aad) {
+                        throw new AssertionError("not called");
+                    }
+
+                    @Override
+                    public byte @NonNull [] decrypt(
+                            byte @NonNull [] keyBytes,
+                            byte @NonNull [] nonce,
+                            byte @NonNull [] ciphertext,
+                            byte @NonNull [] aad) {
+                        throw new AssertionError("not called");
+                    }
+                };
+        DefaultCryptoService crypto =
+                new DefaultCryptoService(
+                        new SecureRandom(),
+                        invalidNonceCipher,
+                        SecretMemoryProvider.heap(),
+                        List.of(provider));
+        KdfParameters parameters =
+                new KdfParameters("TEST-KDF", new byte[] {1}, Map.of("iterations", 1));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        crypto.unwrapVaultKey(
+                                new KeyId("vault-key"),
+                                new byte[] {1},
+                                new char[] {'x'},
+                                parameters));
+        assertArrayEquals(new byte[32], derived.get());
+    }
+
+    @Test
     void kdfParametersAreCanonicalImmutableAndBounded() {
         byte[] salt = new byte[] {1, 2};
         java.util.LinkedHashMap<String, Integer> values = new java.util.LinkedHashMap<>();
@@ -186,9 +285,30 @@ class KdfProviderTest {
         };
     }
 
+    private static @NonNull PasswordKeyDerivation keyRecordingProvider(
+            @NonNull String algorithm, @NonNull AtomicReference<byte[]> derived) {
+        return new PasswordKeyDerivation() {
+            @Override
+            public @NonNull String algorithm() {
+                return algorithm;
+            }
+
+            @Override
+            public byte @NonNull [] derive(
+                    char @NonNull [] password, @NonNull KdfParameters parameters, int outputBytes) {
+                byte[] result = new byte[outputBytes];
+                Arrays.fill(result, (byte) 7);
+                derived.set(result);
+                return result;
+            }
+        };
+    }
+
     private static @NonNull DefaultCryptoService service(
             @NonNull List<PasswordKeyDerivation> providers) {
         return new DefaultCryptoService(
                 new SecureRandom(), new TinkAesGcmCipher(), SecretMemoryProvider.heap(), providers);
     }
+
+    private static final class TestFailure extends RuntimeException {}
 }

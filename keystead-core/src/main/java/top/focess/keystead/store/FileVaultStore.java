@@ -29,6 +29,8 @@ public final class FileVaultStore implements VaultStore {
     private static final String ROTATION_STAGE_DIRECTORY = ".keystead-rotation-stage";
     private static final String ROTATION_BACKUP_DIRECTORY = ".keystead-rotation-backup";
     private static final String KDF_PARAMETER_PREFIX = "kdf.parameter.";
+    private static final int MAX_ENCODED_KDF_SALT_CHARACTERS =
+            ((SecurityLimits.MAX_KDF_SALT_BYTES + 2) / 3) * 4;
     private static final ConcurrentMap<Path, Object> PROCESS_LOCKS = new ConcurrentHashMap<>();
 
     private final Path vaultDirectory;
@@ -66,7 +68,7 @@ public final class FileVaultStore implements VaultStore {
         }
         requireStoredRowsBelongTo(header.vaultId(), secretsDirectory, "secret");
         requireStoredRowsBelongTo(header.vaultId(), deletedDirectory, "tombstone");
-        Properties properties = new Properties();
+        Properties properties = new SortedProperties();
         properties.setProperty("vaultId", header.vaultId().value().toString());
         properties.setProperty("formatVersion", Integer.toString(header.formatVersion()));
         properties.setProperty("kdfAlgorithm", header.kdfAlgorithm());
@@ -645,7 +647,7 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private void writeHeader(@NonNull VaultHeader header, @NonNull Path path) {
-        Properties properties = new Properties();
+        Properties properties = new SortedProperties();
         properties.setProperty("vaultId", header.vaultId().value().toString());
         properties.setProperty("formatVersion", Integer.toString(header.formatVersion()));
         properties.setProperty("kdfAlgorithm", header.kdfAlgorithm());
@@ -807,19 +809,57 @@ public final class FileVaultStore implements VaultStore {
 
     private @NonNull KdfParameters readKdfParameters(@NonNull Properties properties) {
         String algorithm = required(properties, "kdfAlgorithm");
-        byte[] salt = bytes(properties, "kdfSalt");
-        Map<String, Integer> canonical = new TreeMap<>();
-        properties.stringPropertyNames().stream()
-                .filter(name -> name.startsWith(KDF_PARAMETER_PREFIX))
-                .sorted()
-                .forEach(
-                        name ->
-                                canonical.put(
-                                        name.substring(KDF_PARAMETER_PREFIX.length()),
-                                        Integer.parseInt(required(properties, name))));
-        return canonical.isEmpty()
-                ? KdfParameters.pbkdf2(algorithm, salt, intValue(properties, "kdfIterations"))
-                : new KdfParameters(algorithm, salt, canonical);
+        String encodedSalt = required(properties, "kdfSalt");
+        if (encodedSalt.length() > MAX_ENCODED_KDF_SALT_CHARACTERS) {
+            throw new IllegalArgumentException("KDF salt exceeds the size limit");
+        }
+        byte @Nullable [] salt = null;
+        try {
+            salt = Base64.getDecoder().decode(encodedSalt);
+            if (salt.length > SecurityLimits.MAX_KDF_SALT_BYTES) {
+                throw new IllegalArgumentException("KDF salt exceeds the size limit");
+            }
+            Map<String, Integer> canonical = new LinkedHashMap<>();
+            int canonicalCount = 0;
+            Enumeration<Object> names = properties.keys();
+            while (names.hasMoreElements()) {
+                String name = (String) names.nextElement();
+                if (!name.startsWith(KDF_PARAMETER_PREFIX)) {
+                    continue;
+                }
+                canonicalCount++;
+                if (canonicalCount > SecurityLimits.MAX_KDF_PARAMETER_ENTRIES) {
+                    throw new IllegalArgumentException(
+                            "KDF parameter count exceeds the size limit");
+                }
+                requireKdfParameterName(name);
+                canonical.put(
+                        name.substring(KDF_PARAMETER_PREFIX.length()),
+                        Integer.parseInt(required(properties, name)));
+            }
+            return canonical.isEmpty()
+                    ? KdfParameters.pbkdf2(algorithm, salt, intValue(properties, "kdfIterations"))
+                    : new KdfParameters(algorithm, salt, canonical);
+        } finally {
+            if (salt != null) {
+                Arrays.fill(salt, (byte) 0);
+            }
+        }
+    }
+
+    private void requireKdfParameterName(@NonNull String propertyName) {
+        int parameterLength = propertyName.length() - KDF_PARAMETER_PREFIX.length();
+        if (parameterLength <= 0
+                || parameterLength > SecurityLimits.MAX_KDF_PARAMETER_NAME_CHARACTERS) {
+            throw new IllegalArgumentException("KDF parameter name has an invalid length");
+        }
+        for (int index = KDF_PARAMETER_PREFIX.length(); index < propertyName.length(); index++) {
+            char character = propertyName.charAt(index);
+            if (character < 0x21 || character > 0x7e) {
+                throw new IllegalArgumentException(
+                        "KDF parameter name must contain printable ASCII");
+            }
+        }
     }
 
     private long longValue(@NonNull Properties properties, @NonNull String key) {

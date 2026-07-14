@@ -182,26 +182,36 @@ public final class DefaultCryptoService {
             char @NonNull [] masterPassword,
             @NonNull KdfParameters kdfParameters) {
         Objects.requireNonNull(vaultKey, "vaultKey");
-        byte[] wrappingKey = deriveWrappingKey(masterPassword, kdfParameters);
-        byte[] nonce = new byte[aeadCipher.nonceSizeBytes()];
-        random.nextBytes(nonce);
+        byte @Nullable [] wrappingKey = null;
+        byte @Nullable [] nonce = null;
+        byte @Nullable [] wrapped = null;
+        byte @Nullable [] output = null;
         try {
-            byte[] wrapped =
+            wrappingKey = deriveWrappingKey(masterPassword, kdfParameters);
+            nonce = new byte[aeadCipher.nonceSizeBytes()];
+            random.nextBytes(nonce);
+            byte[] wrappingKeyForCipher = wrappingKey;
+            byte[] nonceForCipher = nonce;
+            wrapped =
                     withKeyBytes(
                             vaultKey,
                             keyBytes ->
                                     aeadCipher.encrypt(
-                                            wrappingKey,
-                                            nonce,
+                                            wrappingKeyForCipher,
+                                            nonceForCipher,
                                             keyBytes,
                                             wrappingAad(vaultKey.keyId())));
-            byte[] output = new byte[nonce.length + wrapped.length];
+            output = new byte[nonce.length + wrapped.length];
             System.arraycopy(nonce, 0, output, 0, nonce.length);
             System.arraycopy(wrapped, 0, output, nonce.length, wrapped.length);
-            return output;
+            byte[] result = output;
+            output = null;
+            return result;
         } finally {
-            Arrays.fill(wrappingKey, (byte) 0);
-            Arrays.fill(nonce, (byte) 0);
+            wipe(wrappingKey);
+            wipe(nonce);
+            wipe(wrapped);
+            wipe(output);
         }
     }
 
@@ -240,22 +250,23 @@ public final class DefaultCryptoService {
             throw new CryptoException("Wrapped vault key is invalid");
         }
 
-        byte[] wrappingKey = deriveWrappingKey(masterPassword, kdfParameters);
-        byte[] nonce = Arrays.copyOfRange(wrappedVaultKey, 0, aeadCipher.nonceSizeBytes());
-        byte[] ciphertext =
-                Arrays.copyOfRange(
-                        wrappedVaultKey, aeadCipher.nonceSizeBytes(), wrappedVaultKey.length);
+        byte @Nullable [] wrappingKey = null;
+        byte @Nullable [] nonce = null;
+        byte @Nullable [] ciphertext = null;
         byte @Nullable [] opened = null;
         try {
+            wrappingKey = deriveWrappingKey(masterPassword, kdfParameters);
+            nonce = Arrays.copyOfRange(wrappedVaultKey, 0, aeadCipher.nonceSizeBytes());
+            ciphertext =
+                    Arrays.copyOfRange(
+                            wrappedVaultKey, aeadCipher.nonceSizeBytes(), wrappedVaultKey.length);
             opened = aeadCipher.decrypt(wrappingKey, nonce, ciphertext, wrappingAad(keyId));
             return new VaultKey(keyId, opened, memoryProvider);
         } finally {
-            Arrays.fill(wrappingKey, (byte) 0);
-            Arrays.fill(nonce, (byte) 0);
-            Arrays.fill(ciphertext, (byte) 0);
-            if (opened != null) {
-                Arrays.fill(opened, (byte) 0);
-            }
+            wipe(wrappingKey);
+            wipe(nonce);
+            wipe(ciphertext);
+            wipe(opened);
         }
     }
 
@@ -336,6 +347,12 @@ public final class DefaultCryptoService {
 
     private byte @NonNull [] wrappingAad(@NonNull KeyId keyId) {
         return keyId.value().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static void wipe(byte @Nullable [] value) {
+        if (value != null) {
+            Arrays.fill(value, (byte) 0);
+        }
     }
 
     private byte @NonNull [] encryptForDevice(

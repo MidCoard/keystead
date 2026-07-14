@@ -12,13 +12,17 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import top.focess.keystead.crypto.KdfParameters;
@@ -70,7 +74,7 @@ class VaultBackupServiceTest {
                         new KdfParameters(
                                 "TEST-KDF",
                                 new byte[] {1, 2, 3},
-                                java.util.Map.of("memoryKiB", 64, "iterations", 3)),
+                                Map.of("b", 2, "a", 1, "memoryKiB", 64, "iterations", 3)),
                         new KeyId("vault-key"),
                         new byte[] {4, 5, 6},
                         Instant.parse("2026-07-02T00:00:00Z"),
@@ -88,8 +92,67 @@ class VaultBackupServiceTest {
 
         assertEquals(header, read.archive().vaultHeader());
         assertEquals(
-                java.util.Map.of("iterations", 3, "memoryKiB", 64),
+                Map.of("a", 1, "b", 2, "iterations", 3, "memoryKiB", 64),
                 read.archive().vaultHeader().kdfParameters().parameters());
+        String serialized =
+                assertDoesNotThrow(() -> zipEntryText(output.toByteArray(), "vault.properties"));
+        assertTrue(
+                serialized.indexOf("kdf.parameter.a=1") < serialized.indexOf("kdf.parameter.b=2"));
+        assertTrue(
+                serialized.indexOf("kdf.parameter.b=2")
+                        < serialized.indexOf("kdf.parameter.iterations=3"));
+        assertTrue(
+                serialized.indexOf("kdf.parameter.iterations=3")
+                        < serialized.indexOf("kdf.parameter.memoryKiB=64"));
+    }
+
+    @Test
+    void backupReaderRejectsEncodedSaltBeforeUnboundedBase64Decode() throws Exception {
+        byte[] archive =
+                archiveWithVaultProperties(
+                        properties -> properties.setProperty("kdfSalt", "!".repeat(89)));
+
+        ValidationException failure =
+                assertThrows(
+                        ValidationException.class,
+                        () -> backup.readFrom(new ByteArrayInputStream(archive)));
+
+        assertTrue(hasMessage(failure, "salt exceeds"));
+    }
+
+    @Test
+    void backupReaderRejectsDecodedSaltAbove64Bytes() throws Exception {
+        byte[] archive =
+                archiveWithVaultProperties(
+                        properties ->
+                                properties.setProperty(
+                                        "kdfSalt",
+                                        Base64.getEncoder().encodeToString(new byte[65])));
+
+        ValidationException failure =
+                assertThrows(
+                        ValidationException.class,
+                        () -> backup.readFrom(new ByteArrayInputStream(archive)));
+
+        assertTrue(hasMessage(failure, "salt exceeds"));
+    }
+
+    @Test
+    void backupReaderRejectsSeventeenthCanonicalParameter() throws Exception {
+        byte[] archive =
+                archiveWithVaultProperties(
+                        properties -> {
+                            for (int index = 0; index < 17; index++) {
+                                properties.setProperty("kdf.parameter.p" + index, "1");
+                            }
+                        });
+
+        ValidationException failure =
+                assertThrows(
+                        ValidationException.class,
+                        () -> backup.readFrom(new ByteArrayInputStream(archive)));
+
+        assertTrue(hasMessage(failure, "parameter count"));
     }
 
     @Test
@@ -768,6 +831,39 @@ class VaultBackupServiceTest {
             }
         }
         throw new AssertionError("Missing zip entry: " + entryName);
+    }
+
+    private byte[] archiveWithVaultProperties(@NonNull Consumer<Properties> mutation)
+            throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve(UUID.randomUUID().toString()));
+        source.saveVaultHeader(header());
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        backup.writeTo(backup.export(source, VAULT_ID), output);
+        Properties properties = new Properties();
+        properties.load(
+                new java.io.StringReader(zipEntryText(output.toByteArray(), "vault.properties")));
+        mutation.accept(properties);
+        ByteArrayOutputStream replacement = new ByteArrayOutputStream();
+        properties.store(new java.io.OutputStreamWriter(replacement, StandardCharsets.UTF_8), null);
+        byte[] replacementBytes = replacement.toByteArray();
+        byte[] tampered =
+                replaceZipEntryText(
+                        output.toByteArray(),
+                        "vault.properties",
+                        replacement.toString(StandardCharsets.UTF_8));
+        return addManifestDigest(
+                tampered, "entry.sha256.vault.properties", sha256(replacementBytes));
+    }
+
+    private static boolean hasMessage(@NonNull Throwable failure, @NonNull String fragment) {
+        @Nullable Throwable current = failure;
+        while (current != null) {
+            if (current.getMessage() != null && current.getMessage().contains(fragment)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private static byte[] replaceZipEntryText(byte[] archive, String entryName, String replacement)

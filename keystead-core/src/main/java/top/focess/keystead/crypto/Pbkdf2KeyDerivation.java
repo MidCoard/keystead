@@ -7,6 +7,7 @@ import java.util.Set;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import top.focess.keystead.model.SecurityLimits;
 
 public final class Pbkdf2KeyDerivation implements PasswordKeyDerivation {
@@ -43,11 +44,14 @@ public final class Pbkdf2KeyDerivation implements PasswordKeyDerivation {
         if (outputBytes <= 0 || outputBytes > Integer.MAX_VALUE / 8) {
             throw new IllegalArgumentException("KDF output size must be positive");
         }
-        char[] passwordCopy = Arrays.copyOf(password, password.length);
-        byte[] saltCopy = parameters.salt();
-        PBEKeySpec spec = new PBEKeySpec(passwordCopy, saltCopy, iterations, outputBytes * 8);
-        byte[] result = null;
+        char @Nullable [] passwordCopy = null;
+        byte @Nullable [] saltCopy = null;
+        @Nullable PBEKeySpec spec = null;
+        byte @Nullable [] result = null;
         try {
+            passwordCopy = Arrays.copyOf(password, password.length);
+            saltCopy = parameters.salt();
+            spec = new PBEKeySpec(passwordCopy, saltCopy, iterations, outputBytes * 8);
             result = SecretKeyFactory.getInstance(algorithm).generateSecret(spec).getEncoded();
             if (result.length != outputBytes) {
                 throw new CryptoException("Password KDF returned an invalid key size");
@@ -58,9 +62,15 @@ public final class Pbkdf2KeyDerivation implements PasswordKeyDerivation {
         } catch (GeneralSecurityException e) {
             throw new CryptoException("Could not derive password key", e);
         } finally {
-            Arrays.fill(passwordCopy, '\0');
-            Arrays.fill(saltCopy, (byte) 0);
-            spec.clearPassword();
+            if (passwordCopy != null) {
+                Arrays.fill(passwordCopy, '\0');
+            }
+            if (saltCopy != null) {
+                Arrays.fill(saltCopy, (byte) 0);
+            }
+            if (spec != null) {
+                spec.clearPassword();
+            }
             if (result != null) {
                 Arrays.fill(result, (byte) 0);
             }

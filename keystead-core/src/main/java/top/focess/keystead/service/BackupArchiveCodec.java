@@ -37,8 +37,10 @@ import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretProfile;
 import top.focess.keystead.model.SecretRecordAad;
 import top.focess.keystead.model.SecretType;
+import top.focess.keystead.model.SecurityLimits;
 import top.focess.keystead.model.VaultHeader;
 import top.focess.keystead.model.VaultId;
+import top.focess.keystead.store.SortedProperties;
 
 final class BackupArchiveCodec {
 
@@ -49,6 +51,8 @@ final class BackupArchiveCodec {
     private static final String PROPERTIES_SUFFIX = ".properties";
     private static final String ENTRY_DIGEST_PREFIX = "entry.sha256.";
     private static final String KDF_PARAMETER_PREFIX = "kdf.parameter.";
+    private static final int MAX_ENCODED_KDF_SALT_CHARACTERS =
+            ((SecurityLimits.MAX_KDF_SALT_BYTES + 2) / 3) * 4;
     private static final int MAX_ENTRY_BYTES = 1_048_576;
     private static final int MAX_ENTRY_COUNT = 4_096;
     private static final int MAX_ARCHIVE_BYTES = 16 * 1_024 * 1_024;
@@ -295,7 +299,7 @@ final class BackupArchiveCodec {
     }
 
     private static @NonNull Properties vaultProperties(@NonNull VaultHeader header) {
-        Properties properties = new Properties();
+        Properties properties = new SortedProperties();
         properties.setProperty("vaultId", header.vaultId().value().toString());
         properties.setProperty("formatVersion", Integer.toString(header.formatVersion()));
         properties.setProperty("kdfAlgorithm", header.kdfAlgorithm());
@@ -328,19 +332,57 @@ final class BackupArchiveCodec {
 
     private static @NonNull KdfParameters readKdfParameters(@NonNull Properties properties) {
         String algorithm = required(properties, "kdfAlgorithm");
-        byte[] salt = bytes(properties, "kdfSalt");
-        Map<String, Integer> canonical = new java.util.TreeMap<>();
-        properties.stringPropertyNames().stream()
-                .filter(name -> name.startsWith(KDF_PARAMETER_PREFIX))
-                .sorted()
-                .forEach(
-                        name ->
-                                canonical.put(
-                                        name.substring(KDF_PARAMETER_PREFIX.length()),
-                                        Integer.parseInt(required(properties, name))));
-        return canonical.isEmpty()
-                ? KdfParameters.pbkdf2(algorithm, salt, parseInt(properties, "kdfIterations"))
-                : new KdfParameters(algorithm, salt, canonical);
+        String encodedSalt = required(properties, "kdfSalt");
+        if (encodedSalt.length() > MAX_ENCODED_KDF_SALT_CHARACTERS) {
+            throw new IllegalArgumentException("KDF salt exceeds the size limit");
+        }
+        byte @Nullable [] salt = null;
+        try {
+            salt = Base64.getDecoder().decode(encodedSalt);
+            if (salt.length > SecurityLimits.MAX_KDF_SALT_BYTES) {
+                throw new IllegalArgumentException("KDF salt exceeds the size limit");
+            }
+            Map<String, Integer> canonical = new java.util.LinkedHashMap<>();
+            int canonicalCount = 0;
+            java.util.Enumeration<Object> names = properties.keys();
+            while (names.hasMoreElements()) {
+                String name = (String) names.nextElement();
+                if (!name.startsWith(KDF_PARAMETER_PREFIX)) {
+                    continue;
+                }
+                canonicalCount++;
+                if (canonicalCount > SecurityLimits.MAX_KDF_PARAMETER_ENTRIES) {
+                    throw new IllegalArgumentException(
+                            "KDF parameter count exceeds the size limit");
+                }
+                requireKdfParameterName(name);
+                canonical.put(
+                        name.substring(KDF_PARAMETER_PREFIX.length()),
+                        Integer.parseInt(required(properties, name)));
+            }
+            return canonical.isEmpty()
+                    ? KdfParameters.pbkdf2(algorithm, salt, parseInt(properties, "kdfIterations"))
+                    : new KdfParameters(algorithm, salt, canonical);
+        } finally {
+            if (salt != null) {
+                Arrays.fill(salt, (byte) 0);
+            }
+        }
+    }
+
+    private static void requireKdfParameterName(@NonNull String propertyName) {
+        int parameterLength = propertyName.length() - KDF_PARAMETER_PREFIX.length();
+        if (parameterLength <= 0
+                || parameterLength > SecurityLimits.MAX_KDF_PARAMETER_NAME_CHARACTERS) {
+            throw new IllegalArgumentException("KDF parameter name has an invalid length");
+        }
+        for (int index = KDF_PARAMETER_PREFIX.length(); index < propertyName.length(); index++) {
+            char character = propertyName.charAt(index);
+            if (character < 0x21 || character > 0x7e) {
+                throw new IllegalArgumentException(
+                        "KDF parameter name must contain printable ASCII");
+            }
+        }
     }
 
     private static @NonNull Properties recordProperties(@NonNull EncryptedSecretRecord record) {

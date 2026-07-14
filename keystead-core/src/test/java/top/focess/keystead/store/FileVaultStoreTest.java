@@ -13,6 +13,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -56,7 +57,7 @@ class FileVaultStoreTest {
                         new KdfParameters(
                                 "TEST-KDF",
                                 new byte[] {1, 2, 3},
-                                Map.of("memoryKiB", 64, "iterations", 3)),
+                                Map.of("b", 2, "a", 1, "memoryKiB", 64, "iterations", 3)),
                         new KeyId("vault-key"),
                         new byte[] {4, 5, 6},
                         Instant.parse("2026-07-02T00:00:00Z"),
@@ -73,6 +74,11 @@ class FileVaultStoreTest {
         assertEquals("3", persisted.getProperty("kdf.parameter.iterations"));
         assertEquals("64", persisted.getProperty("kdf.parameter.memoryKiB"));
         String serialized = Files.readString(tempDir.resolve("vault.properties"));
+        assertTrue(
+                serialized.indexOf("kdf.parameter.a=1") < serialized.indexOf("kdf.parameter.b=2"));
+        assertTrue(
+                serialized.indexOf("kdf.parameter.b=2")
+                        < serialized.indexOf("kdf.parameter.iterations=3"));
         assertTrue(
                 serialized.indexOf("kdf.parameter.iterations=3")
                         < serialized.indexOf("kdf.parameter.memoryKiB=64"));
@@ -100,6 +106,46 @@ class FileVaultStoreTest {
         assertEquals(header(), loaded);
         assertEquals(
                 Map.of(KdfParameters.ITERATIONS, 120_000), loaded.kdfParameters().parameters());
+    }
+
+    @Test
+    void vaultHeaderReaderRejectsEncodedSaltBeforeUnboundedBase64Decode() throws IOException {
+        writeVaultHeaderFixture("!".repeat(89), Map.of());
+
+        IllegalArgumentException failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> new FileVaultStore(tempDir).loadVaultHeader(header().vaultId()));
+
+        assertTrue(failure.getMessage().contains("salt exceeds"));
+    }
+
+    @Test
+    void vaultHeaderReaderRejectsDecodedSaltAbove64Bytes() throws IOException {
+        writeVaultHeaderFixture(Base64.getEncoder().encodeToString(new byte[65]), Map.of());
+
+        IllegalArgumentException failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> new FileVaultStore(tempDir).loadVaultHeader(header().vaultId()));
+
+        assertTrue(failure.getMessage().contains("salt exceeds"));
+    }
+
+    @Test
+    void vaultHeaderReaderRejectsSeventeenthCanonicalParameter() throws IOException {
+        Map<String, String> parameters = new java.util.LinkedHashMap<>();
+        for (int index = 0; index < 17; index++) {
+            parameters.put("p" + index, "1");
+        }
+        writeVaultHeaderFixture("AQID", parameters);
+
+        IllegalArgumentException failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> new FileVaultStore(tempDir).loadVaultHeader(header().vaultId()));
+
+        assertTrue(failure.getMessage().contains("parameter count"));
     }
 
     @Test
@@ -1047,6 +1093,32 @@ class FileVaultStoreTest {
                 new byte[] {4, 5, 6},
                 Instant.parse("2026-07-02T00:00:00Z"),
                 Instant.parse("2026-07-02T00:01:00Z"));
+    }
+
+    private void writeVaultHeaderFixture(
+            @NonNull String encodedSalt, @NonNull Map<String, String> parameters)
+            throws IOException {
+        StringBuilder fixture =
+                new StringBuilder(
+                        """
+                        vaultId=00000000-0000-0000-0000-000000000001
+                        formatVersion=1
+                        kdfAlgorithm=PBKDF2WithHmacSHA256
+                        kdfIterations=120000
+                        vaultKeyId=vault-key
+                        wrappedVaultKey=BAUG
+                        createdAt=2026-07-02T00:00:00Z
+                        updatedAt=2026-07-02T00:01:00Z
+                        """);
+        fixture.append("kdfSalt=").append(encodedSalt).append('\n');
+        parameters.forEach(
+                (name, value) ->
+                        fixture.append("kdf.parameter.")
+                                .append(name)
+                                .append('=')
+                                .append(value)
+                                .append('\n'));
+        Files.writeString(tempDir.resolve("vault.properties"), fixture);
     }
 
     private static EncryptedSecretRecord record() {
