@@ -1,5 +1,6 @@
 package top.focess.keystead.store;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -45,19 +46,22 @@ public final class FileVaultStore implements VaultStore {
     }
 
     FileVaultStore(@NonNull Path vaultDirectory, @NonNull FileDurability durability) {
-        this.vaultDirectory = Objects.requireNonNull(vaultDirectory, "vaultDirectory");
+        this.vaultDirectory =
+                Objects.requireNonNull(vaultDirectory, "vaultDirectory")
+                        .toAbsolutePath()
+                        .normalize();
         this.durability = Objects.requireNonNull(durability, "durability");
-        this.secretsDirectory = vaultDirectory.resolve("secrets");
-        this.deletedDirectory = vaultDirectory.resolve("deleted");
-        this.revisionPath = vaultDirectory.resolve(REVISION_FILE);
-        this.lockPath = vaultDirectory.resolve(LOCK_FILE);
+        this.secretsDirectory = this.vaultDirectory.resolve("secrets");
+        this.deletedDirectory = this.vaultDirectory.resolve("deleted");
+        this.revisionPath = this.vaultDirectory.resolve(REVISION_FILE);
+        this.lockPath = this.vaultDirectory.resolve(LOCK_FILE);
     }
 
     @Override
     public void saveVaultHeader(@NonNull VaultHeader header) {
         Objects.requireNonNull(header, "header");
         Path path = vaultDirectory.resolve(VAULT_FILE);
-        if (Files.exists(path)) {
+        if (exists(path)) {
             VaultHeader existing = readHeader(load(path));
             if (!existing.vaultId().equals(header.vaultId())) {
                 throw new StoreException("Vault directory already belongs to another vault", null);
@@ -87,7 +91,7 @@ public final class FileVaultStore implements VaultStore {
         Objects.requireNonNull(vaultId, "vaultId");
         recoverRotation();
         Path path = vaultDirectory.resolve(VAULT_FILE);
-        if (!Files.exists(path)) {
+        if (!exists(path)) {
             return Optional.empty();
         }
         Properties properties = load(path);
@@ -124,10 +128,10 @@ public final class FileVaultStore implements VaultStore {
         synchronized (processLock(lockPath)) {
             try {
                 requireVaultDirectoryIdentity(vaultId);
-                Files.createDirectories(vaultDirectory);
+                createDirectories(vaultDirectory);
                 try (FileChannel channel =
                                 FileChannel.open(
-                                        lockPath,
+                                        requireManagedPath(lockPath),
                                         StandardOpenOption.CREATE,
                                         StandardOpenOption.WRITE);
                         FileLock lock = channel.lock()) {
@@ -148,10 +152,10 @@ public final class FileVaultStore implements VaultStore {
         synchronized (processLock(lockPath)) {
             try {
                 requireVaultDirectoryIdentity(vaultId);
-                Files.createDirectories(vaultDirectory);
+                createDirectories(vaultDirectory);
                 try (FileChannel channel =
                                 FileChannel.open(
-                                        lockPath,
+                                        requireManagedPath(lockPath),
                                         StandardOpenOption.CREATE,
                                         StandardOpenOption.WRITE);
                         FileLock lock = channel.lock()) {
@@ -160,7 +164,7 @@ public final class FileVaultStore implements VaultStore {
                     Path backup = vaultDirectory.resolve(ROTATION_BACKUP_DIRECTORY);
                     deleteDirectory(stage);
                     deleteDirectory(backup);
-                    Files.createDirectories(stage.resolve("secrets"));
+                    createDirectories(stage.resolve("secrets"));
                     writeHeader(rotation.header(), stage.resolve(VAULT_FILE));
                     for (EncryptedSecretRecord record : rotation.activeRecords())
                         writeRecord(
@@ -170,7 +174,7 @@ public final class FileVaultStore implements VaultStore {
                     Properties journal = new Properties();
                     journal.setProperty("state", "PREPARED");
                     store(journal, vaultDirectory.resolve(ROTATION_JOURNAL_FILE));
-                    Files.createDirectories(backup);
+                    createDirectories(backup);
                     moveIfExists(vaultDirectory.resolve(VAULT_FILE), backup.resolve(VAULT_FILE));
                     moveIfExists(secretsDirectory, backup.resolve("secrets"));
                     moveIfExists(stage.resolve(VAULT_FILE), vaultDirectory.resolve(VAULT_FILE));
@@ -230,7 +234,7 @@ public final class FileVaultStore implements VaultStore {
     private @NonNull Optional<EncryptedSecretRecord> loadStoredSecretRecord(
             @NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Path path = secretPath(secretId);
-        if (!Files.exists(path)) {
+        if (!exists(path)) {
             return Optional.empty();
         }
         Properties properties = load(path);
@@ -308,7 +312,7 @@ public final class FileVaultStore implements VaultStore {
     private @NonNull Optional<DeletedSecretRecord> loadStoredDeletedSecretRecord(
             @NonNull VaultId vaultId, @NonNull SecretId secretId) {
         Path path = deletedPath(secretId);
-        if (!Files.exists(path)) {
+        if (!exists(path)) {
             return Optional.empty();
         }
         DeletedSecretRecord record = readDeletedRecord(load(path));
@@ -351,11 +355,12 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private @NonNull List<EncryptedSecretRecord> listStoredSecretRecords(@NonNull VaultId vaultId) {
-        if (!Files.exists(secretsDirectory)) {
+        if (!exists(secretsDirectory)) {
             return List.of();
         }
-        try (var stream = Files.list(secretsDirectory)) {
+        try (var stream = Files.list(requireManagedPath(secretsDirectory))) {
             return stream.filter(path -> path.getFileName().toString().endsWith(".properties"))
+                    .map(this::requireManagedPath)
                     .map(path -> readRecordSafely(path, vaultId))
                     .flatMap(Optional::stream)
                     .toList();
@@ -393,11 +398,12 @@ public final class FileVaultStore implements VaultStore {
 
     private @NonNull List<DeletedSecretRecord> listStoredDeletedSecretRecords(
             @NonNull VaultId vaultId) {
-        if (!Files.exists(deletedDirectory)) {
+        if (!exists(deletedDirectory)) {
             return List.of();
         }
-        try (var stream = Files.list(deletedDirectory)) {
+        try (var stream = Files.list(requireManagedPath(deletedDirectory))) {
             return stream.filter(path -> path.getFileName().toString().endsWith(".properties"))
+                    .map(this::requireManagedPath)
                     .map(path -> readDeletedRecordSafely(path, vaultId))
                     .flatMap(Optional::stream)
                     .toList();
@@ -550,7 +556,7 @@ public final class FileVaultStore implements VaultStore {
 
     private void requireVaultDirectoryIdentity(@NonNull VaultId vaultId) {
         Path path = vaultDirectory.resolve(VAULT_FILE);
-        if (!Files.exists(path)) {
+        if (!exists(path)) {
             return;
         }
         VaultHeader header = readHeader(load(path));
@@ -561,11 +567,12 @@ public final class FileVaultStore implements VaultStore {
 
     private void requireStoredRowsBelongTo(
             @NonNull VaultId vaultId, @NonNull Path directory, @NonNull String rowKind) {
-        if (!Files.exists(directory)) {
+        if (!exists(directory)) {
             return;
         }
-        try (var stream = Files.list(directory)) {
+        try (var stream = Files.list(requireManagedPath(directory))) {
             stream.filter(path -> path.getFileName().toString().endsWith(".properties"))
+                    .map(this::requireManagedPath)
                     .forEach(path -> requireStoredRowBelongsTo(vaultId, rowKind, path));
         } catch (IOException e) {
             throw new StoreException("Could not inspect existing vault " + rowKind + " rows", e);
@@ -624,16 +631,16 @@ public final class FileVaultStore implements VaultStore {
 
     private void recoverRotation() {
         Path journalPath = vaultDirectory.resolve(ROTATION_JOURNAL_FILE);
-        if (!Files.exists(journalPath)) return;
+        if (!exists(journalPath)) return;
         Path backup = vaultDirectory.resolve(ROTATION_BACKUP_DIRECTORY);
         try {
             Properties journal = load(journalPath);
             if (!"COMMITTED".equals(journal.getProperty("state"))) {
-                if (Files.exists(backup.resolve(VAULT_FILE))) {
-                    Files.deleteIfExists(vaultDirectory.resolve(VAULT_FILE));
+                if (exists(backup.resolve(VAULT_FILE))) {
+                    deleteIfExists(vaultDirectory.resolve(VAULT_FILE));
                     moveIfExists(backup.resolve(VAULT_FILE), vaultDirectory.resolve(VAULT_FILE));
                 }
-                if (Files.exists(backup.resolve("secrets"))) {
+                if (exists(backup.resolve("secrets"))) {
                     deleteDirectory(secretsDirectory);
                     moveIfExists(backup.resolve("secrets"), secretsDirectory);
                 }
@@ -676,24 +683,30 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private void moveIfExists(@NonNull Path source, @NonNull Path target) throws IOException {
-        if (Files.exists(source)) {
-            Files.createDirectories(target.getParent());
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        Path managedSource = requireManagedPath(source);
+        Path managedTarget = requireManagedPath(target);
+        if (Files.exists(managedSource)) {
+            createDirectories(managedTarget.getParent());
+            Files.move(
+                    requireManagedPath(managedSource),
+                    requireManagedPath(managedTarget),
+                    StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
     private void deleteDirectory(@NonNull Path directory) throws IOException {
-        if (!Files.exists(directory)) return;
-        try (var paths = Files.walk(directory)) {
-            paths.sorted(Comparator.reverseOrder())
-                    .forEach(
-                            path -> {
-                                try {
-                                    Files.deleteIfExists(path);
-                                } catch (IOException e) {
-                                    throw new StoreException("Could not delete rotation files", e);
-                                }
-                            });
+        Path managedDirectory = requireManagedPath(directory);
+        if (!Files.exists(managedDirectory)) return;
+        List<Path> managedPaths;
+        try (var paths = Files.walk(requireManagedPath(managedDirectory))) {
+            managedPaths = paths.map(this::requireManagedPath).toList();
+        }
+        for (Path path : managedPaths.stream().sorted(Comparator.reverseOrder()).toList()) {
+            try {
+                Files.deleteIfExists(requireManagedPath(path));
+            } catch (IOException e) {
+                throw new StoreException("Could not delete rotation files", e);
+            }
         }
     }
 
@@ -703,7 +716,7 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private synchronized long currentRevision(@NonNull VaultId vaultId) {
-        Properties properties = Files.exists(revisionPath) ? load(revisionPath) : new Properties();
+        Properties properties = exists(revisionPath) ? load(revisionPath) : new Properties();
         @Nullable String value = properties.getProperty(revisionKey(vaultId));
         long indexedRevision = value == null ? 0L : Long.parseLong(value);
         return Math.max(
@@ -711,7 +724,7 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private synchronized void writeRevision(@NonNull VaultId vaultId, long revision) {
-        Properties properties = Files.exists(revisionPath) ? load(revisionPath) : new Properties();
+        Properties properties = exists(revisionPath) ? load(revisionPath) : new Properties();
         properties.setProperty(revisionKey(vaultId), Long.toString(revision));
         store(properties, revisionPath);
     }
@@ -737,30 +750,37 @@ public final class FileVaultStore implements VaultStore {
     private void store(@NonNull Properties properties, @NonNull Path path) {
         @Nullable Path temp = null;
         try {
-            Files.createDirectories(path.getParent());
+            Path managedPath = requireManagedPath(path);
+            Path parent = requireManagedPath(managedPath.getParent());
+            createDirectories(parent);
             temp =
                     Files.createTempFile(
-                            path.getParent(), path.getFileName().toString() + ".", ".tmp");
+                            requireManagedPath(parent),
+                            managedPath.getFileName().toString() + ".",
+                            ".tmp");
+            temp = requireManagedPath(temp);
             // Write to a sibling temp file, then atomically move it into place so a crash
             // or IO error mid-write cannot truncate the existing vault/record file.
             try (OutputStream output =
                     Files.newOutputStream(
-                            temp, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                            requireManagedPath(temp),
+                            StandardOpenOption.WRITE,
+                            StandardOpenOption.TRUNCATE_EXISTING)) {
                 properties.store(output, "Keystead v0.1");
             }
-            durability.force(temp, true);
+            durability.force(requireManagedPath(temp), true);
             Files.move(
-                    temp,
-                    path,
+                    requireManagedPath(temp),
+                    requireManagedPath(managedPath),
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
-            durability.force(path.getParent(), true);
+            durability.force(requireManagedPath(parent), true);
         } catch (IOException e) {
             throw new StoreException("Could not store vault data", e);
         } finally {
             try {
                 if (temp != null) {
-                    Files.deleteIfExists(temp);
+                    Files.deleteIfExists(requireManagedPath(temp));
                 }
             } catch (IOException ignored) {
                 // Best-effort cleanup of a leftover temp file.
@@ -769,19 +789,56 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private void deleteIfExistsDurably(@NonNull Path path) throws IOException {
-        if (Files.deleteIfExists(path)) {
-            durability.force(path.getParent(), true);
+        Path managedPath = requireManagedPath(path);
+        if (Files.deleteIfExists(managedPath)) {
+            durability.force(requireManagedPath(managedPath.getParent()), true);
         }
     }
 
     private @NonNull Properties load(@NonNull Path path) {
-        Properties properties = new Properties();
-        try (InputStream input = Files.newInputStream(path)) {
-            properties.load(input);
+        byte @Nullable [] serialized = null;
+        try (InputStream input = Files.newInputStream(requireManagedPath(path))) {
+            serialized = input.readNBytes(SecurityLimits.MAX_STORED_PROPERTIES_BYTES + 1);
+            if (serialized.length > SecurityLimits.MAX_STORED_PROPERTIES_BYTES) {
+                throw new StoreException("Vault properties exceed the size limit", null);
+            }
+            Properties properties = new Properties();
+            properties.load(new ByteArrayInputStream(serialized));
             return properties;
         } catch (IOException e) {
             throw new StoreException("Could not load vault data", e);
+        } finally {
+            if (serialized != null) {
+                Arrays.fill(serialized, (byte) 0);
+            }
         }
+    }
+
+    private boolean exists(@NonNull Path path) {
+        return Files.exists(requireManagedPath(path));
+    }
+
+    private void createDirectories(@NonNull Path directory) throws IOException {
+        Files.createDirectories(requireManagedPath(directory));
+    }
+
+    private void deleteIfExists(@NonNull Path path) throws IOException {
+        Files.deleteIfExists(requireManagedPath(path));
+    }
+
+    private @NonNull Path requireManagedPath(@NonNull Path path) {
+        Path target = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
+        if (!target.startsWith(vaultDirectory)) {
+            throw new StoreException("Vault path is outside the vault directory", null);
+        }
+        Path component = vaultDirectory;
+        for (Path name : vaultDirectory.relativize(target)) {
+            component = component.resolve(name);
+            if (Files.isSymbolicLink(component)) {
+                throw new StoreException("Vault path contains a symbolic link", null);
+            }
+        }
+        return target;
     }
 
     private @NonNull String required(@NonNull Properties properties, @NonNull String key) {

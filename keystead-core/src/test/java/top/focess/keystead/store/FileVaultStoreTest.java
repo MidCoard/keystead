@@ -13,6 +13,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +37,74 @@ import top.focess.keystead.model.*;
 class FileVaultStoreTest {
 
     @TempDir Path tempDir;
+
+    @Test
+    void rejectsVaultPropertiesLargerThanStoredPropertiesLimit() throws IOException {
+        FileVaultStore store = new FileVaultStore(tempDir);
+        VaultHeader header = header();
+        store.saveVaultHeader(header);
+        Path propertiesPath = tempDir.resolve("vault.properties");
+        byte[] stored = Files.readAllBytes(propertiesPath);
+        byte[] oversized = Arrays.copyOf(stored, SecurityLimits.MAX_STORED_PROPERTIES_BYTES + 1);
+        Arrays.fill(oversized, stored.length, oversized.length, (byte) '#');
+        Files.write(propertiesPath, oversized);
+
+        StoreException failure =
+                assertThrows(StoreException.class, () -> store.loadVaultHeader(header.vaultId()));
+
+        assertEquals("Vault properties exceed the size limit", failure.getMessage());
+        assertNull(failure.getCause());
+    }
+
+    @Test
+    void saveSecretRecordRejectsSecretsDirectorySymlinkWithoutChangingTarget() throws IOException {
+        Path vaultDirectory = tempDir.resolve("vault");
+        Path outsideDirectory = tempDir.resolve("outside");
+        Files.createDirectories(vaultDirectory);
+        Files.createDirectories(outsideDirectory);
+        Path sentinel = outsideDirectory.resolve("sentinel.txt");
+        Files.writeString(sentinel, "unchanged");
+        try {
+            Files.createSymbolicLink(vaultDirectory.resolve("secrets"), outsideDirectory);
+        } catch (IOException | UnsupportedOperationException | SecurityException e) {
+            Assumptions.assumeTrue(false, "platform denied symbolic-link creation: " + e);
+            return;
+        }
+
+        StoreException failure =
+                assertThrows(
+                        StoreException.class,
+                        () -> new FileVaultStore(vaultDirectory).saveSecretRecord(record()));
+
+        assertEquals("Vault path contains a symbolic link", failure.getMessage());
+        assertNull(failure.getCause());
+        try (var paths = Files.list(outsideDirectory)) {
+            assertEquals(
+                    List.of("sentinel.txt"),
+                    paths.map(Path::getFileName).map(Path::toString).sorted().toList());
+        }
+        assertEquals("unchanged", Files.readString(sentinel));
+    }
+
+    @Test
+    void callerSelectedVaultRootMayBeASymbolicLink() throws IOException {
+        Path actualDirectory = tempDir.resolve("actual");
+        Path linkedDirectory = tempDir.resolve("vault-link");
+        Files.createDirectories(actualDirectory);
+        try {
+            Files.createSymbolicLink(linkedDirectory, actualDirectory);
+        } catch (IOException | UnsupportedOperationException | SecurityException e) {
+            Assumptions.assumeTrue(false, "platform denied symbolic-link creation: " + e);
+            return;
+        }
+        FileVaultStore store = new FileVaultStore(linkedDirectory);
+        VaultHeader header = header();
+
+        store.saveVaultHeader(header);
+
+        assertEquals(Optional.of(header), store.loadVaultHeader(header.vaultId()));
+        assertTrue(Files.exists(actualDirectory.resolve("vault.properties")));
+    }
 
     @Test
     void savesAndLoadsVaultHeader() {
