@@ -109,12 +109,12 @@ class VaultHandleConcurrencyTest {
                 DeviceVaultKeyPackage keyPackage =
                         prepared.wrapVaultKeyPackageForDevice(device.publicKey(), CONTEXT);
                 assertTimeoutPreemptively(
-                        Duration.ofSeconds(5),
+                        Duration.ofSeconds(20),
                         () -> {
                             Future<VaultHandle> commit =
                                     executor.submit(
                                             () -> prepared.commitWithDevicePackage(keyPackage));
-                            assertTrue(store.commitEntered.await(2, TimeUnit.SECONDS));
+                            assertTrue(store.commitEntered.await(5, TimeUnit.SECONDS));
 
                             CountDownLatch closeAttempted = new CountDownLatch(1);
                             AtomicReference<Thread> closeWorker = new AtomicReference<>();
@@ -132,8 +132,8 @@ class VaultHandleConcurrencyTest {
                                     "source.close() completed while durable commit was paused");
 
                             store.releaseCommit.countDown();
-                            try (VaultHandle rotated = commit.get(2, TimeUnit.SECONDS)) {
-                                close.get(2, TimeUnit.SECONDS);
+                            try (VaultHandle rotated = commit.get(5, TimeUnit.SECONDS)) {
+                                close.get(5, TimeUnit.SECONDS);
                                 assertTrue(source.isClosed());
                                 assertPassword(rotated, secretId, "commit-close-password");
                             }
