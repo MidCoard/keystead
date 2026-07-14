@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.crypto.KdfParameters;
 import top.focess.keystead.model.*;
 
 public final class FileVaultStore implements VaultStore {
@@ -27,6 +28,7 @@ public final class FileVaultStore implements VaultStore {
     private static final String ROTATION_JOURNAL_FILE = ".keystead-rotation.properties";
     private static final String ROTATION_STAGE_DIRECTORY = ".keystead-rotation-stage";
     private static final String ROTATION_BACKUP_DIRECTORY = ".keystead-rotation-backup";
+    private static final String KDF_PARAMETER_PREFIX = "kdf.parameter.";
     private static final ConcurrentMap<Path, Object> PROCESS_LOCKS = new ConcurrentHashMap<>();
 
     private final Path vaultDirectory;
@@ -70,6 +72,7 @@ public final class FileVaultStore implements VaultStore {
         properties.setProperty("kdfAlgorithm", header.kdfAlgorithm());
         properties.setProperty("kdfSalt", b64(header.kdfSalt()));
         properties.setProperty("kdfIterations", Integer.toString(header.kdfIterations()));
+        writeKdfParameters(properties, header.kdfParameters());
         properties.setProperty("vaultKeyId", header.vaultKeyId().value());
         properties.setProperty("wrappedVaultKey", b64(header.wrappedVaultKey()));
         properties.setProperty("createdAt", header.createdAt().toString());
@@ -536,9 +539,7 @@ public final class FileVaultStore implements VaultStore {
         return new VaultHeader(
                 new VaultId(UUID.fromString(required(properties, "vaultId"))),
                 intValue(properties, "formatVersion"),
-                required(properties, "kdfAlgorithm"),
-                bytes(properties, "kdfSalt"),
-                intValue(properties, "kdfIterations"),
+                readKdfParameters(properties),
                 new KeyId(required(properties, "vaultKeyId")),
                 bytes(properties, "wrappedVaultKey"),
                 Instant.parse(required(properties, "createdAt")),
@@ -650,6 +651,7 @@ public final class FileVaultStore implements VaultStore {
         properties.setProperty("kdfAlgorithm", header.kdfAlgorithm());
         properties.setProperty("kdfSalt", b64(header.kdfSalt()));
         properties.setProperty("kdfIterations", Integer.toString(header.kdfIterations()));
+        writeKdfParameters(properties, header.kdfParameters());
         properties.setProperty("vaultKeyId", header.vaultKeyId().value());
         properties.setProperty("wrappedVaultKey", b64(header.wrappedVaultKey()));
         properties.setProperty("createdAt", header.createdAt().toString());
@@ -790,6 +792,34 @@ public final class FileVaultStore implements VaultStore {
 
     private int intValue(@NonNull Properties properties, @NonNull String key) {
         return Integer.parseInt(required(properties, key));
+    }
+
+    private void writeKdfParameters(
+            @NonNull Properties properties, @NonNull KdfParameters parameters) {
+        parameters.parameters().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(
+                        entry ->
+                                properties.setProperty(
+                                        KDF_PARAMETER_PREFIX + entry.getKey(),
+                                        Integer.toString(entry.getValue())));
+    }
+
+    private @NonNull KdfParameters readKdfParameters(@NonNull Properties properties) {
+        String algorithm = required(properties, "kdfAlgorithm");
+        byte[] salt = bytes(properties, "kdfSalt");
+        Map<String, Integer> canonical = new TreeMap<>();
+        properties.stringPropertyNames().stream()
+                .filter(name -> name.startsWith(KDF_PARAMETER_PREFIX))
+                .sorted()
+                .forEach(
+                        name ->
+                                canonical.put(
+                                        name.substring(KDF_PARAMETER_PREFIX.length()),
+                                        Integer.parseInt(required(properties, name))));
+        return canonical.isEmpty()
+                ? KdfParameters.pbkdf2(algorithm, salt, intValue(properties, "kdfIterations"))
+                : new KdfParameters(algorithm, salt, canonical);
     }
 
     private long longValue(@NonNull Properties properties, @NonNull String key) {

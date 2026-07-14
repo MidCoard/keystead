@@ -26,6 +26,7 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.crypto.KdfParameters;
 import top.focess.keystead.model.DeletedSecretRecord;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.EncryptedSecretRecord;
@@ -47,6 +48,7 @@ final class BackupArchiveCodec {
     private static final String DELETED_PREFIX = "deleted/";
     private static final String PROPERTIES_SUFFIX = ".properties";
     private static final String ENTRY_DIGEST_PREFIX = "entry.sha256.";
+    private static final String KDF_PARAMETER_PREFIX = "kdf.parameter.";
     private static final int MAX_ENTRY_BYTES = 1_048_576;
     private static final int MAX_ENTRY_COUNT = 4_096;
     private static final int MAX_ARCHIVE_BYTES = 16 * 1_024 * 1_024;
@@ -299,6 +301,13 @@ final class BackupArchiveCodec {
         properties.setProperty("kdfAlgorithm", header.kdfAlgorithm());
         properties.setProperty("kdfSalt", b64(header.kdfSalt()));
         properties.setProperty("kdfIterations", Integer.toString(header.kdfIterations()));
+        header.kdfParameters().parameters().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(
+                        entry ->
+                                properties.setProperty(
+                                        KDF_PARAMETER_PREFIX + entry.getKey(),
+                                        Integer.toString(entry.getValue())));
         properties.setProperty("vaultKeyId", header.vaultKeyId().value());
         properties.setProperty("wrappedVaultKey", b64(header.wrappedVaultKey()));
         properties.setProperty("createdAt", header.createdAt().toString());
@@ -310,13 +319,28 @@ final class BackupArchiveCodec {
         return new VaultHeader(
                 new VaultId(UUID.fromString(required(properties, "vaultId"))),
                 parseInt(properties, "formatVersion"),
-                required(properties, "kdfAlgorithm"),
-                bytes(properties, "kdfSalt"),
-                parseInt(properties, "kdfIterations"),
+                readKdfParameters(properties),
                 new KeyId(required(properties, "vaultKeyId")),
                 bytes(properties, "wrappedVaultKey"),
                 Instant.parse(required(properties, "createdAt")),
                 Instant.parse(required(properties, "updatedAt")));
+    }
+
+    private static @NonNull KdfParameters readKdfParameters(@NonNull Properties properties) {
+        String algorithm = required(properties, "kdfAlgorithm");
+        byte[] salt = bytes(properties, "kdfSalt");
+        Map<String, Integer> canonical = new java.util.TreeMap<>();
+        properties.stringPropertyNames().stream()
+                .filter(name -> name.startsWith(KDF_PARAMETER_PREFIX))
+                .sorted()
+                .forEach(
+                        name ->
+                                canonical.put(
+                                        name.substring(KDF_PARAMETER_PREFIX.length()),
+                                        Integer.parseInt(required(properties, name))));
+        return canonical.isEmpty()
+                ? KdfParameters.pbkdf2(algorithm, salt, parseInt(properties, "kdfIterations"))
+                : new KdfParameters(algorithm, salt, canonical);
     }
 
     private static @NonNull Properties recordProperties(@NonNull EncryptedSecretRecord record) {

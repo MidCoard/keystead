@@ -21,6 +21,7 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import top.focess.keystead.crypto.KdfParameters;
 import top.focess.keystead.model.*;
 import top.focess.keystead.store.FileVaultStore;
 
@@ -58,6 +59,37 @@ class VaultBackupServiceTest {
         assertEquals(Optional.of(header()), target.loadVaultHeader(VAULT_ID));
         assertEquals(2, target.listSecretRecords(VAULT_ID).size());
         assertEquals(1, target.listDeletedSecretRecords(VAULT_ID).size());
+    }
+
+    @Test
+    void archiveCodecRoundTripsCanonicalGenericKdfHeader() {
+        VaultHeader header =
+                new VaultHeader(
+                        VAULT_ID,
+                        1,
+                        new KdfParameters(
+                                "TEST-KDF",
+                                new byte[] {1, 2, 3},
+                                java.util.Map.of("memoryKiB", 64, "iterations", 3)),
+                        new KeyId("vault-key"),
+                        new byte[] {4, 5, 6},
+                        Instant.parse("2026-07-02T00:00:00Z"),
+                        Instant.parse("2026-07-02T00:01:00Z"));
+        BackupArchive archive =
+                new BackupArchive(
+                        new BackupManifest(1, VAULT_ID, 0, 0, CLOCK.instant()),
+                        header,
+                        List.of(),
+                        List.of());
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        backup.writeTo(archive, output);
+        BackupReadResult read = backup.readFrom(new ByteArrayInputStream(output.toByteArray()));
+
+        assertEquals(header, read.archive().vaultHeader());
+        assertEquals(
+                java.util.Map.of("iterations", 3, "memoryKiB", 64),
+                read.archive().vaultHeader().kdfParameters().parameters());
     }
 
     @Test

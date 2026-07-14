@@ -90,7 +90,7 @@ public final class DefaultVaultService implements VaultService {
         VaultHeader header =
                 store.loadVaultHeader(vaultId)
                         .orElseThrow(() -> new ValidationException("Vault does not exist"));
-        if (!CryptoAlgorithmRegistry.isApprovedKdf(header.kdfAlgorithm())) {
+        if (!crypto.supportsPasswordKdf(header.kdfAlgorithm())) {
             throw new ValidationException("Vault is not protected by a master password header");
         }
         VaultKey vaultKey =
@@ -98,9 +98,7 @@ public final class DefaultVaultService implements VaultService {
                         header.vaultKeyId(),
                         header.wrappedVaultKey(),
                         masterPassword,
-                        header.kdfSalt(),
-                        header.kdfIterations(),
-                        header.kdfAlgorithm());
+                        header.kdfParameters());
         return new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
     }
 
@@ -112,14 +110,15 @@ public final class DefaultVaultService implements VaultService {
         VaultHeader previous =
                 store.loadVaultHeader(vaultId)
                         .orElseThrow(() -> new ValidationException("Vault does not exist"));
+        if (!crypto.supportsPasswordKdf(previous.kdfAlgorithm())) {
+            throw new ValidationException("Vault is not protected by a master password header");
+        }
         VaultKey oldKey =
                 crypto.unwrapVaultKey(
                         previous.vaultKeyId(),
                         previous.wrappedVaultKey(),
                         masterPassword,
-                        previous.kdfSalt(),
-                        previous.kdfIterations(),
-                        previous.kdfAlgorithm());
+                        previous.kdfParameters());
         KeyId nextKeyId =
                 new KeyId("vault-key-" + vaultId.value() + "-" + java.util.UUID.randomUUID());
         VaultKey nextKey = crypto.generateVaultKey(nextKeyId);
@@ -143,22 +142,14 @@ public final class DefaultVaultService implements VaultService {
                     wipe(plaintext);
                 }
             }
-            wrapped =
-                    crypto.wrapVaultKey(
-                            nextKey,
-                            masterPassword,
-                            previous.kdfSalt(),
-                            previous.kdfIterations(),
-                            previous.kdfAlgorithm());
+            wrapped = crypto.wrapVaultKey(nextKey, masterPassword, previous.kdfParameters());
             Instant now = clock.instant();
             store.commitVaultKeyRotation(
                     new VaultKeyRotation(
                             new VaultHeader(
                                     vaultId,
                                     previous.formatVersion(),
-                                    previous.kdfAlgorithm(),
-                                    previous.kdfSalt(),
-                                    previous.kdfIterations(),
+                                    previous.kdfParameters(),
                                     nextKeyId,
                                     wrapped,
                                     previous.createdAt(),

@@ -16,11 +16,10 @@ import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
-import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.PBEKeySpec;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretMemoryProvider;
@@ -43,6 +42,7 @@ public final class DefaultCryptoService {
     private final AeadCipher aeadCipher;
     private final SecretMemoryProvider memoryProvider;
     private final Map<String, AeadCipher> aeadCiphers;
+    private final Map<String, PasswordKeyDerivation> passwordKeyDerivations;
 
     public DefaultCryptoService() {
         this(new SecureRandom());
@@ -60,10 +60,19 @@ public final class DefaultCryptoService {
             @NonNull SecureRandom random,
             @NonNull AeadCipher aeadCipher,
             @NonNull SecretMemoryProvider memoryProvider) {
+        this(random, aeadCipher, memoryProvider, defaultPasswordKeyDerivations());
+    }
+
+    public DefaultCryptoService(
+            @NonNull SecureRandom random,
+            @NonNull AeadCipher aeadCipher,
+            @NonNull SecretMemoryProvider memoryProvider,
+            @NonNull Collection<PasswordKeyDerivation> passwordKeyDerivations) {
         this.random = Objects.requireNonNull(random, "random");
         this.aeadCipher = Objects.requireNonNull(aeadCipher, "aeadCipher");
         this.memoryProvider = Objects.requireNonNull(memoryProvider, "memoryProvider");
         this.aeadCiphers = aeadCiphers(aeadCipher);
+        this.passwordKeyDerivations = passwordKeyDerivations(passwordKeyDerivations);
     }
 
     public @NonNull VaultKey generateVaultKey(@NonNull KeyId keyId) {
@@ -164,8 +173,16 @@ public final class DefaultCryptoService {
             byte @NonNull [] salt,
             int iterations,
             @NonNull String kdfAlgorithm) {
+        return wrapVaultKey(
+                vaultKey, masterPassword, KdfParameters.pbkdf2(kdfAlgorithm, salt, iterations));
+    }
+
+    public byte @NonNull [] wrapVaultKey(
+            @NonNull VaultKey vaultKey,
+            char @NonNull [] masterPassword,
+            @NonNull KdfParameters kdfParameters) {
         Objects.requireNonNull(vaultKey, "vaultKey");
-        byte[] wrappingKey = deriveWrappingKey(masterPassword, salt, iterations, kdfAlgorithm);
+        byte[] wrappingKey = deriveWrappingKey(masterPassword, kdfParameters);
         byte[] nonce = new byte[aeadCipher.nonceSizeBytes()];
         random.nextBytes(nonce);
         try {
@@ -205,13 +222,25 @@ public final class DefaultCryptoService {
             byte @NonNull [] salt,
             int iterations,
             @NonNull String kdfAlgorithm) {
+        return unwrapVaultKey(
+                keyId,
+                wrappedVaultKey,
+                masterPassword,
+                KdfParameters.pbkdf2(kdfAlgorithm, salt, iterations));
+    }
+
+    public @NonNull VaultKey unwrapVaultKey(
+            @NonNull KeyId keyId,
+            byte @NonNull [] wrappedVaultKey,
+            char @NonNull [] masterPassword,
+            @NonNull KdfParameters kdfParameters) {
         Objects.requireNonNull(keyId, "keyId");
         Objects.requireNonNull(wrappedVaultKey, "wrappedVaultKey");
         if (wrappedVaultKey.length <= aeadCipher.nonceSizeBytes()) {
             throw new CryptoException("Wrapped vault key is invalid");
         }
 
-        byte[] wrappingKey = deriveWrappingKey(masterPassword, salt, iterations, kdfAlgorithm);
+        byte[] wrappingKey = deriveWrappingKey(masterPassword, kdfParameters);
         byte[] nonce = Arrays.copyOfRange(wrappedVaultKey, 0, aeadCipher.nonceSizeBytes());
         byte[] ciphertext =
                 Arrays.copyOfRange(
@@ -274,31 +303,34 @@ public final class DefaultCryptoService {
         }
     }
 
+    public boolean supportsPasswordKdf(@NonNull String algorithm) {
+        Objects.requireNonNull(algorithm, "algorithm");
+        return passwordKeyDerivations.containsKey(algorithm);
+    }
+
     private byte @NonNull [] deriveWrappingKey(
-            char @NonNull [] masterPassword,
-            byte @NonNull [] salt,
-            int iterations,
-            @NonNull String kdfAlgorithm) {
+            char @NonNull [] masterPassword, @NonNull KdfParameters parameters) {
         Objects.requireNonNull(masterPassword, "masterPassword");
-        Objects.requireNonNull(salt, "salt");
-        Objects.requireNonNull(kdfAlgorithm, "kdfAlgorithm");
-        if (iterations <= 0) {
-            throw new IllegalArgumentException("KDF iterations must be positive");
+        Objects.requireNonNull(parameters, "parameters");
+        PasswordKeyDerivation provider = passwordKeyDerivations.get(parameters.algorithm());
+        if (provider == null) {
+            throw new CryptoException("Unsupported vault key KDF algorithm");
         }
         char[] passwordCopy = Arrays.copyOf(masterPassword, masterPassword.length);
-        PBEKeySpec spec =
-                new PBEKeySpec(
-                        passwordCopy, Arrays.copyOf(salt, salt.length), iterations, KEY_BYTES * 8);
+        byte[] result = null;
         try {
-            if (!CryptoAlgorithmRegistry.isApprovedKdf(kdfAlgorithm)) {
-                throw new CryptoException("Unsupported vault key KDF algorithm");
+            result = provider.derive(passwordCopy, parameters, KEY_BYTES);
+            if (result.length != KEY_BYTES) {
+                throw new CryptoException("Password KDF returned an invalid key size");
             }
-            return SecretKeyFactory.getInstance(kdfAlgorithm).generateSecret(spec).getEncoded();
-        } catch (GeneralSecurityException e) {
-            throw new CryptoException("Could not derive wrapping key", e);
+            byte[] output = result;
+            result = null;
+            return output;
         } finally {
             Arrays.fill(passwordCopy, '\0');
-            spec.clearPassword();
+            if (result != null) {
+                Arrays.fill(result, (byte) 0);
+            }
         }
     }
 
@@ -337,6 +369,26 @@ public final class DefaultCryptoService {
             throw new IllegalArgumentException("Unsupported AEAD cipher: " + cipher.algorithm());
         }
         ciphers.put(cipher.algorithm(), cipher);
+    }
+
+    private static @NonNull Collection<PasswordKeyDerivation> defaultPasswordKeyDerivations() {
+        return java.util.List.of(
+                new Pbkdf2KeyDerivation(CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256),
+                new Pbkdf2KeyDerivation(CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA512));
+    }
+
+    private static @NonNull Map<String, PasswordKeyDerivation> passwordKeyDerivations(
+            @NonNull Collection<PasswordKeyDerivation> providers) {
+        Objects.requireNonNull(providers, "passwordKeyDerivations");
+        Map<String, PasswordKeyDerivation> registered = new LinkedHashMap<>();
+        for (PasswordKeyDerivation provider : providers) {
+            Objects.requireNonNull(provider, "passwordKeyDerivation");
+            String algorithm = Objects.requireNonNull(provider.algorithm(), "provider algorithm");
+            if (registered.putIfAbsent(algorithm, provider) != null) {
+                throw new IllegalArgumentException("Duplicate password KDF provider: " + algorithm);
+            }
+        }
+        return Map.copyOf(registered);
     }
 
     private static byte @NonNull [] writePublicKeyset(@NonNull KeysetHandle handle) {

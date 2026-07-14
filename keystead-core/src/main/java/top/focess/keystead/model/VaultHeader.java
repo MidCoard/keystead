@@ -4,26 +4,52 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
+import top.focess.keystead.crypto.KdfParameters;
 
-public record VaultHeader(
-        @NonNull VaultId vaultId,
-        int formatVersion,
-        @NonNull String kdfAlgorithm,
-        byte @NonNull [] kdfSalt,
-        int kdfIterations,
-        @NonNull KeyId vaultKeyId,
-        byte @NonNull [] wrappedVaultKey,
-        @NonNull Instant createdAt,
-        @NonNull Instant updatedAt) {
+public final class VaultHeader {
 
-    public VaultHeader {
-        Objects.requireNonNull(vaultId, "vaultId");
-        Objects.requireNonNull(kdfAlgorithm, "kdfAlgorithm");
-        Objects.requireNonNull(kdfSalt, "kdfSalt");
-        Objects.requireNonNull(vaultKeyId, "vaultKeyId");
+    private final VaultId vaultId;
+    private final int formatVersion;
+    private final KdfParameters kdfParameters;
+    private final KeyId vaultKeyId;
+    private final byte[] wrappedVaultKey;
+    private final Instant createdAt;
+    private final Instant updatedAt;
+
+    public VaultHeader(
+            @NonNull VaultId vaultId,
+            int formatVersion,
+            @NonNull String kdfAlgorithm,
+            byte @NonNull [] kdfSalt,
+            int kdfIterations,
+            @NonNull KeyId vaultKeyId,
+            byte @NonNull [] wrappedVaultKey,
+            @NonNull Instant createdAt,
+            @NonNull Instant updatedAt) {
+        this(
+                vaultId,
+                formatVersion,
+                KdfParameters.pbkdf2(kdfAlgorithm, kdfSalt, kdfIterations),
+                vaultKeyId,
+                wrappedVaultKey,
+                createdAt,
+                updatedAt);
+    }
+
+    public VaultHeader(
+            @NonNull VaultId vaultId,
+            int formatVersion,
+            @NonNull KdfParameters kdfParameters,
+            @NonNull KeyId vaultKeyId,
+            byte @NonNull [] wrappedVaultKey,
+            @NonNull Instant createdAt,
+            @NonNull Instant updatedAt) {
+        this.vaultId = Objects.requireNonNull(vaultId, "vaultId");
+        this.kdfParameters = Objects.requireNonNull(kdfParameters, "kdfParameters");
+        this.vaultKeyId = Objects.requireNonNull(vaultKeyId, "vaultKeyId");
         Objects.requireNonNull(wrappedVaultKey, "wrappedVaultKey");
-        Objects.requireNonNull(createdAt, "createdAt");
-        Objects.requireNonNull(updatedAt, "updatedAt");
+        this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
+        this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
         if (updatedAt.isBefore(createdAt)) {
             throw new IllegalArgumentException(
                     "Vault updated time must not be before created time");
@@ -31,27 +57,51 @@ public record VaultHeader(
         if (formatVersion <= 0) {
             throw new IllegalArgumentException("Format version must be positive");
         }
-        if (kdfIterations <= 0) {
-            throw new IllegalArgumentException("KDF iterations must be positive");
-        }
-        if (kdfSalt.length > SecurityLimits.MAX_KDF_SALT_BYTES) {
-            throw new IllegalArgumentException("KDF salt exceeds the size limit");
-        }
         if (wrappedVaultKey.length > SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES) {
             throw new IllegalArgumentException("Wrapped vault key exceeds the size limit");
         }
-        kdfSalt = Arrays.copyOf(kdfSalt, kdfSalt.length);
-        wrappedVaultKey = Arrays.copyOf(wrappedVaultKey, wrappedVaultKey.length);
+        this.formatVersion = formatVersion;
+        this.wrappedVaultKey = Arrays.copyOf(wrappedVaultKey, wrappedVaultKey.length);
     }
 
-    @Override
+    public @NonNull VaultId vaultId() {
+        return vaultId;
+    }
+
+    public int formatVersion() {
+        return formatVersion;
+    }
+
+    public @NonNull KdfParameters kdfParameters() {
+        return kdfParameters;
+    }
+
+    public @NonNull String kdfAlgorithm() {
+        return kdfParameters.algorithm();
+    }
+
     public byte @NonNull [] kdfSalt() {
-        return Arrays.copyOf(kdfSalt, kdfSalt.length);
+        return kdfParameters.salt();
     }
 
-    @Override
+    public int kdfIterations() {
+        return kdfParameters.required(KdfParameters.ITERATIONS);
+    }
+
+    public @NonNull KeyId vaultKeyId() {
+        return vaultKeyId;
+    }
+
     public byte @NonNull [] wrappedVaultKey() {
         return Arrays.copyOf(wrappedVaultKey, wrappedVaultKey.length);
+    }
+
+    public @NonNull Instant createdAt() {
+        return createdAt;
+    }
+
+    public @NonNull Instant updatedAt() {
+        return updatedAt;
     }
 
     @Override
@@ -60,9 +110,9 @@ public record VaultHeader(
                 .formatted(
                         vaultId,
                         formatVersion,
-                        kdfAlgorithm,
-                        kdfSalt.length,
-                        kdfIterations,
+                        kdfAlgorithm(),
+                        kdfParameters.salt().length,
+                        kdfIterations(),
                         vaultKeyId,
                         wrappedVaultKey.length,
                         createdAt,
@@ -78,10 +128,8 @@ public record VaultHeader(
             return false;
         }
         return formatVersion == other.formatVersion
-                && kdfIterations == other.kdfIterations
                 && vaultId.equals(other.vaultId)
-                && kdfAlgorithm.equals(other.kdfAlgorithm)
-                && Arrays.equals(kdfSalt, other.kdfSalt)
+                && kdfParameters.equals(other.kdfParameters)
                 && vaultKeyId.equals(other.vaultKeyId)
                 && Arrays.equals(wrappedVaultKey, other.wrappedVaultKey)
                 && createdAt.equals(other.createdAt)
@@ -92,15 +140,7 @@ public record VaultHeader(
     public int hashCode() {
         int result =
                 Objects.hash(
-                        vaultId,
-                        formatVersion,
-                        kdfAlgorithm,
-                        kdfIterations,
-                        vaultKeyId,
-                        createdAt,
-                        updatedAt);
-        result = 31 * result + Arrays.hashCode(kdfSalt);
-        result = 31 * result + Arrays.hashCode(wrappedVaultKey);
-        return result;
+                        vaultId, formatVersion, kdfParameters, vaultKeyId, createdAt, updatedAt);
+        return 31 * result + Arrays.hashCode(wrappedVaultKey);
     }
 }

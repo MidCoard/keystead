@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -28,6 +29,7 @@ import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import top.focess.keystead.crypto.KdfParameters;
 import top.focess.keystead.model.*;
 
 class FileVaultStoreTest {
@@ -42,6 +44,62 @@ class FileVaultStoreTest {
         store.saveVaultHeader(header);
 
         assertEquals(Optional.of(header), store.loadVaultHeader(header.vaultId()));
+    }
+
+    @Test
+    void canonicalGenericKdfHeaderRoundTripsAndKeepsLegacyProperties() throws IOException {
+        FileVaultStore store = new FileVaultStore(tempDir);
+        VaultHeader header =
+                new VaultHeader(
+                        new VaultId(UUID.fromString("00000000-0000-0000-0000-000000000001")),
+                        1,
+                        new KdfParameters(
+                                "TEST-KDF",
+                                new byte[] {1, 2, 3},
+                                Map.of("memoryKiB", 64, "iterations", 3)),
+                        new KeyId("vault-key"),
+                        new byte[] {4, 5, 6},
+                        Instant.parse("2026-07-02T00:00:00Z"),
+                        Instant.parse("2026-07-02T00:01:00Z"));
+
+        store.saveVaultHeader(header);
+
+        assertEquals(Optional.of(header), store.loadVaultHeader(header.vaultId()));
+        Properties persisted = new Properties();
+        try (var input = Files.newInputStream(tempDir.resolve("vault.properties"))) {
+            persisted.load(input);
+        }
+        assertEquals("3", persisted.getProperty("kdfIterations"));
+        assertEquals("3", persisted.getProperty("kdf.parameter.iterations"));
+        assertEquals("64", persisted.getProperty("kdf.parameter.memoryKiB"));
+        String serialized = Files.readString(tempDir.resolve("vault.properties"));
+        assertTrue(
+                serialized.indexOf("kdf.parameter.iterations=3")
+                        < serialized.indexOf("kdf.parameter.memoryKiB=64"));
+    }
+
+    @Test
+    void legacyPbkdf2PropertyFixtureStillLoads() throws IOException {
+        Files.writeString(
+                tempDir.resolve("vault.properties"),
+                """
+                vaultId=00000000-0000-0000-0000-000000000001
+                formatVersion=1
+                kdfAlgorithm=PBKDF2WithHmacSHA256
+                kdfSalt=AQID
+                kdfIterations=120000
+                vaultKeyId=vault-key
+                wrappedVaultKey=BAUG
+                createdAt=2026-07-02T00:00:00Z
+                updatedAt=2026-07-02T00:01:00Z
+                """);
+        FileVaultStore store = new FileVaultStore(tempDir);
+
+        VaultHeader loaded = store.loadVaultHeader(header().vaultId()).orElseThrow();
+
+        assertEquals(header(), loaded);
+        assertEquals(
+                Map.of(KdfParameters.ITERATIONS, 120_000), loaded.kdfParameters().parameters());
     }
 
     @Test
