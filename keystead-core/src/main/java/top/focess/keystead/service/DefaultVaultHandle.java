@@ -52,13 +52,13 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public @NonNull KeyId vaultKeyId() {
+    public synchronized @NonNull KeyId vaultKeyId() {
         requireOpen();
         return vaultKey.keyId();
     }
 
     @Override
-    public @NonNull SecretId saveLogin(@NonNull Consumer<LoginDraft> draftConsumer) {
+    public synchronized @NonNull SecretId saveLogin(@NonNull Consumer<LoginDraft> draftConsumer) {
         Objects.requireNonNull(draftConsumer, "draftConsumer");
         requireOpen();
         requireMutable();
@@ -107,7 +107,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public void updateLogin(
+    public synchronized void updateLogin(
             @NonNull SecretId secretId, @NonNull Consumer<LoginDraft> draftConsumer) {
         Objects.requireNonNull(secretId, "secretId");
         Objects.requireNonNull(draftConsumer, "draftConsumer");
@@ -163,7 +163,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public void withLogin(
+    public synchronized void withLogin(
             @NonNull SecretId secretId, @NonNull Consumer<LoginSecretView> viewConsumer) {
         Objects.requireNonNull(secretId, "secretId");
         Objects.requireNonNull(viewConsumer, "viewConsumer");
@@ -193,7 +193,8 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public @NonNull SecretId saveSecureNote(@NonNull Consumer<SecureNoteDraft> draftConsumer) {
+    public synchronized @NonNull SecretId saveSecureNote(
+            @NonNull Consumer<SecureNoteDraft> draftConsumer) {
         Objects.requireNonNull(draftConsumer, "draftConsumer");
         requireOpen();
         requireMutable();
@@ -242,7 +243,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public void withSecureNote(
+    public synchronized void withSecureNote(
             @NonNull SecretId secretId, @NonNull Consumer<SecureNoteView> viewConsumer) {
         Objects.requireNonNull(secretId, "secretId");
         Objects.requireNonNull(viewConsumer, "viewConsumer");
@@ -272,7 +273,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public @NonNull SecretId saveSecret(
+    public synchronized @NonNull SecretId saveSecret(
             @NonNull SecretType type, @NonNull Consumer<StructuredSecretDraft> draftConsumer) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(draftConsumer, "draftConsumer");
@@ -326,7 +327,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public void updateSecret(
+    public synchronized void updateSecret(
             @NonNull SecretId secretId, @NonNull Consumer<StructuredSecretDraft> draftConsumer) {
         Objects.requireNonNull(secretId, "secretId");
         Objects.requireNonNull(draftConsumer, "draftConsumer");
@@ -384,7 +385,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public void withSecret(
+    public synchronized void withSecret(
             @NonNull SecretId secretId, @NonNull Consumer<StructuredSecretView> viewConsumer) {
         Objects.requireNonNull(secretId, "secretId");
         Objects.requireNonNull(viewConsumer, "viewConsumer");
@@ -413,7 +414,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public void deleteSecret(@NonNull SecretId secretId) {
+    public synchronized void deleteSecret(@NonNull SecretId secretId) {
         Objects.requireNonNull(secretId, "secretId");
         requireOpen();
         requireMutable();
@@ -436,13 +437,13 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public @NonNull List<SecretMetadata> listSecrets() {
+    public synchronized @NonNull List<SecretMetadata> listSecrets() {
         requireOpen();
         return store.listMetadata(vaultId);
     }
 
     @Override
-    public @NonNull List<EncryptedSyncRecord> exportRecordsSince(long sinceRevision) {
+    public synchronized @NonNull List<EncryptedSyncRecord> exportRecordsSince(long sinceRevision) {
         requireOpen();
         if (sinceRevision < 0) {
             throw new ValidationException("Since revision must not be negative");
@@ -467,12 +468,12 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public int importRecords(@NonNull List<EncryptedSyncRecord> records) {
+    public synchronized int importRecords(@NonNull List<EncryptedSyncRecord> records) {
         return importRecordsWithReport(records).imported();
     }
 
     @Override
-    public @NonNull SyncImportReport importRecordsWithReport(
+    public synchronized @NonNull SyncImportReport importRecordsWithReport(
             @NonNull List<EncryptedSyncRecord> records) {
         Objects.requireNonNull(records, "records");
         requireOpen();
@@ -495,7 +496,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public byte @NonNull [] wrapVaultKeyForDevice(
+    public synchronized byte @NonNull [] wrapVaultKeyForDevice(
             byte @NonNull [] devicePublicKey, byte @NonNull [] context) {
         Objects.requireNonNull(devicePublicKey, "devicePublicKey");
         Objects.requireNonNull(context, "context");
@@ -504,7 +505,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public @NonNull DeviceVaultKeyPackage wrapVaultKeyPackageForDevice(
+    public synchronized @NonNull DeviceVaultKeyPackage wrapVaultKeyPackageForDevice(
             byte @NonNull [] devicePublicKey, byte @NonNull [] context) {
         Objects.requireNonNull(devicePublicKey, "devicePublicKey");
         Objects.requireNonNull(context, "context");
@@ -516,7 +517,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public @NonNull PreparedVaultKeyRotation prepareVaultKeyRotation() {
+    public synchronized @NonNull PreparedVaultKeyRotation prepareVaultKeyRotation() {
         requireOpen();
         KeyId targetKeyId = new KeyId("vault-key-" + vaultId.value() + "-" + UUID.randomUUID());
         VaultKey targetKey = crypto.generateVaultKey(targetKeyId);
@@ -524,7 +525,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public @NonNull PreparedVaultKeyRotation resumeVaultKeyRotation(
+    public synchronized @NonNull PreparedVaultKeyRotation resumeVaultKeyRotation(
             @NonNull DeviceVaultKeyPackage stagedPackage,
             byte @NonNull [] devicePrivateKey,
             byte @NonNull [] context) {
@@ -555,12 +556,12 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
-    public boolean isClosed() {
+    public synchronized boolean isClosed() {
         return closed;
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         if (!closed) {
             vaultKey.close();
             closed = true;
@@ -827,12 +828,12 @@ final class DefaultVaultHandle implements VaultHandle {
         }
 
         @Override
-        public @NonNull KeyId targetVaultKeyId() {
+        public synchronized @NonNull KeyId targetVaultKeyId() {
             return targetKey.keyId();
         }
 
         @Override
-        public @NonNull DeviceVaultKeyPackage wrapVaultKeyPackageForDevice(
+        public synchronized @NonNull DeviceVaultKeyPackage wrapVaultKeyPackageForDevice(
                 byte @NonNull [] publicKey, byte @NonNull [] context) {
             Objects.requireNonNull(publicKey, "publicKey");
             Objects.requireNonNull(context, "context");
@@ -847,7 +848,7 @@ final class DefaultVaultHandle implements VaultHandle {
         }
 
         @Override
-        public @NonNull VaultHandle commitWithDevicePackage(
+        public synchronized @NonNull VaultHandle commitWithDevicePackage(
                 @NonNull DeviceVaultKeyPackage localPackage) {
             Objects.requireNonNull(localPackage, "localPackage");
             requirePreparedOpen();
@@ -885,12 +886,12 @@ final class DefaultVaultHandle implements VaultHandle {
         }
 
         @Override
-        public boolean isCommitted() {
+        public synchronized boolean isCommitted() {
             return committed;
         }
 
         @Override
-        public void close() {
+        public synchronized void close() {
             if (!closed) {
                 if (!targetTransferred) {
                     targetKey.close();
@@ -905,7 +906,7 @@ final class DefaultVaultHandle implements VaultHandle {
         }
 
         @Override
-        public @NonNull String toString() {
+        public synchronized @NonNull String toString() {
             return "PreparedVaultKeyRotation[vaultId=%s, sourceVaultKeyId=%s, targetVaultKeyId=%s, packages=%d, committed=%s, closed=%s]"
                     .formatted(
                             vaultId,
