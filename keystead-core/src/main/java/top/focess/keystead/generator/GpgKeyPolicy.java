@@ -30,17 +30,19 @@ public final class GpgKeyPolicy implements AutoCloseable {
             char @NonNull [] passphrase,
             @NonNull Date createdAt,
             int rsaBits) {
-        this.identity = requireText(identity, "identity");
+        String validatedIdentity = requireText(identity, "identity");
         Objects.requireNonNull(passphrase, "passphrase");
         if (passphrase.length == 0) {
             throw new IllegalArgumentException("passphrase must not be blank");
         }
-        this.passphrase = Arrays.copyOf(passphrase, passphrase.length);
-        Arrays.fill(passphrase, '\0');
-        this.createdAt = new Date(Objects.requireNonNull(createdAt, "createdAt").getTime());
+        Date validatedCreatedAt =
+                new Date(Objects.requireNonNull(createdAt, "createdAt").getTime());
         if (rsaBits < 3072) {
             throw new IllegalArgumentException("rsaBits must be at least 3072");
         }
+        this.identity = validatedIdentity;
+        this.passphrase = Arrays.copyOf(passphrase, passphrase.length);
+        this.createdAt = validatedCreatedAt;
         this.rsaBits = rsaBits;
     }
 

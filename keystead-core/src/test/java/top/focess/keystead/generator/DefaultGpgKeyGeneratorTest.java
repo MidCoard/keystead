@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicReference;
@@ -27,7 +28,7 @@ class DefaultGpgKeyGeneratorTest {
         try (GpgKeyPolicy policy =
                         new GpgKeyPolicy("Alice <alice@example.com>", passphrase, createdAt);
                 GpgKeyPair keyPair = generator.generate(policy)) {
-            assertArrayEquals(new char[passphrase.length], passphrase);
+            assertArrayEquals("changeit".toCharArray(), passphrase);
 
             String publicKey = keyPair.publicKey();
             String privateKey = copy(keyPair.privateKey());
@@ -81,12 +82,31 @@ class DefaultGpgKeyGeneratorTest {
     }
 
     @Test
+    void invalidPolicyDoesNotWipeCallerOwnedPassphrase() {
+        char[] passphrase = "changeit".toCharArray();
+        char[] expected = passphrase.clone();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new GpgKeyPolicy(
+                                "Alice <alice@example.com>",
+                                passphrase,
+                                new Date(1_800_000_000_000L),
+                                2048));
+
+        assertArrayEquals(expected, passphrase);
+        Arrays.fill(expected, '\0');
+        Arrays.fill(passphrase, '\0');
+    }
+
+    @Test
     void generatedPrivateKeyBufferIsDestroyedWhenPairIsClosed() {
         char[] passphrase = "changeit".toCharArray();
         GpgKeyPair keyPair;
         try (GpgKeyPolicy policy = new GpgKeyPolicy("Alice <alice@example.com>", passphrase)) {
             keyPair = generator.generate(policy);
-            assertArrayEquals(new char[passphrase.length], passphrase);
+            assertArrayEquals("changeit".toCharArray(), passphrase);
         }
         keyPair.close();
 

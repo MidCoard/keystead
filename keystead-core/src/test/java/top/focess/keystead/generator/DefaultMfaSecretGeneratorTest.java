@@ -2,6 +2,7 @@ package top.focess.keystead.generator;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.security.SecureRandom;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +41,27 @@ class DefaultMfaSecretGeneratorTest {
     }
 
     @Test
+    void encodesDeterministicRandomBytesAsRfc4648Base32() {
+        byte[] randomBytes = new byte[20];
+        for (int index = 0; index < randomBytes.length; index++) {
+            randomBytes[index] = (byte) index;
+        }
+        MfaSecretGenerator deterministicGenerator =
+                new DefaultMfaSecretGenerator(new FixedSecureRandom(randomBytes));
+
+        try (MfaSecret secret =
+                deterministicGenerator.generate(
+                        new MfaSecretPolicy("Keystead", "alice@example.com", 20, 6, 30))) {
+            secret.seed()
+                    .copyChars(
+                            seed ->
+                                    assertArrayEquals(
+                                            "AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQT".toCharArray(),
+                                            seed));
+        }
+    }
+
+    @Test
     void policyRejectsInvalidTotpParameters() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -56,5 +78,25 @@ class DefaultMfaSecretGeneratorTest {
         AtomicReference<String> value = new AtomicReference<>("");
         buffer.copyChars(chars -> value.set(new String(chars)));
         return value.get();
+    }
+
+    private static final class FixedSecureRandom extends SecureRandom {
+
+        private final byte[] values;
+
+        private FixedSecureRandom(byte[] values) {
+            this.values = values.clone();
+        }
+
+        @Override
+        public void nextBytes(byte[] bytes) {
+            assertEquals(values.length, bytes.length);
+            System.arraycopy(values, 0, bytes, 0, values.length);
+        }
+
+        @Override
+        public String toString() {
+            return "FixedSecureRandom(<redacted>)";
+        }
     }
 }

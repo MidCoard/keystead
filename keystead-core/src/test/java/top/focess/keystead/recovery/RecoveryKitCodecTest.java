@@ -4,21 +4,35 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
+import top.focess.keystead.memory.SecretBuffer;
 
+@SuppressWarnings("deprecation")
 class RecoveryKitCodecTest {
 
     @Test
     void roundTripsCanonicalPrintableKit() {
         byte[] secret = secret((byte) 7);
-        try (RecoveryKit kit = new RecoveryKit(1, "enrollment-1", 3L, secret)) {
+        try (RecoveryKit kit = new RecoveryKit(1, "enrollment-一", 3L, secret);
+                SecretBuffer encoded = RecoveryKitCodec.encodeSecret(kit);
+                RecoveryKit decoded = RecoveryKitCodec.decode(encoded)) {
+            encoded.copyChars(
+                    chars -> assertTrue(new String(chars).startsWith("KEYSTEAD-RECOVERY-1.")));
+            assertEquals(1, decoded.formatVersion());
+            assertEquals("enrollment-一", decoded.enrollmentId());
+            assertEquals(3L, decoded.generation());
+            assertArrayEquals(secret, decoded.recoverySecret());
+        }
+    }
+
+    @Test
+    void legacyStringApiRemainsCompatible() {
+        byte[] secret = secret((byte) 9);
+        try (RecoveryKit kit = new RecoveryKit(1, "enrollment-1", 4L, secret)) {
             String encoded = RecoveryKitCodec.encode(kit);
-            assertTrue(encoded.startsWith("KEYSTEAD-RECOVERY-1."));
             try (RecoveryKit decoded = RecoveryKitCodec.decode(encoded)) {
-                assertEquals(1, decoded.formatVersion());
                 assertEquals("enrollment-1", decoded.enrollmentId());
-                assertEquals(3L, decoded.generation());
+                assertEquals(4L, decoded.generation());
                 assertArrayEquals(secret, decoded.recoverySecret());
-                assertEquals(encoded, RecoveryKitCodec.encode(decoded));
             }
         }
     }

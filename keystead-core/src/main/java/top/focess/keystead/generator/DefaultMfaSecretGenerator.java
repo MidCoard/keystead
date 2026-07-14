@@ -45,22 +45,22 @@ public final class DefaultMfaSecretGenerator implements MfaSecretGenerator {
     }
 
     private char @NonNull [] base32(byte @NonNull [] secret) {
-        StringBuilder builder = new StringBuilder((secret.length * 8 + 4) / 5);
+        int outputLength = (secret.length * 8 + 4) / 5;
+        char[] output = new char[outputLength];
+        int outputIndex = 0;
         int buffer = 0;
         int bitsLeft = 0;
         for (byte value : secret) {
             buffer = (buffer << 8) | (value & 0xff);
             bitsLeft += 8;
             while (bitsLeft >= 5) {
-                builder.append(BASE32[(buffer >> (bitsLeft - 5)) & 0x1f]);
+                output[outputIndex++] = BASE32[(buffer >> (bitsLeft - 5)) & 0x1f];
                 bitsLeft -= 5;
             }
         }
         if (bitsLeft > 0) {
-            builder.append(BASE32[(buffer << (5 - bitsLeft)) & 0x1f]);
+            output[outputIndex] = BASE32[(buffer << (5 - bitsLeft)) & 0x1f];
         }
-        char[] output = new char[builder.length()];
-        builder.getChars(0, builder.length(), output, 0);
         return output;
     }
 

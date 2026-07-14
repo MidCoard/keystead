@@ -25,6 +25,8 @@ import org.bouncycastle.openpgp.operator.jcajce.JcaPGPKeyPair;
 import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyEncryptorBuilder;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.SecretMemoryProvider;
+import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 
 public final class DefaultGpgKeyGenerator implements GpgKeyGenerator {
 
@@ -106,16 +108,11 @@ public final class DefaultGpgKeyGenerator implements GpgKeyGenerator {
 
     private @NonNull SecretBuffer armoredPrivateKey(@NonNull PGPKeyRingGenerator ringGenerator)
             throws IOException {
-        byte[] bytes;
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        try (ArmoredOutputStream armor = ArmoredOutputStream.builder().build(output)) {
-            ringGenerator.generateSecretKeyRing().encode(armor);
-        }
-        bytes = output.toByteArray();
-        try {
-            return SecretBuffer.fromUtf8(bytes);
-        } finally {
-            Arrays.fill(bytes, (byte) 0);
+        try (WipeableByteArrayOutputStream output = new WipeableByteArrayOutputStream()) {
+            try (ArmoredOutputStream armor = ArmoredOutputStream.builder().build(output)) {
+                ringGenerator.generateSecretKeyRing().encode(armor);
+            }
+            return output.toSecretBuffer(SecretMemoryProvider.heap());
         }
     }
 
