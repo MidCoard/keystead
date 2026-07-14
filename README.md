@@ -157,14 +157,50 @@ rows. Device wrapping uses an approved Tink ECIES P-256 package format.
 These are format and implementation choices, not a claim that one fixed KDF
 cost is ideal for every deployment. Applications should treat algorithm
 registry changes and KDF upgrades as migrations, benchmark parameters for their
-target hardware, and retain compatibility tests for existing vaults.
+target hardware, and retain compatibility tests for existing vaults. A new
+password KDF requires an explicitly registered `PasswordKeyDerivation`
+provider, canonical parameters in the vault header, and migration and
+compatibility tests for both existing and new headers. Unknown algorithms and
+unsupported parameters fail closed; Core does not fall back to another KDF.
 
 Key material is represented by owned objects such as `VaultKey`,
 `DeviceKeyPair`, and `SecretBuffer`. They copy caller data at boundaries,
 redact `toString()`, reject use after destruction, and wipe owned arrays when
-closed. The JVM cannot guarantee that every transient copy is erased, so the
-library minimizes ownership and lifetime rather than promising impossible
-perfect memory erasure.
+closed. `SecretBuffer` is a provider-backed facade. Its default provider owns a
+wiped heap array; applications can explicitly inject another
+`SecretMemoryProvider`, leaving a seam for a future optional native
+locked-memory provider without changing the public secret APIs. No such native
+provider is currently included.
+
+Wiping reduces the lifetime of Keystead-owned copies, but it is not a guarantee
+of perfect erasure. It cannot defeat a debugger, an injected agent, a
+privileged process reader, copying garbage collection, JIT or native
+temporaries, or a copy owned by a cryptographic or memory provider. Native page
+locking through facilities such as `VirtualLock` or `mlock` would prevent those
+pages from being paged to disk; it would not prevent a live-memory attacker
+from reading them.
+
+Recovery-kit material follows the same ownership model. New code should use
+`RecoveryKitCodec.encodeSecret(RecoveryKit)` and
+`RecoveryKitCodec.decode(SecretBuffer)` so the complete encoded kit remains in
+mutable, closeable storage. The compatibility `String` encoder and decoder are
+deprecated because an immutable secret `String` remains visible in JVM heap
+dumps and cannot be wiped deterministically.
+
+Core enforces resource ceilings at untrusted file, envelope, package, sync, and
+KDF boundaries:
+
+| Input | Maximum |
+| --- | ---: |
+| Stored properties file | 1,048,576 bytes |
+| Encrypted-envelope ciphertext | 1,048,576 bytes |
+| Encrypted-envelope authenticated data (AAD) | 65,536 bytes |
+| Encoded sync profile | 2,097,152 characters |
+| Encoded sync envelope | 2,097,152 characters |
+| Wrapped device or recovery vault-key package | 1,048,576 bytes |
+| Password-KDF salt | 64 bytes |
+| PBKDF2 iterations | 10,000,000 |
+| Canonical KDF parameters | 16 entries; printable ASCII names of at most 64 characters; positive integer values no greater than `Integer.MAX_VALUE` |
 
 ## Synchronization model
 
@@ -278,7 +314,7 @@ Requires JDK 21.
 ./gradlew :keystead-core:spotlessCheck
 ```
 
-On Windows, use `gradlew.bat`. The current complete suite contains 241 tests.
+On Windows, use `gradlew.bat`.
 
 ## Engineering assessment
 
