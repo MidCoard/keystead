@@ -145,6 +145,47 @@ class VaultHandleConcurrencyTest {
         }
     }
 
+    @Test
+    void preparedWrapWaitsForParentLifecycleMonitor() {
+        DefaultCryptoService crypto = new DefaultCryptoService();
+        DefaultVaultService service =
+                new DefaultVaultService(new FileVaultStore(tempDir.resolve("wrap-close")), CLOCK);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
+                VaultHandle source =
+                        service.createVault(new CreateVaultRequest(VAULT_ID), masterPassword());
+                PreparedVaultKeyRotation prepared = source.prepareVaultKeyRotation()) {
+            assertTimeoutPreemptively(
+                    Duration.ofSeconds(5),
+                    () -> {
+                        CountDownLatch wrapAttempted = new CountDownLatch(1);
+                        AtomicReference<Thread> wrapWorker = new AtomicReference<>();
+                        Future<DeviceVaultKeyPackage> wrap;
+                        synchronized (source) {
+                            wrap =
+                                    executor.submit(
+                                            () -> {
+                                                wrapWorker.set(Thread.currentThread());
+                                                wrapAttempted.countDown();
+                                                return prepared.wrapVaultKeyPackageForDevice(
+                                                        device.publicKey(), CONTEXT);
+                                            });
+                            assertTrue(wrapAttempted.await(2, TimeUnit.SECONDS));
+                            awaitBlockedOrDone(wrap, wrapWorker.get());
+                            assertFalse(
+                                    wrap.isDone(),
+                                    "prepared wrap bypassed the parent lifecycle monitor");
+                        }
+                        assertTrue(
+                                prepared.targetVaultKeyId()
+                                        .equals(wrap.get(2, TimeUnit.SECONDS).vaultKeyId()));
+                    });
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
     private static SecretId saveBlockedLogin(
             VaultHandle source, CountDownLatch callbackEntered, CountDownLatch releaseCallback) {
         try (SecretBuffer password = SecretBuffer.fromChars("concurrent-password".toCharArray())) {

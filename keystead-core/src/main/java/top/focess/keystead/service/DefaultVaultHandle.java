@@ -837,33 +837,35 @@ final class DefaultVaultHandle implements VaultHandle {
                 byte @NonNull [] publicKey, byte @NonNull [] context) {
             Objects.requireNonNull(publicKey, "publicKey");
             Objects.requireNonNull(context, "context");
-            requirePreparedOpen();
-            DeviceVaultKeyPackage keyPackage =
-                    new DeviceVaultKeyPackage(
-                            targetKey.keyId(),
-                            DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
-                            crypto.wrapVaultKeyForDevice(targetKey, publicKey, context));
-            acceptedPackageFingerprints.add(packageFingerprint(keyPackage));
-            return keyPackage;
+            synchronized (DefaultVaultHandle.this) {
+                requirePreparedOpen();
+                DeviceVaultKeyPackage keyPackage =
+                        new DeviceVaultKeyPackage(
+                                targetKey.keyId(),
+                                DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
+                                crypto.wrapVaultKeyForDevice(targetKey, publicKey, context));
+                acceptedPackageFingerprints.add(packageFingerprint(keyPackage));
+                return keyPackage;
+            }
         }
 
         @Override
         public synchronized @NonNull VaultHandle commitWithDevicePackage(
                 @NonNull DeviceVaultKeyPackage localPackage) {
             Objects.requireNonNull(localPackage, "localPackage");
-            requirePreparedOpen();
-            if (!targetKey.keyId().equals(localPackage.vaultKeyId())
-                    || !DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM.equals(
-                            localPackage.keyAlgorithm())
-                    || !acceptedPackageFingerprints.contains(packageFingerprint(localPackage))) {
-                throw new ValidationException(
-                        "Local device package was not produced by this rotation");
-            }
+            synchronized (DefaultVaultHandle.this) {
+                requirePreparedOpen();
+                if (!targetKey.keyId().equals(localPackage.vaultKeyId())
+                        || !DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM.equals(
+                                localPackage.keyAlgorithm())
+                        || !acceptedPackageFingerprints.contains(
+                                packageFingerprint(localPackage))) {
+                    throw new ValidationException(
+                            "Local device package was not produced by this rotation");
+                }
 
-            byte[] wrapped = localPackage.encryptedVaultKey();
-            try {
-                synchronized (DefaultVaultHandle.this) {
-                    requireOpen();
+                byte[] wrapped = localPackage.encryptedVaultKey();
+                try {
                     Instant now = clock.instant();
                     store.commitVaultKeyRotation(
                             new VaultKeyRotation(
@@ -879,12 +881,14 @@ final class DefaultVaultHandle implements VaultHandle {
                                             now),
                                     rotatedRecords));
                     completePreparedRotation();
+                    DefaultVaultHandle rotated =
+                            new DefaultVaultHandle(vaultId, targetKey, store, crypto, clock);
                     committed = true;
                     targetTransferred = true;
-                    return new DefaultVaultHandle(vaultId, targetKey, store, crypto, clock);
+                    return rotated;
+                } finally {
+                    wipe(wrapped);
                 }
-            } finally {
-                wipe(wrapped);
             }
         }
 
