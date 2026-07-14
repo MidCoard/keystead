@@ -9,6 +9,7 @@ import com.google.crypto.tink.KeysetHandle;
 import com.google.crypto.tink.hybrid.HybridConfig;
 import com.google.crypto.tink.hybrid.HybridKeyTemplates;
 import java.io.ByteArrayOutputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -23,6 +24,7 @@ import javax.crypto.spec.PBEKeySpec;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretMemoryProvider;
+import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.KeyId;
 
@@ -345,9 +347,16 @@ public final class DefaultCryptoService {
     }
 
     private static byte @NonNull [] writePrivateKeyset(@NonNull KeysetHandle handle) {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        try {
-            CleartextKeysetHandle.write(handle, JsonKeysetWriter.withOutputStream(output));
+        try (WipeableByteArrayOutputStream output = new WipeableByteArrayOutputStream()) {
+            FilterOutputStream nonClosingOutput =
+                    new FilterOutputStream(output) {
+                        @Override
+                        public void close() throws IOException {
+                            flush();
+                        }
+                    };
+            CleartextKeysetHandle.write(
+                    handle, JsonKeysetWriter.withOutputStream(nonClosingOutput));
             return output.toByteArray();
         } catch (IOException e) {
             throw new CryptoException("Could not serialize private device key", e);

@@ -95,6 +95,95 @@ class SecretBufferTest {
     }
 
     @Test
+    void supplementaryCharactersRoundTripThroughUtf8() {
+        char[] input = new char[] {'A', '\uD83D', '\uDD10', 'Z'};
+        char[] expected = input.clone();
+
+        try (SecretBuffer buffer = SecretBuffer.fromChars(input)) {
+            buffer.copyChars(chars -> assertArrayEquals(expected, chars));
+            assertArrayEquals(expected, input);
+        } finally {
+            Arrays.fill(input, '\0');
+            Arrays.fill(expected, '\0');
+        }
+    }
+
+    @Test
+    void malformedCharactersAreRejectedWithoutChangingCallerInput() {
+        char[] input = new char[] {'s', '\uD800', 'x'};
+        char[] expected = input.clone();
+
+        IllegalArgumentException error =
+                assertThrows(IllegalArgumentException.class, () -> SecretBuffer.fromChars(input));
+
+        assertEquals("Secret characters could not be encoded", error.getMessage());
+        assertArrayEquals(expected, input);
+        Arrays.fill(input, '\0');
+        Arrays.fill(expected, '\0');
+    }
+
+    @Test
+    void malformedUtf8IsRejectedWithoutChangingCallerInput() {
+        byte[] input = new byte[] {(byte) 0xc3, 0x28};
+        byte[] expected = input.clone();
+
+        try (SecretBuffer buffer = SecretBuffer.fromUtf8(input)) {
+            IllegalStateException error =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> buffer.copyChars(chars -> fail("malformed bytes decoded")));
+            assertEquals("Secret bytes could not be decoded", error.getMessage());
+            assertArrayEquals(expected, input);
+        } finally {
+            Arrays.fill(input, (byte) 0);
+            Arrays.fill(expected, (byte) 0);
+        }
+    }
+
+    @Test
+    void throwingProviderReceivesAnExactOutputThatIsWiped() {
+        char[] input = new char[] {'A', '\uD83D', '\uDD10', 'Z'};
+        char[] expected = input.clone();
+        AtomicReference<byte[]> received = new AtomicReference<>();
+        AssertionError failure = new AssertionError("provider failure");
+        SecretMemoryProvider provider =
+                value -> {
+                    received.set(value);
+                    throw failure;
+                };
+
+        assertSame(
+                failure,
+                assertThrows(AssertionError.class, () -> SecretBuffer.fromChars(input, provider)));
+
+        assertEquals(6, received.get().length);
+        assertArrayEquals(new byte[6], received.get());
+        assertArrayEquals(expected, input);
+        Arrays.fill(input, '\0');
+        Arrays.fill(expected, '\0');
+    }
+
+    @Test
+    void throwingCharacterConsumerReceivesAWorkingCopyThatIsWiped() {
+        AtomicReference<char[]> received = new AtomicReference<>();
+        AssertionError failure = new AssertionError("consumer failure");
+        try (SecretBuffer buffer =
+                SecretBuffer.fromChars(new char[] {'s', 'e', 'c', 'r', 'e', 't'})) {
+            assertSame(
+                    failure,
+                    assertThrows(
+                            AssertionError.class,
+                            () ->
+                                    buffer.copyChars(
+                                            chars -> {
+                                                received.set(chars);
+                                                throw failure;
+                                            })));
+            assertArrayEquals(new char[6], received.get());
+        }
+    }
+
+    @Test
     void closeWaitsForInFlightCallback() throws Exception {
         SecretBuffer buffer = SecretBuffer.fromUtf8("secret".getBytes(StandardCharsets.UTF_8));
         CountDownLatch entered = new CountDownLatch(1);
