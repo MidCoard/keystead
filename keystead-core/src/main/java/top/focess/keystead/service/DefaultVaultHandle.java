@@ -862,24 +862,27 @@ final class DefaultVaultHandle implements VaultHandle {
 
             byte[] wrapped = localPackage.encryptedVaultKey();
             try {
-                Instant now = clock.instant();
-                store.commitVaultKeyRotation(
-                        new VaultKeyRotation(
-                                new VaultHeader(
-                                        vaultId,
-                                        previousHeader.formatVersion(),
-                                        localPackage.keyAlgorithm(),
-                                        new byte[0],
-                                        1,
-                                        targetKey.keyId(),
-                                        wrapped,
-                                        previousHeader.createdAt(),
-                                        now),
-                                rotatedRecords));
-                completePreparedRotation();
-                committed = true;
-                targetTransferred = true;
-                return new DefaultVaultHandle(vaultId, targetKey, store, crypto, clock);
+                synchronized (DefaultVaultHandle.this) {
+                    requireOpen();
+                    Instant now = clock.instant();
+                    store.commitVaultKeyRotation(
+                            new VaultKeyRotation(
+                                    new VaultHeader(
+                                            vaultId,
+                                            previousHeader.formatVersion(),
+                                            localPackage.keyAlgorithm(),
+                                            new byte[0],
+                                            1,
+                                            targetKey.keyId(),
+                                            wrapped,
+                                            previousHeader.createdAt(),
+                                            now),
+                                    rotatedRecords));
+                    completePreparedRotation();
+                    committed = true;
+                    targetTransferred = true;
+                    return new DefaultVaultHandle(vaultId, targetKey, store, crypto, clock);
+                }
             } finally {
                 wipe(wrapped);
             }
