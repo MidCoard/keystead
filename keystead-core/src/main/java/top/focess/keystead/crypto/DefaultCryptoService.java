@@ -22,6 +22,7 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.KeyId;
 
@@ -38,6 +39,7 @@ public final class DefaultCryptoService {
 
     private final SecureRandom random;
     private final AeadCipher aeadCipher;
+    private final SecretMemoryProvider memoryProvider;
     private final Map<String, AeadCipher> aeadCiphers;
 
     public DefaultCryptoService() {
@@ -49,8 +51,16 @@ public final class DefaultCryptoService {
     }
 
     public DefaultCryptoService(@NonNull SecureRandom random, @NonNull AeadCipher aeadCipher) {
+        this(random, aeadCipher, SecretMemoryProvider.heap());
+    }
+
+    public DefaultCryptoService(
+            @NonNull SecureRandom random,
+            @NonNull AeadCipher aeadCipher,
+            @NonNull SecretMemoryProvider memoryProvider) {
         this.random = Objects.requireNonNull(random, "random");
         this.aeadCipher = Objects.requireNonNull(aeadCipher, "aeadCipher");
+        this.memoryProvider = Objects.requireNonNull(memoryProvider, "memoryProvider");
         this.aeadCiphers = aeadCiphers(aeadCipher);
     }
 
@@ -58,7 +68,7 @@ public final class DefaultCryptoService {
         byte[] keyBytes = new byte[KEY_BYTES];
         random.nextBytes(keyBytes);
         try {
-            return new VaultKey(keyId, keyBytes);
+            return new VaultKey(keyId, keyBytes, memoryProvider);
         } finally {
             Arrays.fill(keyBytes, (byte) 0);
         }
@@ -80,7 +90,8 @@ public final class DefaultCryptoService {
             byte[] publicKey = writePublicKeyset(publicHandle);
             byte[] privateKey = writePrivateKeyset(privateHandle);
             try {
-                return new DeviceKeyPair(DEVICE_KEY_ALGORITHM, publicKey, privateKey);
+                return new DeviceKeyPair(
+                        DEVICE_KEY_ALGORITHM, publicKey, privateKey, memoryProvider);
             } finally {
                 Arrays.fill(publicKey, (byte) 0);
                 Arrays.fill(privateKey, (byte) 0);
@@ -203,7 +214,7 @@ public final class DefaultCryptoService {
         byte @Nullable [] opened = null;
         try {
             opened = aeadCipher.decrypt(wrappingKey, nonce, ciphertext, wrappingAad(keyId));
-            return new VaultKey(keyId, opened);
+            return new VaultKey(keyId, opened, memoryProvider);
         } finally {
             Arrays.fill(wrappingKey, (byte) 0);
             Arrays.fill(nonce, (byte) 0);
@@ -248,7 +259,7 @@ public final class DefaultCryptoService {
                     CleartextKeysetHandle.read(JsonKeysetReader.withBytes(devicePrivateKey));
             HybridDecrypt decrypt = privateHandle.getPrimitive(HybridDecrypt.class);
             opened = decrypt.decrypt(encryptedVaultKey, context);
-            return new VaultKey(keyId, opened);
+            return new VaultKey(keyId, opened, memoryProvider);
         } catch (GeneralSecurityException | IOException e) {
             throw new CryptoException("Could not unwrap device vault key package", e);
         } finally {

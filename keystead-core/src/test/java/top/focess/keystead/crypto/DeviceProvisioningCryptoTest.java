@@ -79,7 +79,10 @@ class DeviceProvisioningCryptoTest {
         try {
             Field field = DeviceKeyPair.class.getDeclaredField("privateKey");
             field.setAccessible(true);
-            return ((byte[]) field.get(device)).clone();
+            Object memory = field.get(device);
+            Field bytesField = memory.getClass().getDeclaredField("bytes");
+            bytesField.setAccessible(true);
+            return ((byte[]) bytesField.get(memory)).clone();
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }

@@ -1,21 +1,34 @@
 package top.focess.keystead.crypto;
 
-import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
+import top.focess.keystead.memory.SecretDestroyedException;
+import top.focess.keystead.memory.SecretMemory;
+import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.model.KeyId;
 
 public final class VaultKey implements AutoCloseable {
 
     private final KeyId keyId;
-    private final byte[] keyBytes;
-    private boolean closed;
+    private final SecretMemory keyBytes;
+    private final int keyBytesLength;
 
     VaultKey(@NonNull KeyId keyId, byte @NonNull [] keyBytes) {
+        this(keyId, keyBytes, SecretMemoryProvider.heap());
+    }
+
+    VaultKey(
+            @NonNull KeyId keyId,
+            byte @NonNull [] keyBytes,
+            @NonNull SecretMemoryProvider memoryProvider) {
         this.keyId = Objects.requireNonNull(keyId, "keyId");
+        Objects.requireNonNull(keyBytes, "keyBytes");
+        this.keyBytesLength = keyBytes.length;
         this.keyBytes =
-                Arrays.copyOf(Objects.requireNonNull(keyBytes, "keyBytes"), keyBytes.length);
+                Objects.requireNonNull(
+                        Objects.requireNonNull(memoryProvider, "memoryProvider").protect(keyBytes),
+                        "protected memory");
     }
 
     public @NonNull KeyId keyId() {
@@ -23,37 +36,25 @@ public final class VaultKey implements AutoCloseable {
     }
 
     public boolean isClosed() {
-        return closed;
+        return keyBytes.isClosed();
     }
 
     public void copyBytes(@NonNull Consumer<byte[]> consumer) {
-        Objects.requireNonNull(consumer, "consumer");
-        requireOpen();
-        byte[] copy = Arrays.copyOf(keyBytes, keyBytes.length);
         try {
-            consumer.accept(copy);
-        } finally {
-            Arrays.fill(copy, (byte) 0);
+            keyBytes.copyBytes(Objects.requireNonNull(consumer, "consumer"));
+        } catch (SecretDestroyedException e) {
+            throw new SecretKeyDestroyedException();
         }
     }
 
     @Override
     public void close() {
-        if (!closed) {
-            Arrays.fill(keyBytes, (byte) 0);
-            closed = true;
-        }
+        keyBytes.close();
     }
 
     @Override
     public @NonNull String toString() {
         return "VaultKey[keyId=%s, keyBytes=[REDACTED %d bytes], closed=%s]"
-                .formatted(keyId, keyBytes.length, closed);
-    }
-
-    private void requireOpen() {
-        if (closed) {
-            throw new SecretKeyDestroyedException();
-        }
+                .formatted(keyId, keyBytesLength, isClosed());
     }
 }
