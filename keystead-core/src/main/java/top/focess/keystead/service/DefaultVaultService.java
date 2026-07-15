@@ -26,6 +26,7 @@ public final class DefaultVaultService implements VaultService {
     private final VaultStore store;
     private final DefaultCryptoService crypto;
     private final Clock clock;
+    private final VaultHandleFactory handleFactory;
 
     public DefaultVaultService(@NonNull VaultStore store) {
         this(store, Clock.systemUTC());
@@ -37,9 +38,18 @@ public final class DefaultVaultService implements VaultService {
 
     public DefaultVaultService(
             @NonNull VaultStore store, @NonNull DefaultCryptoService crypto, @NonNull Clock clock) {
+        this(store, crypto, clock, DefaultVaultHandle::new);
+    }
+
+    DefaultVaultService(
+            @NonNull VaultStore store,
+            @NonNull DefaultCryptoService crypto,
+            @NonNull Clock clock,
+            @NonNull VaultHandleFactory handleFactory) {
         this.store = Objects.requireNonNull(store, "store");
         this.crypto = Objects.requireNonNull(crypto, "crypto");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.handleFactory = Objects.requireNonNull(handleFactory, "handleFactory");
     }
 
     @Override
@@ -51,9 +61,11 @@ public final class DefaultVaultService implements VaultService {
         VaultId vaultId = request.vaultId();
         KeyId keyId = new KeyId("vault-key-" + vaultId.value());
         VaultKey vaultKey = crypto.generateVaultKey(keyId);
-        byte[] salt = crypto.randomSalt();
-        byte[] wrappedVaultKey = null;
+        byte @Nullable [] salt = null;
+        byte @Nullable [] wrappedVaultKey = null;
+        boolean transferred = false;
         try {
+            salt = crypto.randomSalt();
             wrappedVaultKey =
                     crypto.wrapVaultKey(
                             vaultKey,
@@ -72,11 +84,16 @@ public final class DefaultVaultService implements VaultService {
                             wrappedVaultKey,
                             now,
                             now));
-            return new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
-        } catch (RuntimeException e) {
-            vaultKey.close();
-            throw e;
+            VaultHandle handle =
+                    Objects.requireNonNull(
+                            handleFactory.create(vaultId, vaultKey, store, crypto, clock),
+                            "vault handle");
+            transferred = true;
+            return handle;
         } finally {
+            if (!transferred) {
+                vaultKey.close();
+            }
             wipe(salt);
             wipe(wrappedVaultKey);
         }
@@ -100,7 +117,19 @@ public final class DefaultVaultService implements VaultService {
                         header.wrappedVaultKey(),
                         masterPassword,
                         header.kdfParameters());
-        return new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
+        boolean transferred = false;
+        try {
+            VaultHandle handle =
+                    Objects.requireNonNull(
+                            handleFactory.create(vaultId, vaultKey, store, crypto, clock),
+                            "vault handle");
+            transferred = true;
+            return handle;
+        } finally {
+            if (!transferred) {
+                vaultKey.close();
+            }
+        }
     }
 
     @Override
@@ -120,12 +149,14 @@ public final class DefaultVaultService implements VaultService {
                         previous.wrappedVaultKey(),
                         masterPassword,
                         previous.kdfParameters());
-        KeyId nextKeyId =
-                new KeyId("vault-key-" + vaultId.value() + "-" + java.util.UUID.randomUUID());
-        VaultKey nextKey = crypto.generateVaultKey(nextKeyId);
-        byte[] wrapped = null;
-        List<top.focess.keystead.model.EncryptedSecretRecord> rotated = new ArrayList<>();
+        @Nullable VaultKey nextKey = null;
+        byte @Nullable [] wrapped = null;
+        boolean transferred = false;
         try {
+            KeyId nextKeyId =
+                    new KeyId("vault-key-" + vaultId.value() + "-" + java.util.UUID.randomUUID());
+            nextKey = crypto.generateVaultKey(nextKeyId);
+            List<top.focess.keystead.model.EncryptedSecretRecord> rotated = new ArrayList<>();
             for (top.focess.keystead.model.EncryptedSecretRecord record :
                     store.listSecretRecords(vaultId)) {
                 byte[] aad = SecretRecordAad.encode(vaultId, record.metadata(), record.revision());
@@ -157,11 +188,16 @@ public final class DefaultVaultService implements VaultService {
                                     now),
                             rotated));
             oldKey.close();
-            return new DefaultVaultHandle(vaultId, nextKey, store, crypto, clock);
-        } catch (RuntimeException e) {
-            nextKey.close();
-            throw e;
+            VaultHandle handle =
+                    Objects.requireNonNull(
+                            handleFactory.create(vaultId, nextKey, store, crypto, clock),
+                            "vault handle");
+            transferred = true;
+            return handle;
         } finally {
+            if (!transferred && nextKey != null) {
+                nextKey.close();
+            }
             oldKey.close();
             wipe(wrapped);
         }
@@ -255,7 +291,10 @@ public final class DefaultVaultService implements VaultService {
                             encryptedVaultKey,
                             createdAt,
                             now));
-            VaultHandle handle = new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
+            VaultHandle handle =
+                    Objects.requireNonNull(
+                            handleFactory.create(vaultId, vaultKey, store, crypto, clock),
+                            "vault handle");
             transferred = true;
             return handle;
         } finally {
@@ -281,7 +320,19 @@ public final class DefaultVaultService implements VaultService {
         VaultKey vaultKey =
                 crypto.unwrapVaultKeyFromDevicePackage(
                         header.vaultKeyId(), header.wrappedVaultKey(), devicePrivateKey, context);
-        return new DefaultVaultHandle(vaultId, vaultKey, store, crypto, clock);
+        boolean transferred = false;
+        try {
+            VaultHandle handle =
+                    Objects.requireNonNull(
+                            handleFactory.create(vaultId, vaultKey, store, crypto, clock),
+                            "vault handle");
+            transferred = true;
+            return handle;
+        } finally {
+            if (!transferred) {
+                vaultKey.close();
+            }
+        }
     }
 
     private @NonNull KeyId defaultVaultKeyId(@NonNull VaultId vaultId) {
@@ -292,5 +343,16 @@ public final class DefaultVaultService implements VaultService {
         if (value != null) {
             java.util.Arrays.fill(value, (byte) 0);
         }
+    }
+
+    @FunctionalInterface
+    interface VaultHandleFactory {
+
+        @NonNull VaultHandle create(
+                @NonNull VaultId vaultId,
+                @NonNull VaultKey vaultKey,
+                @NonNull VaultStore store,
+                @NonNull DefaultCryptoService crypto,
+                @NonNull Clock clock);
     }
 }

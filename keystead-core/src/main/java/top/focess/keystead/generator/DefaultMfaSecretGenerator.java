@@ -7,19 +7,31 @@ import java.util.Arrays;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.SecretMemoryProvider;
 
 public final class DefaultMfaSecretGenerator implements MfaSecretGenerator {
 
     private static final char[] BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".toCharArray();
 
     private final SecureRandom random;
+    private final SecretMemoryProvider memoryProvider;
+    private final MfaSecretFactory secretFactory;
 
     public DefaultMfaSecretGenerator() {
         this(new SecureRandom());
     }
 
     public DefaultMfaSecretGenerator(@NonNull SecureRandom random) {
+        this(random, SecretMemoryProvider.heap(), MfaSecret::new);
+    }
+
+    DefaultMfaSecretGenerator(
+            @NonNull SecureRandom random,
+            @NonNull SecretMemoryProvider memoryProvider,
+            @NonNull MfaSecretFactory secretFactory) {
         this.random = Objects.requireNonNull(random, "random");
+        this.memoryProvider = Objects.requireNonNull(memoryProvider, "memoryProvider");
+        this.secretFactory = Objects.requireNonNull(secretFactory, "secretFactory");
     }
 
     @Override
@@ -28,12 +40,29 @@ public final class DefaultMfaSecretGenerator implements MfaSecretGenerator {
         byte[] secret = new byte[policy.secretBytes()];
         char[] seed = null;
         char[] uri = null;
+        SecretBuffer seedBuffer = null;
+        SecretBuffer uriBuffer = null;
+        boolean transferred = false;
         try {
             random.nextBytes(secret);
             seed = base32(secret);
             uri = otpauthUri(policy, seed);
-            return new MfaSecret(SecretBuffer.fromChars(seed), SecretBuffer.fromChars(uri));
+            seedBuffer = SecretBuffer.fromChars(seed, memoryProvider);
+            uriBuffer = SecretBuffer.fromChars(uri, memoryProvider);
+            MfaSecret result =
+                    Objects.requireNonNull(
+                            secretFactory.create(seedBuffer, uriBuffer), "MFA secret");
+            transferred = true;
+            return result;
         } finally {
+            if (!transferred) {
+                if (uriBuffer != null) {
+                    uriBuffer.close();
+                }
+                if (seedBuffer != null) {
+                    seedBuffer.close();
+                }
+            }
             Arrays.fill(secret, (byte) 0);
             if (seed != null) {
                 Arrays.fill(seed, '\0');
@@ -42,6 +71,12 @@ public final class DefaultMfaSecretGenerator implements MfaSecretGenerator {
                 Arrays.fill(uri, '\0');
             }
         }
+    }
+
+    @FunctionalInterface
+    interface MfaSecretFactory {
+
+        @NonNull MfaSecret create(@NonNull SecretBuffer seed, @NonNull SecretBuffer otpauthUri);
     }
 
     private char @NonNull [] base32(byte @NonNull [] secret) {

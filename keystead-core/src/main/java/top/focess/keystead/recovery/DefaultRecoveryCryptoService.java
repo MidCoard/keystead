@@ -37,14 +37,23 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
 
     private final SecureRandom random;
     private final DefaultCryptoService crypto;
+    private final RecoveryEnrollmentMaterialFactory enrollmentMaterialFactory;
 
     public DefaultRecoveryCryptoService() {
         this(new SecureRandom());
     }
 
     public DefaultRecoveryCryptoService(@NonNull SecureRandom random) {
+        this(random, RecoveryEnrollmentMaterial::new);
+    }
+
+    DefaultRecoveryCryptoService(
+            @NonNull SecureRandom random,
+            @NonNull RecoveryEnrollmentMaterialFactory enrollmentMaterialFactory) {
         this.random = Objects.requireNonNull(random, "random");
         this.crypto = new DefaultCryptoService(random);
+        this.enrollmentMaterialFactory =
+                Objects.requireNonNull(enrollmentMaterialFactory, "enrollmentMaterialFactory");
     }
 
     @Override
@@ -61,6 +70,7 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
         byte @Nullable [] credential = null;
         byte @Nullable [] publicKeyBytes = null;
         byte @Nullable [] encryptedPrivateKey = null;
+        boolean transferred = false;
         try (DeviceKeyPair keyPair = crypto.generateDeviceKeyPair()) {
             credential = accountCredential(kit);
             publicKeyBytes = keyPair.publicKey();
@@ -75,16 +85,32 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
             RecoveryPublicKey publicKey =
                     new RecoveryPublicKey(
                             enrollmentId, generation, keyPair.keyAlgorithm(), publicKeyBytes);
-            return new RecoveryEnrollmentMaterial(kit, credential, publicKey, encryptedPrivateKey);
-        } catch (RuntimeException error) {
-            kit.close();
-            throw error;
+            RecoveryEnrollmentMaterial material =
+                    Objects.requireNonNull(
+                            enrollmentMaterialFactory.create(
+                                    kit, credential, publicKey, encryptedPrivateKey),
+                            "recovery enrollment material");
+            transferred = true;
+            return material;
         } finally {
+            if (!transferred) {
+                kit.close();
+            }
             wipe(secret);
             wipe(credential);
             wipe(publicKeyBytes);
             wipe(encryptedPrivateKey);
         }
+    }
+
+    @FunctionalInterface
+    interface RecoveryEnrollmentMaterialFactory {
+
+        @NonNull RecoveryEnrollmentMaterial create(
+                @NonNull RecoveryKit kit,
+                byte @NonNull [] accountCredential,
+                @NonNull RecoveryPublicKey publicKey,
+                byte @NonNull [] encryptedPrivateKey);
     }
 
     @Override

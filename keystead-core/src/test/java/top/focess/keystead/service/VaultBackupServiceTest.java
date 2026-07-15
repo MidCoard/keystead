@@ -138,6 +138,34 @@ class VaultBackupServiceTest {
     }
 
     @Test
+    void backupRecordAadOneByteOverLimitIsRejectedBeforeBase64DecoderAllocation() throws Exception {
+        byte[] archive =
+                archiveWithRecordProperties(
+                        properties ->
+                                properties.setProperty(
+                                        "envelope.aad",
+                                        Base64.getEncoder()
+                                                .encodeToString(
+                                                        new byte
+                                                                [SecurityLimits
+                                                                                .MAX_ENVELOPE_AAD_BYTES
+                                                                        + 1])));
+
+        BackupReadResult result =
+                BackupArchiveCodec.read(
+                        new ByteArrayInputStream(archive),
+                        (field, value) -> {
+                            if (field.equals("envelope.aad")) {
+                                throw new AssertionError("decoder must not run");
+                            }
+                            return Base64.getDecoder().decode(value);
+                        });
+
+        assertEquals(1, result.unsupported());
+        assertEquals(1, result.archive().records().size());
+    }
+
+    @Test
     void backupReaderRejectsSeventeenthCanonicalParameter() throws Exception {
         byte[] archive =
                 archiveWithVaultProperties(
@@ -853,6 +881,30 @@ class VaultBackupServiceTest {
                         replacement.toString(StandardCharsets.UTF_8));
         return addManifestDigest(
                 tampered, "entry.sha256.vault.properties", sha256(replacementBytes));
+    }
+
+    private byte[] archiveWithRecordProperties(@NonNull Consumer<Properties> mutation)
+            throws Exception {
+        FileVaultStore source = new FileVaultStore(tempDir.resolve(UUID.randomUUID().toString()));
+        source.saveVaultHeader(header());
+        source.saveSecretRecord(record(secretId(98L), "valid-record", 1L));
+        EncryptedSecretRecord record = record(secretId(99L), "record", 1L);
+        source.saveSecretRecord(record);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        backup.writeTo(backup.export(source, VAULT_ID), output);
+        String entryName = "records/" + record.metadata().id().value() + ".properties";
+        Properties properties = new Properties();
+        properties.load(new java.io.StringReader(zipEntryText(output.toByteArray(), entryName)));
+        mutation.accept(properties);
+        ByteArrayOutputStream replacement = new ByteArrayOutputStream();
+        properties.store(new java.io.OutputStreamWriter(replacement, StandardCharsets.UTF_8), null);
+        byte[] replacementBytes = replacement.toByteArray();
+        byte[] tampered =
+                replaceZipEntryText(
+                        output.toByteArray(),
+                        entryName,
+                        replacement.toString(StandardCharsets.UTF_8));
+        return addManifestDigest(tampered, "entry.sha256." + entryName, sha256(replacementBytes));
     }
 
     private static boolean hasMessage(@NonNull Throwable failure, @NonNull String fragment) {

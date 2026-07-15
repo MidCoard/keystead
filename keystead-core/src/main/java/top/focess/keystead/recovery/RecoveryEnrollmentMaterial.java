@@ -3,6 +3,7 @@ package top.focess.keystead.recovery;
 import java.util.Arrays;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /** Client-owned secret and public material created during recovery enrollment. */
 public final class RecoveryEnrollmentMaterial implements AutoCloseable {
@@ -21,10 +22,25 @@ public final class RecoveryEnrollmentMaterial implements AutoCloseable {
             byte @NonNull [] accountCredential,
             @NonNull RecoveryPublicKey publicKey,
             byte @NonNull [] encryptedPrivateKey) {
-        this.kit = Objects.requireNonNull(kit, "kit");
+        this(
+                kit,
+                accountCredential,
+                publicKey,
+                encryptedPrivateKey,
+                value -> Arrays.copyOf(value, value.length));
+    }
+
+    RecoveryEnrollmentMaterial(
+            @NonNull RecoveryKit kit,
+            byte @NonNull [] accountCredential,
+            @NonNull RecoveryPublicKey publicKey,
+            byte @NonNull [] encryptedPrivateKey,
+            @NonNull SecretArrayCopier arrayCopier) {
+        Objects.requireNonNull(kit, "kit");
         Objects.requireNonNull(accountCredential, "accountCredential");
-        this.publicKey = Objects.requireNonNull(publicKey, "publicKey");
+        Objects.requireNonNull(publicKey, "publicKey");
         Objects.requireNonNull(encryptedPrivateKey, "encryptedPrivateKey");
+        Objects.requireNonNull(arrayCopier, "arrayCopier");
         if (accountCredential.length != CREDENTIAL_BYTES) {
             throw new IllegalArgumentException("Account recovery credential must be 32 bytes");
         }
@@ -36,8 +52,32 @@ public final class RecoveryEnrollmentMaterial implements AutoCloseable {
                 || kit.generation() != publicKey.generation()) {
             throw new IllegalArgumentException("Recovery enrollment material does not match");
         }
-        this.accountCredential = Arrays.copyOf(accountCredential, accountCredential.length);
-        this.encryptedPrivateKey = Arrays.copyOf(encryptedPrivateKey, encryptedPrivateKey.length);
+        byte @Nullable [] credentialCopy = null;
+        byte @Nullable [] privateKeyCopy = null;
+        boolean completed = false;
+        try {
+            credentialCopy =
+                    Objects.requireNonNull(
+                            arrayCopier.copy(accountCredential), "account credential copy");
+            privateKeyCopy =
+                    Objects.requireNonNull(
+                            arrayCopier.copy(encryptedPrivateKey), "encrypted private-key copy");
+            this.kit = kit;
+            this.publicKey = publicKey;
+            this.accountCredential = credentialCopy;
+            this.encryptedPrivateKey = privateKeyCopy;
+            completed = true;
+        } finally {
+            if (!completed) {
+                if (credentialCopy != null) {
+                    Arrays.fill(credentialCopy, (byte) 0);
+                }
+                if (privateKeyCopy != null) {
+                    Arrays.fill(privateKeyCopy, (byte) 0);
+                }
+                kit.close();
+            }
+        }
     }
 
     public synchronized @NonNull RecoveryKit kit() {
@@ -82,5 +122,11 @@ public final class RecoveryEnrollmentMaterial implements AutoCloseable {
         if (closed) {
             throw new IllegalStateException("Recovery enrollment material is closed");
         }
+    }
+
+    @FunctionalInterface
+    interface SecretArrayCopier {
+
+        byte @NonNull [] copy(byte @NonNull [] value);
     }
 }

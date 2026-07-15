@@ -33,13 +33,24 @@ public final class DefaultGpgKeyGenerator implements GpgKeyGenerator {
     private static final String PROVIDER = BouncyCastleProvider.PROVIDER_NAME;
 
     private final SecureRandom random;
+    private final SecretMemoryProvider memoryProvider;
+    private final GpgKeyPairFactory keyPairFactory;
 
     public DefaultGpgKeyGenerator() {
         this(new SecureRandom());
     }
 
     public DefaultGpgKeyGenerator(@NonNull SecureRandom random) {
+        this(random, SecretMemoryProvider.heap(), GpgKeyPair::new);
+    }
+
+    DefaultGpgKeyGenerator(
+            @NonNull SecureRandom random,
+            @NonNull SecretMemoryProvider memoryProvider,
+            @NonNull GpgKeyPairFactory keyPairFactory) {
         this.random = Objects.requireNonNull(random, "random");
+        this.memoryProvider = Objects.requireNonNull(memoryProvider, "memoryProvider");
+        this.keyPairFactory = Objects.requireNonNull(keyPairFactory, "keyPairFactory");
         ensureProvider();
     }
 
@@ -78,8 +89,21 @@ public final class DefaultGpgKeyGenerator implements GpgKeyGenerator {
                                         .setProvider(PROVIDER)
                                         .setSecureRandom(random)
                                         .build(passphraseHolder[0]));
-                return new GpgKeyPair(
-                        armoredPublicKey(ringGenerator), armoredPrivateKey(ringGenerator));
+                SecretBuffer privateKey = null;
+                boolean transferred = false;
+                try {
+                    String publicKey = armoredPublicKey(ringGenerator);
+                    privateKey = armoredPrivateKey(ringGenerator);
+                    GpgKeyPair result =
+                            Objects.requireNonNull(
+                                    keyPairFactory.create(publicKey, privateKey), "GPG key pair");
+                    transferred = true;
+                    return result;
+                } finally {
+                    if (!transferred && privateKey != null) {
+                        privateKey.close();
+                    }
+                }
             } finally {
                 if (passphraseHolder[0] != null) {
                     Arrays.fill(passphraseHolder[0], '\0');
@@ -112,8 +136,14 @@ public final class DefaultGpgKeyGenerator implements GpgKeyGenerator {
             try (ArmoredOutputStream armor = ArmoredOutputStream.builder().build(output)) {
                 ringGenerator.generateSecretKeyRing().encode(armor);
             }
-            return output.toSecretBuffer(SecretMemoryProvider.heap());
+            return output.toSecretBuffer(memoryProvider);
         }
+    }
+
+    @FunctionalInterface
+    interface GpgKeyPairFactory {
+
+        @NonNull GpgKeyPair create(@NonNull String publicKey, @NonNull SecretBuffer privateKey);
     }
 
     private static void ensureProvider() {

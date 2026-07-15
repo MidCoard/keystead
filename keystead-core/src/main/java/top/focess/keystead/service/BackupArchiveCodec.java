@@ -88,6 +88,12 @@ final class BackupArchiveCodec {
     }
 
     static @NonNull BackupReadResult read(@NonNull InputStream input) {
+        return read(input, (field, value) -> Base64.getDecoder().decode(value));
+    }
+
+    static @NonNull BackupReadResult read(
+            @NonNull InputStream input, @NonNull Base64ValueDecoder base64Decoder) {
+        Objects.requireNonNull(base64Decoder, "base64Decoder");
         @Nullable BackupManifest manifest = null;
         @Nullable VaultHeader vaultHeader = null;
         List<EncryptedSecretRecord> records = new ArrayList<>();
@@ -140,9 +146,9 @@ final class BackupArchiveCodec {
             try {
                 Properties properties = toProperties(entry.bytes());
                 if (name.equals(VAULT_ENTRY)) {
-                    vaultHeader = readVault(properties);
+                    vaultHeader = readVault(properties, base64Decoder);
                 } else if (name.startsWith(RECORDS_PREFIX) && name.endsWith(PROPERTIES_SUFFIX)) {
-                    records.add(readRecord(properties));
+                    records.add(readRecord(properties, base64Decoder));
                 } else if (name.startsWith(DELETED_PREFIX) && name.endsWith(PROPERTIES_SUFFIX)) {
                     tombstones.add(readDeleted(properties));
                 }
@@ -319,13 +325,19 @@ final class BackupArchiveCodec {
         return properties;
     }
 
-    private static @NonNull VaultHeader readVault(@NonNull Properties properties) {
+    private static @NonNull VaultHeader readVault(
+            @NonNull Properties properties, @NonNull Base64ValueDecoder base64Decoder) {
         return new VaultHeader(
                 new VaultId(UUID.fromString(required(properties, "vaultId"))),
                 parseInt(properties, "formatVersion"),
                 readKdfParameters(properties),
                 new KeyId(required(properties, "vaultKeyId")),
-                bytes(properties, "wrappedVaultKey"),
+                boundedBytes(
+                        properties,
+                        "wrappedVaultKey",
+                        SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES,
+                        "Backup wrapped key package",
+                        base64Decoder),
                 Instant.parse(required(properties, "createdAt")),
                 Instant.parse(required(properties, "updatedAt")));
     }
@@ -414,7 +426,8 @@ final class BackupArchiveCodec {
         return properties;
     }
 
-    private static @NonNull EncryptedSecretRecord readRecord(@NonNull Properties properties) {
+    private static @NonNull EncryptedSecretRecord readRecord(
+            @NonNull Properties properties, @NonNull Base64ValueDecoder base64Decoder) {
         VaultId vaultId = new VaultId(UUID.fromString(required(properties, "vaultId")));
         SecretMetadata metadata =
                 new SecretMetadata(
@@ -434,9 +447,14 @@ final class BackupArchiveCodec {
                         parseInt(properties, "envelope.version"),
                         required(properties, "envelope.algorithm"),
                         new KeyId(required(properties, "envelope.keyId")),
-                        bytes(properties, "envelope.nonce"),
-                        envelopeAad(properties, vaultId, metadata, recordRevision),
-                        bytes(properties, "envelope.ciphertext"),
+                        bytes(properties, "envelope.nonce", base64Decoder),
+                        envelopeAad(properties, vaultId, metadata, recordRevision, base64Decoder),
+                        boundedBytes(
+                                properties,
+                                "envelope.ciphertext",
+                                SecurityLimits.MAX_ENVELOPE_CIPHERTEXT_BYTES,
+                                "Backup envelope ciphertext",
+                                base64Decoder),
                         Instant.parse(required(properties, "envelope.encryptedAt")));
         return new EncryptedSecretRecord(vaultId, metadata, envelope, recordRevision);
     }
@@ -445,10 +463,16 @@ final class BackupArchiveCodec {
             @NonNull Properties properties,
             @NonNull VaultId vaultId,
             @NonNull SecretMetadata metadata,
-            long recordRevision) {
+            long recordRevision,
+            @NonNull Base64ValueDecoder base64Decoder) {
         @Nullable String encoded = properties.getProperty("envelope.aad");
         if (encoded != null) {
-            return Base64.getDecoder().decode(encoded);
+            return boundedBytes(
+                    "envelope.aad",
+                    encoded,
+                    SecurityLimits.MAX_ENVELOPE_AAD_BYTES,
+                    "Backup envelope AAD",
+                    base64Decoder);
         }
         return SecretRecordAad.encode(vaultId, metadata, recordRevision);
     }
@@ -558,6 +582,71 @@ final class BackupArchiveCodec {
         return Base64.getDecoder().decode(required(properties, key));
     }
 
+    private static byte @NonNull [] bytes(
+            @NonNull Properties properties,
+            @NonNull String key,
+            @NonNull Base64ValueDecoder base64Decoder) {
+        return base64Decoder.decode(key, required(properties, key));
+    }
+
+    private static byte @NonNull [] boundedBytes(
+            @NonNull Properties properties,
+            @NonNull String key,
+            int maximumBytes,
+            @NonNull String label,
+            @NonNull Base64ValueDecoder base64Decoder) {
+        @NonNull String encoded = required(properties, key);
+        return boundedBytes(key, encoded, maximumBytes, label, base64Decoder);
+    }
+
+    private static byte @NonNull [] boundedBytes(
+            @NonNull String field,
+            @NonNull String encoded,
+            int maximumBytes,
+            @NonNull String label,
+            @NonNull Base64ValueDecoder base64Decoder) {
+        requireDecodedLength(encoded, maximumBytes, label);
+        byte[] decoded;
+        try {
+            decoded = base64Decoder.decode(field, encoded);
+        } catch (IllegalArgumentException e) {
+            throw new ValidationException(label + " is invalid");
+        }
+        if (decoded.length > maximumBytes) {
+            Arrays.fill(decoded, (byte) 0);
+            throw new ValidationException(label + " exceeds the size limit");
+        }
+        return decoded;
+    }
+
+    private static void requireDecodedLength(
+            @NonNull String encoded, int maximumBytes, @NonNull String label) {
+        int length = encoded.length();
+        int padding = 0;
+        while (padding < length && encoded.charAt(length - padding - 1) == '=') {
+            padding++;
+        }
+        if (padding > 2 || (padding > 0 && length % 4 != 0)) {
+            throw new ValidationException(label + " is invalid");
+        }
+        int dataLength = length - padding;
+        int firstPadding = encoded.indexOf('=');
+        if (firstPadding >= 0 && firstPadding < dataLength) {
+            throw new ValidationException(label + " is invalid");
+        }
+        int remainder = dataLength % 4;
+        if (remainder == 1
+                || (padding == 1 && remainder != 3)
+                || (padding == 2 && remainder != 2)) {
+            throw new ValidationException(label + " is invalid");
+        }
+        long decodedLength =
+                ((long) dataLength / 4) * 3 + (remainder == 2 ? 1 : remainder == 3 ? 2 : 0);
+        if (decodedLength > maximumBytes) {
+            throw new ValidationException(label + " exceeds the size limit");
+        }
+    }
+
     private static @NonNull String text(@NonNull Properties properties, @NonNull String key) {
         return text(required(properties, key));
     }
@@ -594,5 +683,11 @@ final class BackupArchiveCodec {
         public byte @NonNull [] bytes() {
             return Arrays.copyOf(bytes, bytes.length);
         }
+    }
+
+    @FunctionalInterface
+    interface Base64ValueDecoder {
+
+        byte @NonNull [] decode(@NonNull String field, @NonNull String value);
     }
 }

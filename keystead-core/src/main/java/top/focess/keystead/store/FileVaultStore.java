@@ -3,7 +3,6 @@ package top.focess.keystead.store;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
@@ -19,6 +18,7 @@ import java.util.stream.Collectors;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.crypto.KdfParameters;
+import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 import top.focess.keystead.model.*;
 
 public final class FileVaultStore implements VaultStore {
@@ -40,17 +40,29 @@ public final class FileVaultStore implements VaultStore {
     private final Path revisionPath;
     private final Path lockPath;
     private final FileDurability durability;
+    private final Base64ValueDecoder base64Decoder;
 
     public FileVaultStore(@NonNull Path vaultDirectory) {
-        this(vaultDirectory, FileVaultStore::forcePath);
+        this(
+                vaultDirectory,
+                FileVaultStore::forcePath,
+                (field, value) -> Base64.getDecoder().decode(value));
     }
 
     FileVaultStore(@NonNull Path vaultDirectory, @NonNull FileDurability durability) {
+        this(vaultDirectory, durability, (field, value) -> Base64.getDecoder().decode(value));
+    }
+
+    FileVaultStore(
+            @NonNull Path vaultDirectory,
+            @NonNull FileDurability durability,
+            @NonNull Base64ValueDecoder base64Decoder) {
         this.vaultDirectory =
                 Objects.requireNonNull(vaultDirectory, "vaultDirectory")
                         .toAbsolutePath()
                         .normalize();
         this.durability = Objects.requireNonNull(durability, "durability");
+        this.base64Decoder = Objects.requireNonNull(base64Decoder, "base64Decoder");
         this.secretsDirectory = this.vaultDirectory.resolve("secrets");
         this.deletedDirectory = this.vaultDirectory.resolve("deleted");
         this.revisionPath = this.vaultDirectory.resolve(REVISION_FILE);
@@ -252,7 +264,11 @@ public final class FileVaultStore implements VaultStore {
                         new KeyId(required(properties, "envelope.keyId")),
                         bytes(properties, "envelope.nonce"),
                         envelopeAad(properties, storedVaultId, metadata, recordRevision),
-                        bytes(properties, "envelope.ciphertext"),
+                        boundedBytes(
+                                properties,
+                                "envelope.ciphertext",
+                                SecurityLimits.MAX_ENVELOPE_CIPHERTEXT_BYTES,
+                                "Vault envelope ciphertext"),
                         Instant.parse(required(properties, "envelope.encryptedAt")));
         EncryptedSecretRecord record =
                 new EncryptedSecretRecord(storedVaultId, metadata, envelope, recordRevision);
@@ -440,7 +456,11 @@ public final class FileVaultStore implements VaultStore {
                         new KeyId(required(properties, "envelope.keyId")),
                         bytes(properties, "envelope.nonce"),
                         envelopeAad(properties, storedVaultId, metadata, recordRevision),
-                        bytes(properties, "envelope.ciphertext"),
+                        boundedBytes(
+                                properties,
+                                "envelope.ciphertext",
+                                SecurityLimits.MAX_ENVELOPE_CIPHERTEXT_BYTES,
+                                "Vault envelope ciphertext"),
                         Instant.parse(required(properties, "envelope.encryptedAt")));
         EncryptedSecretRecord record =
                 new EncryptedSecretRecord(storedVaultId, metadata, envelope, recordRevision);
@@ -454,7 +474,11 @@ public final class FileVaultStore implements VaultStore {
             long recordRevision) {
         @Nullable String encoded = properties.getProperty("envelope.aad");
         if (encoded != null) {
-            return Base64.getDecoder().decode(encoded);
+            return boundedBytes(
+                    "envelope.aad",
+                    encoded,
+                    SecurityLimits.MAX_ENVELOPE_AAD_BYTES,
+                    "Vault envelope AAD");
         }
         return SecretRecordAad.encode(vaultId, metadata, recordRevision);
     }
@@ -549,7 +573,11 @@ public final class FileVaultStore implements VaultStore {
                 intValue(properties, "formatVersion"),
                 readKdfParameters(properties),
                 new KeyId(required(properties, "vaultKeyId")),
-                bytes(properties, "wrappedVaultKey"),
+                boundedBytes(
+                        properties,
+                        "wrappedVaultKey",
+                        SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES,
+                        "Vault wrapped key package"),
                 Instant.parse(required(properties, "createdAt")),
                 Instant.parse(required(properties, "updatedAt")));
     }
@@ -749,7 +777,15 @@ public final class FileVaultStore implements VaultStore {
 
     private void store(@NonNull Properties properties, @NonNull Path path) {
         @Nullable Path temp = null;
+        byte @Nullable [] serialized = null;
         try {
+            try (WipeableByteArrayOutputStream output = new WipeableByteArrayOutputStream()) {
+                properties.store(output, "Keystead v0.1");
+                serialized = output.toByteArray();
+            }
+            if (serialized.length > SecurityLimits.MAX_STORED_PROPERTIES_BYTES) {
+                throw new StoreException("Vault properties exceed the size limit", null);
+            }
             Path managedPath = requireManagedPath(path);
             Path parent = requireManagedPath(managedPath.getParent());
             createDirectories(parent);
@@ -761,13 +797,11 @@ public final class FileVaultStore implements VaultStore {
             temp = requireManagedPath(temp);
             // Write to a sibling temp file, then atomically move it into place so a crash
             // or IO error mid-write cannot truncate the existing vault/record file.
-            try (OutputStream output =
-                    Files.newOutputStream(
-                            requireManagedPath(temp),
-                            StandardOpenOption.WRITE,
-                            StandardOpenOption.TRUNCATE_EXISTING)) {
-                properties.store(output, "Keystead v0.1");
-            }
+            Files.write(
+                    requireManagedPath(temp),
+                    serialized,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING);
             durability.force(requireManagedPath(temp), true);
             Files.move(
                     requireManagedPath(temp),
@@ -778,6 +812,9 @@ public final class FileVaultStore implements VaultStore {
         } catch (IOException e) {
             throw new StoreException("Could not store vault data", e);
         } finally {
+            if (serialized != null) {
+                Arrays.fill(serialized, (byte) 0);
+            }
             try {
                 if (temp != null) {
                     Files.deleteIfExists(requireManagedPath(temp));
@@ -924,7 +961,62 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private byte @NonNull [] bytes(@NonNull Properties properties, @NonNull String key) {
-        return Base64.getDecoder().decode(required(properties, key));
+        return base64Decoder.decode(key, required(properties, key));
+    }
+
+    private byte @NonNull [] boundedBytes(
+            @NonNull Properties properties,
+            @NonNull String key,
+            int maximumBytes,
+            @NonNull String label) {
+        return boundedBytes(key, required(properties, key), maximumBytes, label);
+    }
+
+    private byte @NonNull [] boundedBytes(
+            @NonNull String field,
+            @NonNull String encoded,
+            int maximumBytes,
+            @NonNull String label) {
+        requireDecodedLength(encoded, maximumBytes, label);
+        byte[] decoded;
+        try {
+            decoded = base64Decoder.decode(field, encoded);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(label + " is invalid");
+        }
+        if (decoded.length > maximumBytes) {
+            Arrays.fill(decoded, (byte) 0);
+            throw new IllegalArgumentException(label + " exceeds the size limit");
+        }
+        return decoded;
+    }
+
+    private void requireDecodedLength(
+            @NonNull String encoded, int maximumBytes, @NonNull String label) {
+        int length = encoded.length();
+        int padding = 0;
+        while (padding < length && encoded.charAt(length - padding - 1) == '=') {
+            padding++;
+        }
+        if (padding > 2 || (padding > 0 && length % 4 != 0)) {
+            throw new IllegalArgumentException(label + " is invalid");
+        }
+        int dataLength = length - padding;
+        int firstPadding = encoded.indexOf('=');
+        if (firstPadding >= 0 && firstPadding < dataLength) {
+            throw new IllegalArgumentException(label + " is invalid");
+        }
+        int remainder = dataLength % 4;
+        if (remainder == 1
+                || (padding == 1 && remainder != 3)
+                || (padding == 2 && remainder != 2)) {
+            throw new IllegalArgumentException(label + " is invalid");
+        }
+        long decodedLength =
+                ((long) dataLength / 4) * 3 + (remainder == 2 ? 1 : remainder == 3 ? 2 : 0);
+        if (decodedLength > maximumBytes) {
+            throw new IllegalArgumentException(label + " exceeds the size limit");
+        }
     }
 
     private @NonNull String text(@NonNull Properties properties, @NonNull String key) {
@@ -1002,6 +1094,12 @@ public final class FileVaultStore implements VaultStore {
             }
             throw e;
         }
+    }
+
+    @FunctionalInterface
+    interface Base64ValueDecoder {
+
+        byte @NonNull [] decode(@NonNull String field, @NonNull String value);
     }
 }
 

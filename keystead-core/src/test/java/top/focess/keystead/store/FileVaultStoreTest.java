@@ -752,6 +752,68 @@ class FileVaultStoreTest {
     }
 
     @Test
+    void legacyAadOneByteOverLimitIsRejectedBeforeBase64DecoderAllocation() throws IOException {
+        FileVaultStore setup = new FileVaultStore(tempDir);
+        EncryptedSecretRecord record = record();
+        setup.saveSecretRecord(record);
+        Path path = secretFile(record.metadata().id());
+        String encoded =
+                Base64.getEncoder()
+                        .encodeToString(new byte[SecurityLimits.MAX_ENVELOPE_AAD_BYTES + 1]);
+        Files.writeString(path, Files.readString(path) + "\nenvelope.aad=" + encoded + "\n");
+
+        FileVaultStore store =
+                new FileVaultStore(
+                        tempDir,
+                        (durablePath, metadata) -> {},
+                        (field, value) -> {
+                            if (field.equals("envelope.aad")) {
+                                throw new AssertionError("decoder must not run");
+                            }
+                            return Base64.getDecoder().decode(value);
+                        });
+
+        IllegalArgumentException failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> store.loadSecretRecord(record.vaultId(), record.metadata().id()));
+        assertEquals("Vault envelope AAD exceeds the size limit", failure.getMessage());
+    }
+
+    @Test
+    void serializedRecordOverLimitDoesNotReplacePreviousRowOrAdvanceRevision() {
+        FileVaultStore store = new FileVaultStore(tempDir);
+        EncryptedSecretRecord previous = record();
+        store.saveSecretRecord(previous);
+        EncryptedSecretRecord candidate =
+                record(previous.metadata().id(), "replacement", previous.revision() + 1);
+        EncryptedEnvelope oversizedEnvelope =
+                new EncryptedEnvelope(
+                        candidate.payload().version(),
+                        candidate.payload().algorithm(),
+                        candidate.payload().keyId(),
+                        candidate.payload().nonce(),
+                        candidate.payload().aad(),
+                        new byte[SecurityLimits.MAX_ENVELOPE_CIPHERTEXT_BYTES],
+                        candidate.payload().encryptedAt());
+        EncryptedSecretRecord replacement =
+                new EncryptedSecretRecord(
+                        candidate.vaultId(),
+                        candidate.metadata(),
+                        oversizedEnvelope,
+                        candidate.revision());
+
+        StoreException failure =
+                assertThrows(StoreException.class, () -> store.saveSecretRecord(replacement));
+
+        assertEquals("Vault properties exceed the size limit", failure.getMessage());
+        assertEquals(
+                Optional.of(previous),
+                store.loadSecretRecord(previous.vaultId(), previous.metadata().id()));
+        assertEquals(previous.revision() + 1, store.nextRevision(previous.vaultId()));
+    }
+
+    @Test
     void nextRevisionDoesNotAdvanceDurableRevisionUntilRecordCommits() {
         VaultStore store = new FileVaultStore(tempDir);
         EncryptedSecretRecord record = record();

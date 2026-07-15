@@ -22,6 +22,7 @@ import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretProfile;
 import top.focess.keystead.model.SecretType;
+import top.focess.keystead.model.SecurityLimits;
 
 final class SyncRecordCodec {
 
@@ -63,16 +64,29 @@ final class SyncRecordCodec {
 
     static @NonNull EncryptedEnvelope envelopeWithAad(
             @NonNull String encoded, byte @NonNull [] aad) {
+        return envelopeWithAad(encoded, aad, (field, value) -> Base64.getDecoder().decode(value));
+    }
+
+    static @NonNull EncryptedEnvelope envelopeWithAad(
+            @NonNull String encoded,
+            byte @NonNull [] aad,
+            @NonNull Base64ValueDecoder base64Decoder) {
         Objects.requireNonNull(encoded, "encoded");
         Objects.requireNonNull(aad, "aad");
+        Objects.requireNonNull(base64Decoder, "base64Decoder");
         Properties properties = properties(encoded);
         return new EncryptedEnvelope(
                 intValue(properties, "version"),
                 required(properties, "algorithm"),
                 new KeyId(required(properties, "keyId")),
-                b64Bytes(properties, "nonce"),
+                b64Bytes(properties, "nonce", base64Decoder),
                 aad,
-                b64Bytes(properties, "ciphertext"),
+                boundedB64Bytes(
+                        properties,
+                        "ciphertext",
+                        SecurityLimits.MAX_ENVELOPE_CIPHERTEXT_BYTES,
+                        "Sync record ciphertext",
+                        base64Decoder),
                 Instant.parse(required(properties, "encryptedAt")));
     }
 
@@ -207,11 +221,72 @@ final class SyncRecordCodec {
         return Base64.getDecoder().decode(required(properties, key));
     }
 
+    private static byte @NonNull [] b64Bytes(
+            @NonNull Properties properties,
+            @NonNull String key,
+            @NonNull Base64ValueDecoder base64Decoder) {
+        return base64Decoder.decode(key, required(properties, key));
+    }
+
+    private static byte @NonNull [] boundedB64Bytes(
+            @NonNull Properties properties,
+            @NonNull String key,
+            int maximumBytes,
+            @NonNull String label,
+            @NonNull Base64ValueDecoder base64Decoder) {
+        String encoded = required(properties, key);
+        requireDecodedLength(encoded, maximumBytes, label);
+        byte[] decoded;
+        try {
+            decoded = base64Decoder.decode(key, encoded);
+        } catch (IllegalArgumentException e) {
+            throw new ValidationException(label + " is invalid");
+        }
+        if (decoded.length > maximumBytes) {
+            Arrays.fill(decoded, (byte) 0);
+            throw new ValidationException(label + " exceeds the size limit");
+        }
+        return decoded;
+    }
+
+    private static void requireDecodedLength(
+            @NonNull String encoded, int maximumBytes, @NonNull String label) {
+        int length = encoded.length();
+        int padding = 0;
+        while (padding < length && encoded.charAt(length - padding - 1) == '=') {
+            padding++;
+        }
+        if (padding > 2 || (padding > 0 && length % 4 != 0)) {
+            throw new ValidationException(label + " is invalid");
+        }
+        int dataLength = length - padding;
+        if (encoded.indexOf('=') >= 0 && encoded.indexOf('=') < dataLength) {
+            throw new ValidationException(label + " is invalid");
+        }
+        int remainder = dataLength % 4;
+        if (remainder == 1
+                || (padding == 1 && remainder != 3)
+                || (padding == 2 && remainder != 2)) {
+            throw new ValidationException(label + " is invalid");
+        }
+        long decodedLength =
+                ((long) dataLength / 4) * 3 + (remainder == 2 ? 1 : remainder == 3 ? 2 : 0);
+        if (decodedLength > maximumBytes) {
+            throw new ValidationException(label + " exceeds the size limit");
+        }
+    }
+
     private static @NonNull String b64(@NonNull String value) {
         return b64(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private static @NonNull String b64(byte @NonNull [] value) {
         return Base64.getEncoder().encodeToString(value);
+    }
+
+    @FunctionalInterface
+    interface Base64ValueDecoder {
+
+        byte @NonNull [] decode(@NonNull String field, @NonNull String value);
     }
 }

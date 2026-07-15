@@ -186,6 +186,9 @@ Recovery-kit material follows the same ownership model. New code should use
 mutable, closeable storage. The compatibility `String` encoder and decoder are
 deprecated because an immutable secret `String` remains visible in JVM heap
 dumps and cannot be wiped deterministically.
+The deprecated `DeviceKeyPair.privateKey()` accessor is retained for source
+compatibility and returns a caller-wiped heap array; new code should prefer
+`copyPrivateKey(Consumer<byte[]>)`.
 
 Core enforces resource ceilings at untrusted file, envelope, package, sync, and
 KDF boundaries:
@@ -201,6 +204,11 @@ KDF boundaries:
 | Password-KDF salt | 64 bytes |
 | PBKDF2 iterations | 10,000,000 |
 | Canonical KDF parameters | 16 entries; printable ASCII names of at most 64 characters; positive integer values no greater than `Integer.MAX_VALUE` |
+
+The 1 MiB envelope limit remains available to non-file formats. The properties
+file store additionally rejects any model-valid value whose serialized Base64
+properties representation would exceed its 1 MiB stored-file limit, before
+replacing an existing file.
 
 ## Synchronization model
 
