@@ -98,7 +98,8 @@ final class NativeAbi {
         }
 
         requireValueLayout(canonicalLayouts, "long", 8L, 8L, long.class);
-        requireValueLayout(canonicalLayouts, "int64_t", 8L, 8L, long.class);
+        requireValueLayout(canonicalLayouts, "off_t", 8L, 8L, long.class);
+        requireValueLayout(canonicalLayouts, "rlim_t", 8L, 8L, long.class);
         MemoryLayout rlimit = posixRlimitLayout(canonicalLayouts);
         requireSizeAndAlignment(rlimit, "struct rlimit", 16L, 8L);
     }
@@ -133,7 +134,7 @@ final class NativeAbi {
 
     static @NonNull MemoryLayout posixRlimitLayout(
             @NonNull Map<@NonNull String, @NonNull MemoryLayout> canonicalLayouts) {
-        MemoryLayout rlimT = requireLayout(canonicalLayouts, "int64_t", 8L, 8L);
+        MemoryLayout rlimT = requireLayout(canonicalLayouts, "rlim_t", 8L, 8L);
         return MemoryLayout.structLayout(rlimT.withName("rlim_cur"), rlimT.withName("rlim_max"))
                 .withName("rlimit");
     }

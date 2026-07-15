@@ -127,6 +127,12 @@ class NativeAbiTest {
         assertEquals(8L, rlimit.byteAlignment());
         assertEquals(0L, rlimit.byteOffset(MemoryLayout.PathElement.groupElement("rlim_cur")));
         assertEquals(8L, rlimit.byteOffset(MemoryLayout.PathElement.groupElement("rlim_max")));
+        assertEquals(
+                layouts.get("rlim_t").withName("rlim_cur"),
+                rlimit.select(MemoryLayout.PathElement.groupElement("rlim_cur")));
+        assertEquals(
+                layouts.get("rlim_t").withName("rlim_max"),
+                rlimit.select(MemoryLayout.PathElement.groupElement("rlim_max")));
     }
 
     @Test
@@ -139,28 +145,81 @@ class NativeAbiTest {
                         NativeAbi.requireCanonicalLayouts(
                                 NativePlatform.WINDOWS_X86_64, windowsLayouts));
 
-        Map<String, MemoryLayout> posixLayouts = new HashMap<>(posixLayouts());
-        posixLayouts.remove("int64_t");
         assertThrows(
                 IllegalArgumentException.class,
-                () -> NativeAbi.requireCanonicalLayouts(NativePlatform.LINUX_X86_64, posixLayouts));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> NativeAbi.requireCanonicalLayouts(NativePlatform.UNSUPPORTED, posixLayouts));
+                () ->
+                        NativeAbi.requireCanonicalLayouts(
+                                NativePlatform.UNSUPPORTED, posixLayouts()));
     }
 
     @Test
-    void requiresThePlatformCaptureStateNameToBeAvailable() {
+    void rejectsMismatchedPosixOffTLayout() {
+        assertAll(
+                () -> assertPosixTypeLayoutRejected("off_t", ValueLayout.JAVA_INT),
+                () ->
+                        assertPosixTypeLayoutRejected(
+                                "off_t", ValueLayout.JAVA_LONG.withByteAlignment(4L)),
+                () -> assertPosixTypeLayoutRejected("off_t", ValueLayout.JAVA_DOUBLE));
+    }
+
+    @Test
+    void rejectsMismatchedPosixRlimTLayout() {
+        assertAll(
+                () -> assertPosixTypeLayoutRejected("rlim_t", ValueLayout.JAVA_INT),
+                () ->
+                        assertPosixTypeLayoutRejected(
+                                "rlim_t", ValueLayout.JAVA_LONG.withByteAlignment(4L)),
+                () -> assertPosixTypeLayoutRejected("rlim_t", ValueLayout.JAVA_DOUBLE));
+    }
+
+    @Test
+    void requiresTheCurrentPlatformsCaptureStateNameInTheActualJavaLayout() {
+        NativePlatform current = currentPlatform();
         MemoryLayout captureStateLayout = Linker.Option.captureStateLayout();
+
+        assertDoesNotThrow(
+                () ->
+                        NativeAbi.requireCaptureStateName(
+                                captureStateLayout, NativeAbi.captureStateName(current)));
+    }
+
+    @Test
+    void validatesSyntheticWindowsAndPosixCaptureStateLayouts() {
+        MemoryLayout windowsCaptureState =
+                MemoryLayout.structLayout(ValueLayout.JAVA_INT.withName("GetLastError"));
+        MemoryLayout posixCaptureState =
+                MemoryLayout.structLayout(ValueLayout.JAVA_INT.withName("errno"));
 
         assertEquals("GetLastError", NativeAbi.captureStateName(NativePlatform.WINDOWS_X86_64));
         assertEquals("errno", NativeAbi.captureStateName(NativePlatform.LINUX_X86_64));
         assertDoesNotThrow(
-                () -> NativeAbi.requireCaptureStateName(captureStateLayout, "GetLastError"));
-        assertDoesNotThrow(() -> NativeAbi.requireCaptureStateName(captureStateLayout, "errno"));
+                () ->
+                        NativeAbi.requireCaptureStateName(
+                                windowsCaptureState,
+                                NativeAbi.captureStateName(NativePlatform.WINDOWS_X86_64)));
+        assertAll(
+                () ->
+                        NativeAbi.requireCaptureStateName(
+                                posixCaptureState,
+                                NativeAbi.captureStateName(NativePlatform.LINUX_X86_64)),
+                () ->
+                        NativeAbi.requireCaptureStateName(
+                                posixCaptureState,
+                                NativeAbi.captureStateName(NativePlatform.LINUX_AARCH64)),
+                () ->
+                        NativeAbi.requireCaptureStateName(
+                                posixCaptureState,
+                                NativeAbi.captureStateName(NativePlatform.MACOS_X86_64)),
+                () ->
+                        NativeAbi.requireCaptureStateName(
+                                posixCaptureState,
+                                NativeAbi.captureStateName(NativePlatform.MACOS_AARCH64)));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> NativeAbi.requireCaptureStateName(captureStateLayout, "missing_state"));
+                () -> NativeAbi.requireCaptureStateName(windowsCaptureState, "errno"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> NativeAbi.requireCaptureStateName(posixCaptureState, "GetLastError"));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> NativeAbi.captureStateName(NativePlatform.UNSUPPORTED));
@@ -175,10 +234,15 @@ class NativeAbiTest {
                         System.getProperty("sun.arch.data.model"),
                         System.getProperty("java.vm.name"));
 
-        assertDoesNotThrow(
-                () ->
-                        NativeAbi.requireCanonicalLayouts(
-                                current, Linker.nativeLinker().canonicalLayouts()));
+        Map<String, MemoryLayout> currentLayouts =
+                new HashMap<>(Linker.nativeLinker().canonicalLayouts());
+        if (current != NativePlatform.WINDOWS_X86_64) {
+            MemoryLayout signedLong64 = currentLayouts.get("int64_t");
+            currentLayouts.put("off_t", signedLong64.withName("off_t"));
+            currentLayouts.put("rlim_t", signedLong64.withName("rlim_t"));
+        }
+
+        assertDoesNotThrow(() -> NativeAbi.requireCanonicalLayouts(current, currentLayouts));
     }
 
     @Test
@@ -237,7 +301,9 @@ class NativeAbiTest {
                 "short", ValueLayout.JAVA_SHORT,
                 "size_t", ValueLayout.JAVA_LONG,
                 "void*", ValueLayout.ADDRESS,
-                "int64_t", ValueLayout.JAVA_LONG);
+                "int64_t", ValueLayout.JAVA_LONG,
+                "off_t", ValueLayout.JAVA_LONG.withName("off_t"),
+                "rlim_t", ValueLayout.JAVA_LONG.withName("rlim_t"));
     }
 
     private static Map<String, MemoryLayout> windowsLayouts() {
@@ -247,5 +313,21 @@ class NativeAbiTest {
                 "short", ValueLayout.JAVA_SHORT,
                 "size_t", ValueLayout.JAVA_LONG,
                 "void*", ValueLayout.ADDRESS);
+    }
+
+    private static NativePlatform currentPlatform() {
+        return NativeAbi.requireSupportedPlatform(
+                System.getProperty("os.name"),
+                System.getProperty("os.arch"),
+                System.getProperty("sun.arch.data.model"),
+                System.getProperty("java.vm.name"));
+    }
+
+    private static void assertPosixTypeLayoutRejected(String name, MemoryLayout invalidLayout) {
+        Map<String, MemoryLayout> layouts = new HashMap<>(posixLayouts());
+        layouts.put(name, invalidLayout);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> NativeAbi.requireCanonicalLayouts(NativePlatform.LINUX_X86_64, layouts));
     }
 }
