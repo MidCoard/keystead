@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
-import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -27,6 +26,7 @@ import java.util.zip.ZipOutputStream;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.crypto.KdfParameters;
+import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 import top.focess.keystead.model.DeletedSecretRecord;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.EncryptedSecretRecord;
@@ -60,30 +60,53 @@ final class BackupArchiveCodec {
     private BackupArchiveCodec() {}
 
     static void write(@NonNull BackupArchive archive, @NonNull OutputStream output) {
-        try (ZipOutputStream zip = new ZipOutputStream(output)) {
-            List<BackupZipEntry> entries = new ArrayList<>();
-            entries.add(backupZipEntry(VAULT_ENTRY, vaultProperties(archive.vaultHeader())));
+        List<BackupZipEntry> entries = new ArrayList<>();
+        try {
+            long entryCount = 2L + archive.records().size() + archive.tombstones().size();
+            if (entryCount > MAX_ENTRY_COUNT) {
+                throw new ValidationException("Backup archive entry count exceeds limit");
+            }
+            int totalBytes = 0;
+            totalBytes =
+                    addEntry(
+                            entries,
+                            VAULT_ENTRY,
+                            vaultProperties(archive.vaultHeader()),
+                            totalBytes);
             for (EncryptedSecretRecord record : archive.records()) {
-                entries.add(
-                        backupZipEntry(
+                totalBytes =
+                        addEntry(
+                                entries,
                                 RECORDS_PREFIX + record.metadata().id().value() + PROPERTIES_SUFFIX,
-                                recordProperties(record)));
+                                recordProperties(record),
+                                totalBytes);
             }
             for (DeletedSecretRecord tombstone : archive.tombstones()) {
-                entries.add(
-                        backupZipEntry(
+                totalBytes =
+                        addEntry(
+                                entries,
                                 DELETED_PREFIX + tombstone.secretId().value() + PROPERTIES_SUFFIX,
-                                deletedProperties(tombstone)));
+                                deletedProperties(tombstone),
+                                totalBytes);
             }
-            putEntry(
-                    zip,
+            int manifestIndex = entries.size();
+            addEntry(
+                    entries,
                     MANIFEST_ENTRY,
-                    propertiesBytes(manifestProperties(archive.manifest(), entries)));
-            for (BackupZipEntry entry : entries) {
-                putEntry(zip, entry.name(), entry.bytes());
+                    manifestProperties(archive.manifest(), entries),
+                    totalBytes);
+            try (ZipOutputStream zip = new ZipOutputStream(output)) {
+                BackupZipEntry manifest = entries.get(manifestIndex);
+                putEntry(zip, manifest.name(), manifest.bytes());
+                for (int index = 0; index < manifestIndex; index++) {
+                    BackupZipEntry entry = entries.get(index);
+                    putEntry(zip, entry.name(), entry.bytes());
+                }
             }
         } catch (IOException e) {
             throw new ValidationException("Could not write backup archive", e);
+        } finally {
+            entries.forEach(BackupZipEntry::wipe);
         }
     }
 
@@ -215,9 +238,30 @@ final class BackupArchiveCodec {
         return manifest;
     }
 
-    private static @NonNull BackupZipEntry backupZipEntry(
-            @NonNull String name, @NonNull Properties properties) throws IOException {
-        return new BackupZipEntry(name, propertiesBytes(properties));
+    private static int addEntry(
+            @NonNull List<BackupZipEntry> entries,
+            @NonNull String name,
+            @NonNull Properties properties,
+            int totalBytes)
+            throws IOException {
+        byte[] bytes = propertiesBytes(properties);
+        boolean transferred = false;
+        try {
+            if (bytes.length > MAX_ENTRY_BYTES) {
+                throw new ValidationException("Backup entry exceeds size limit");
+            }
+            long nextTotal = (long) totalBytes + bytes.length;
+            if (nextTotal > MAX_ARCHIVE_BYTES) {
+                throw new ValidationException("Backup archive exceeds size limit");
+            }
+            entries.add(new BackupZipEntry(name, bytes));
+            transferred = true;
+            return (int) nextTotal;
+        } finally {
+            if (!transferred) {
+                Arrays.fill(bytes, (byte) 0);
+            }
+        }
     }
 
     private static @NonNull Optional<BackupZipEntry> findEntry(
@@ -235,9 +279,10 @@ final class BackupArchiveCodec {
 
     private static byte @NonNull [] propertiesBytes(@NonNull Properties properties)
             throws IOException {
-        StringWriter writer = new StringWriter();
-        properties.store(writer, null);
-        return writer.toString().getBytes(StandardCharsets.UTF_8);
+        try (WipeableByteArrayOutputStream output = new WipeableByteArrayOutputStream()) {
+            properties.store(output, null);
+            return output.toByteArray();
+        }
     }
 
     private static @NonNull Properties toProperties(byte @NonNull [] bytes) throws IOException {
@@ -676,12 +721,10 @@ final class BackupArchiveCodec {
         private BackupZipEntry {
             Objects.requireNonNull(name, "name");
             Objects.requireNonNull(bytes, "bytes");
-            bytes = Arrays.copyOf(bytes, bytes.length);
         }
 
-        @Override
-        public byte @NonNull [] bytes() {
-            return Arrays.copyOf(bytes, bytes.length);
+        private void wipe() {
+            Arrays.fill(bytes, (byte) 0);
         }
     }
 
