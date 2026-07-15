@@ -8,7 +8,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.VarHandle;
 import java.util.function.Supplier;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.NativeMemoryOperation;
@@ -26,8 +25,6 @@ final class WindowsNativeOperations extends PlatformNativeOperations {
     private static final int MEM_COMMIT = 0x00001000;
     private static final int MEM_RELEASE = 0x00008000;
     private static final int PAGE_READWRITE = 0x00000004;
-
-    private static final @NonNull VarHandle BYTE = ValueLayout.JAVA_BYTE.varHandle();
 
     private final @NonNull Arena arena = Arena.ofShared();
     private final @NonNull MethodHandle virtualAlloc;
@@ -146,23 +143,6 @@ final class WindowsNativeOperations extends PlatformNativeOperations {
         } catch (Throwable t) {
             throw FfmSupport.rethrow(t);
         }
-    }
-
-    @Override
-    public @NonNull NativeOperationResult copyIn(
-            @NonNull MemorySegment segment, byte @NonNull [] value) {
-        MemorySegment source = MemorySegment.ofArray(value);
-        segment.asSlice(0, value.length).copyFrom(source);
-        return NativeOperationResult.success(0L);
-    }
-
-    @Override
-    public @NonNull NativeOperationResult wipe(@NonNull MemorySegment segment, long byteSize) {
-        for (long offset = 0L; offset < byteSize; offset++) {
-            BYTE.setVolatile(segment, offset, (byte) 0);
-        }
-        VarHandle.fullFence();
-        return NativeOperationResult.success(0L);
     }
 
     private @NonNull NativeCallResult callBoolReturningInt(

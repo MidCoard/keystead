@@ -1,5 +1,8 @@
 package top.focess.keystead.memory.internal;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.VarHandle;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.NativePlatform;
@@ -8,6 +11,8 @@ import top.focess.keystead.memory.NativePlatform;
 abstract class PlatformNativeOperations implements NativeOperations {
 
     private static final long POSIX_MAP_FAILED = -1L;
+
+    private static final @NonNull VarHandle BYTE = ValueLayout.JAVA_BYTE.varHandle();
 
     private final @NonNull NativePlatform platform;
 
@@ -82,6 +87,23 @@ abstract class PlatformNativeOperations implements NativeOperations {
     protected abstract @NonNull NativeCallResult unlockNative(long address, long byteSize);
 
     protected abstract @NonNull NativeCallResult releaseNative(long address, long byteSize);
+
+    @Override
+    public @NonNull NativeOperationResult copyIn(
+            @NonNull MemorySegment segment, byte @NonNull [] value) {
+        MemorySegment source = MemorySegment.ofArray(value);
+        segment.asSlice(0, value.length).copyFrom(source);
+        return NativeOperationResult.success(0L);
+    }
+
+    @Override
+    public @NonNull NativeOperationResult wipe(@NonNull MemorySegment segment, long byteSize) {
+        for (long offset = 0L; offset < byteSize; offset++) {
+            BYTE.setVolatile(segment, offset, (byte) 0);
+        }
+        VarHandle.fullFence();
+        return NativeOperationResult.success(0L);
+    }
 
     @Override
     public final @NonNull NativePlatform platform() {

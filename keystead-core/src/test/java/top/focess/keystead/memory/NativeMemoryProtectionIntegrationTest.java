@@ -11,33 +11,85 @@ import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 
 /**
- * Real local Windows integration test for the native locked-memory lifecycle. Allocates a real
- * Kernel32 mapping, locks it, copies bytes in and out, wipes, unlocks, and releases.
+ * Real local integration tests for the native locked-memory lifecycle and capability inspection,
+ * enabled per OS. Windows runs locally; Linux and macOS run in the CI matrix.
  */
-@EnabledOnOs(OS.WINDOWS)
 class NativeMemoryProtectionIntegrationTest {
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
     void realWindowsLifecycleProtectsCopiesWipesAndReleases() {
-        SecretMemory memory =
-                SecretMemoryProvider.nativeLocked().protect(new byte[] {1, 2, 3, 4, 5});
+        assertLifecycleRoundTrips();
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX)
+    void realLinuxLifecycleProtectsCopiesWipesAndReleases() {
+        assertLifecycleRoundTrips();
+    }
+
+    @Test
+    @EnabledOnOs(OS.MAC)
+    void realMacOsLifecycleProtectsCopiesWipesAndReleases() {
+        assertLifecycleRoundTrips();
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void realWindowsInspectReportsVerifiedCapabilitiesWithoutRetainingThePage() {
+        assertInspectReportsVerified(NativeProtectionStatus.NOT_APPLICABLE);
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX)
+    void realLinuxInspectReportsVerifiedCapabilitiesIncludingDumpExclusion() {
+        assertInspectReportsVerified(NativeProtectionStatus.VERIFIED);
+    }
+
+    @Test
+    @EnabledOnOs(OS.MAC)
+    void realMacOsInspectReportsVerifiedCapabilitiesWithoutDumpExclusion() {
+        assertInspectReportsVerified(NativeProtectionStatus.NOT_APPLICABLE);
+    }
+
+    private static void assertLifecycleRoundTrips() {
+        byte[] secret = new byte[] {1, 2, 3, 4, 5};
+        SecretMemory memory = SecretMemoryProvider.nativeLocked().protect(secret);
         try {
             assertEquals(5, memory.length());
             assertFalse(memory.isClosed());
-            memory.copyBytes(bytes -> assertArrayEquals(new byte[] {1, 2, 3, 4, 5}, bytes));
-            memory.copyBytes(bytes -> assertArrayEquals(new byte[] {1, 2, 3, 4, 5}, bytes));
+            memory.copyBytes(bytes -> assertArrayEquals(secret, bytes));
+            memory.copyBytes(bytes -> assertArrayEquals(secret, bytes));
         } finally {
             memory.close();
         }
         assertTrue(memory.isClosed());
         assertThrows(SecretDestroyedException.class, memory::length);
+
+        SecretMemory zero = SecretMemoryProvider.nativeLocked().protect(new byte[0]);
+        try {
+            assertEquals(0, zero.length());
+            zero.copyBytes(bytes -> assertEquals(0, bytes.length));
+        } finally {
+            zero.close();
+        }
+
+        byte[] multiPage = new byte[8192];
+        for (int i = 0; i < multiPage.length; i++) {
+            multiPage[i] = (byte) (i % 251);
+        }
+        SecretMemory paged = SecretMemoryProvider.nativeLocked().protect(multiPage);
+        try {
+            assertEquals(8192, paged.length());
+            paged.copyBytes(bytes -> assertArrayEquals(multiPage, bytes));
+        } finally {
+            paged.close();
+        }
     }
 
-    @Test
-    void realWindowsInspectReportsVerifiedCapabilitiesWithoutRetainingThePage() {
+    private static void assertInspectReportsVerified(NativeProtectionStatus dumpExclusionStatus) {
         NativeMemoryProtectionReport report = NativeMemoryProtection.inspect();
 
-        assertEquals(NativePlatform.WINDOWS_X86_64, report.platform());
         assertEquals(NativeProtectionControl.values().length, report.results().size());
         assertEquals(
                 NativeProtectionStatus.VERIFIED,
@@ -58,7 +110,7 @@ class NativeMemoryProtectionIntegrationTest {
                 NativeProtectionStatus.VERIFIED,
                 report.result(NativeProtectionControl.PAGE_LOCK).status());
         assertEquals(
-                NativeProtectionStatus.NOT_APPLICABLE,
+                dumpExclusionStatus,
                 report.result(NativeProtectionControl.DUMP_EXCLUSION).status());
         assertEquals(
                 NativeProtectionStatus.VERIFIED,
@@ -69,31 +121,5 @@ class NativeMemoryProtectionIntegrationTest {
         assertEquals(
                 NativeProtectionStatus.VERIFIED,
                 report.result(NativeProtectionControl.RELEASE).status());
-    }
-
-    @Test
-    void realWindowsZeroLengthSecretOwnsOneProtectedPage() {
-        SecretMemory memory = SecretMemoryProvider.nativeLocked().protect(new byte[0]);
-        try {
-            assertEquals(0, memory.length());
-            memory.copyBytes(bytes -> assertEquals(0, bytes.length));
-        } finally {
-            memory.close();
-        }
-    }
-
-    @Test
-    void realWindowsMultiPageSecretRoundTrips() {
-        byte[] secret = new byte[8192];
-        for (int i = 0; i < secret.length; i++) {
-            secret[i] = (byte) (i % 251);
-        }
-        SecretMemory memory = SecretMemoryProvider.nativeLocked().protect(secret);
-        try {
-            assertEquals(8192, memory.length());
-            memory.copyBytes(bytes -> assertArrayEquals(secret, bytes));
-        } finally {
-            memory.close();
-        }
     }
 }

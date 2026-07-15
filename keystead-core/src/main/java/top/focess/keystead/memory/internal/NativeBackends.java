@@ -13,7 +13,8 @@ final class NativeBackends {
     static @NonNull NativeOperations create(@NonNull NativePlatform platform) {
         return switch (platform) {
             case WINDOWS_X86_64 -> new WindowsNativeOperations();
-            // Linux and macOS FFM backends are wired in the following task.
+            case LINUX_X86_64, LINUX_AARCH64 -> new LinuxNativeOperations(platform);
+            case MACOS_X86_64, MACOS_AARCH64 -> new MacOsNativeOperations(platform);
             default ->
                     throw new NativeMemoryUnavailableException(
                             platform, NativeMemoryOperation.SYMBOLS);
