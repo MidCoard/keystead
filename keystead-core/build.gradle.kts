@@ -27,6 +27,7 @@ val namedModuleTestPackages =
         "top.focess.keystead.crypto",
         "top.focess.keystead.generator",
         "top.focess.keystead.memory",
+        "top.focess.keystead.memory.internal",
         "top.focess.keystead.model",
         "top.focess.keystead.module",
         "top.focess.keystead.recovery",

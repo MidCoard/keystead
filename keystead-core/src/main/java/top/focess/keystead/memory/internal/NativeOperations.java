@@ -1,0 +1,11 @@
+package top.focess.keystead.memory.internal;
+
+import org.jspecify.annotations.NonNull;
+
+/** Internal native-operation boundary used by ownership code and deterministic fakes. */
+interface NativeOperations {
+
+    @NonNull NativeOperationResult allocate(long byteSize);
+
+    @NonNull NativeOperationResult release(long address, long byteSize);
+}
