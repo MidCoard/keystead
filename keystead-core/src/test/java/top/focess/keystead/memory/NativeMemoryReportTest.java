@@ -196,6 +196,25 @@ class NativeMemoryReportTest {
     }
 
     @Test
+    void causeCannotBeInitializedButRedactedSuppressionRemainsAvailable() {
+        NativeMemoryUnavailableException failure =
+                new NativeMemoryUnavailableException(
+                        NativePlatform.LINUX_X86_64, NativeMemoryOperation.PAGE_LOCK, 12L);
+        RuntimeException unsafeCause =
+                new RuntimeException(String.join(" | ", SENSITIVE_FRAGMENTS));
+        NativeMemoryUnavailableException cleanupFailure =
+                new NativeMemoryUnavailableException(
+                        NativePlatform.LINUX_X86_64, NativeMemoryOperation.RELEASE);
+
+        assertThrows(IllegalStateException.class, () -> failure.initCause(unsafeCause));
+        failure.addSuppressed(cleanupFailure);
+
+        assertNull(failure.getCause());
+        assertEquals(1, failure.getSuppressed().length);
+        assertEquals(cleanupFailure, failure.getSuppressed()[0]);
+    }
+
+    @Test
     void messagesTextAndThrowableGraphsRemainRedactionSafe() {
         NativeMemoryProtectionReport report =
                 new NativeMemoryProtectionReport(NativePlatform.LINUX_X86_64, verifiedResults());

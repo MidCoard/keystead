@@ -29,7 +29,7 @@ public final class NativeMemoryUnavailableException extends RuntimeException {
             @NonNull NativePlatform platform,
             @NonNull NativeMemoryOperation operation,
             @Nullable Long osErrorCode) {
-        super(message(platform, operation, osErrorCode));
+        super(message(platform, operation, osErrorCode), null);
         this.platform = Objects.requireNonNull(platform, "platform");
         this.operation = Objects.requireNonNull(operation, "operation");
         if (osErrorCode != null && osErrorCode < 0L) {
