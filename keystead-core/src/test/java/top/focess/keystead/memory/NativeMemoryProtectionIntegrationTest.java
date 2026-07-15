@@ -34,6 +34,44 @@ class NativeMemoryProtectionIntegrationTest {
     }
 
     @Test
+    void realWindowsInspectReportsVerifiedCapabilitiesWithoutRetainingThePage() {
+        NativeMemoryProtectionReport report = NativeMemoryProtection.inspect();
+
+        assertEquals(NativePlatform.WINDOWS_X86_64, report.platform());
+        assertEquals(NativeProtectionControl.values().length, report.results().size());
+        assertEquals(
+                NativeProtectionStatus.VERIFIED,
+                report.result(NativeProtectionControl.PLATFORM).status());
+        assertEquals(
+                NativeProtectionStatus.VERIFIED,
+                report.result(NativeProtectionControl.NATIVE_ACCESS).status());
+        assertEquals(
+                NativeProtectionStatus.VERIFIED,
+                report.result(NativeProtectionControl.ABI_LAYOUTS).status());
+        assertEquals(
+                NativeProtectionStatus.VERIFIED,
+                report.result(NativeProtectionControl.SYMBOLS).status());
+        assertEquals(
+                NativeProtectionStatus.VERIFIED,
+                report.result(NativeProtectionControl.ALLOCATION).status());
+        assertEquals(
+                NativeProtectionStatus.VERIFIED,
+                report.result(NativeProtectionControl.PAGE_LOCK).status());
+        assertEquals(
+                NativeProtectionStatus.NOT_APPLICABLE,
+                report.result(NativeProtectionControl.DUMP_EXCLUSION).status());
+        assertEquals(
+                NativeProtectionStatus.VERIFIED,
+                report.result(NativeProtectionControl.WIPE).status());
+        assertEquals(
+                NativeProtectionStatus.VERIFIED,
+                report.result(NativeProtectionControl.PAGE_UNLOCK).status());
+        assertEquals(
+                NativeProtectionStatus.VERIFIED,
+                report.result(NativeProtectionControl.RELEASE).status());
+    }
+
+    @Test
     void realWindowsZeroLengthSecretOwnsOneProtectedPage() {
         SecretMemory memory = SecretMemoryProvider.nativeLocked().protect(new byte[0]);
         try {

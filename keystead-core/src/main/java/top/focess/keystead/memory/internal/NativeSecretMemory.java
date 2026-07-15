@@ -87,13 +87,7 @@ public final class NativeSecretMemory implements SecretMemory {
             throw new NativeMemoryUnavailableException(
                     platform, NativeMemoryOperation.NATIVE_ACCESS);
         }
-        return switch (platform) {
-            case WINDOWS_X86_64 -> new WindowsNativeOperations();
-            // Linux and macOS FFM backends are wired in the following task.
-            default ->
-                    throw new NativeMemoryUnavailableException(
-                            platform, NativeMemoryOperation.SYMBOLS);
-        };
+        return NativeBackends.create(platform);
     }
 
     private static boolean isLinux(@NonNull NativePlatform platform) {
