@@ -56,7 +56,8 @@ abstract class PlatformNativeOperations implements NativeOperations {
 
     protected abstract @NonNull NativeCallResult releaseNative(long address, long byteSize);
 
-    final @NonNull NativePlatform platform() {
+    @Override
+    public final @NonNull NativePlatform platform() {
         return platform;
     }
 
