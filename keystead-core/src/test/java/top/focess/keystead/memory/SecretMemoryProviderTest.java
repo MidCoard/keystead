@@ -103,6 +103,26 @@ class SecretMemoryProviderTest {
         }
     }
 
+    @Test
+    void systemDefaultAndNativeLockedReturnTheSameLazySingleton() {
+        SecretMemoryProvider first = SecretMemoryProvider.systemDefault();
+        SecretMemoryProvider second = SecretMemoryProvider.nativeLocked();
+
+        assertSame(first, second);
+        assertSame(first, SecretMemoryProvider.systemDefault());
+        assertSame(first, SecretMemoryProvider.nativeLocked());
+    }
+
+    @Test
+    void systemDefaultNeverSelectsTheHeapProviderImplicitly() {
+        SecretMemoryProvider systemDefault = SecretMemoryProvider.systemDefault();
+        SecretMemoryProvider heap = SecretMemoryProvider.heap();
+
+        assertNotSame(systemDefault, heap);
+        assertFalse(systemDefault instanceof HeapSecretMemoryProvider);
+        assertTrue(heap instanceof HeapSecretMemoryProvider);
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             assertTrue(latch.await(2, TimeUnit.SECONDS));

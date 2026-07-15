@@ -10,4 +10,12 @@ public interface SecretMemoryProvider {
     static @NonNull SecretMemoryProvider heap() {
         return HeapSecretMemoryProvider.instance();
     }
+
+    static @NonNull SecretMemoryProvider systemDefault() {
+        return NativeLockedSecretMemoryProvider.instance();
+    }
+
+    static @NonNull SecretMemoryProvider nativeLocked() {
+        return NativeLockedSecretMemoryProvider.instance();
+    }
 }

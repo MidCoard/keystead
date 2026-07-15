@@ -40,9 +40,30 @@ abstract class PlatformNativeOperations implements NativeOperations {
     }
 
     @Override
+    public final @NonNull NativeOperationResult lock(long address, long byteSize) {
+        requirePositiveSize(byteSize);
+        return toResult(lockNative(address, byteSize));
+    }
+
+    @Override
+    public final @NonNull NativeOperationResult dumpExclude(long address, long byteSize) {
+        requirePositiveSize(byteSize);
+        return toResult(dumpExcludeNative(address, byteSize));
+    }
+
+    @Override
+    public final @NonNull NativeOperationResult unlock(long address, long byteSize) {
+        requirePositiveSize(byteSize);
+        return toResult(unlockNative(address, byteSize));
+    }
+
+    @Override
     public final @NonNull NativeOperationResult release(long address, long byteSize) {
         requirePositiveSize(byteSize);
-        NativeCallResult result = releaseNative(address, byteSize);
+        return toResult(releaseNative(address, byteSize));
+    }
+
+    private @NonNull NativeOperationResult toResult(@NonNull NativeCallResult result) {
         boolean successful =
                 platform == NativePlatform.WINDOWS_X86_64
                         ? result.returnValue() != 0L
@@ -53,6 +74,12 @@ abstract class PlatformNativeOperations implements NativeOperations {
     }
 
     protected abstract @NonNull NativeCallResult allocateNative(long byteSize);
+
+    protected abstract @NonNull NativeCallResult lockNative(long address, long byteSize);
+
+    protected abstract @NonNull NativeCallResult dumpExcludeNative(long address, long byteSize);
+
+    protected abstract @NonNull NativeCallResult unlockNative(long address, long byteSize);
 
     protected abstract @NonNull NativeCallResult releaseNative(long address, long byteSize);
 
