@@ -27,7 +27,9 @@ class SecretBufferTest {
 
     @Test
     void closeWipesOwnedCharactersAndRejectsFutureAccess() {
-        SecretBuffer buffer = SecretBuffer.fromChars(new char[] {'p', 'a', 's', 's'});
+        SecretBuffer buffer =
+                SecretBuffer.fromChars(
+                        new char[] {'p', 'a', 's', 's'}, SecretMemoryProvider.heap());
 
         buffer.close();
 

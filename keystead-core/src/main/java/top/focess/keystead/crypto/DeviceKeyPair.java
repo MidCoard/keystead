@@ -18,7 +18,7 @@ public final class DeviceKeyPair implements AutoCloseable {
 
     DeviceKeyPair(
             @NonNull String keyAlgorithm, byte @NonNull [] publicKey, byte @NonNull [] privateKey) {
-        this(keyAlgorithm, publicKey, privateKey, SecretMemoryProvider.heap());
+        this(keyAlgorithm, publicKey, privateKey, SecretMemoryProvider.systemDefault());
     }
 
     DeviceKeyPair(

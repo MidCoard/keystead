@@ -123,6 +123,36 @@ class SecretMemoryProviderTest {
         assertTrue(heap instanceof HeapSecretMemoryProvider);
     }
 
+    @Test
+    void convenienceDefaultsSelectNativeLockedMemoryWhenNativeProtectionIsAvailable()
+            throws Exception {
+        NativeMemoryProtectionReport report = NativeMemoryProtection.inspect();
+        if (report.result(NativeProtectionControl.ALLOCATION).status()
+                != NativeProtectionStatus.VERIFIED) {
+            // On a platform where native protection is unavailable the convenience default fails
+            // closed; native selection is only asserted where allocation is actually verified.
+            return;
+        }
+        try (SecretBuffer utf8 = SecretBuffer.fromUtf8(new byte[] {1, 2, 3});
+                SecretBuffer chars = SecretBuffer.fromChars(new char[] {'a', 'b'})) {
+            assertEquals(
+                    "top.focess.keystead.memory.internal",
+                    memoryPackageName(utf8),
+                    "fromUtf8 convenience default must use native locked memory");
+            assertEquals(
+                    "top.focess.keystead.memory.internal",
+                    memoryPackageName(chars),
+                    "fromChars convenience default must use native locked memory");
+        }
+    }
+
+    private static String memoryPackageName(SecretBuffer buffer) throws Exception {
+        java.lang.reflect.Field memoryField = SecretBuffer.class.getDeclaredField("memory");
+        memoryField.setAccessible(true);
+        Object memory = memoryField.get(buffer);
+        return memory.getClass().getPackageName();
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             assertTrue(latch.await(2, TimeUnit.SECONDS));

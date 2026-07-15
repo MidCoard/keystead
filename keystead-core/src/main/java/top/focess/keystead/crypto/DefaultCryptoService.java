@@ -53,7 +53,7 @@ public final class DefaultCryptoService {
     }
 
     public DefaultCryptoService(@NonNull SecureRandom random, @NonNull AeadCipher aeadCipher) {
-        this(random, aeadCipher, SecretMemoryProvider.heap());
+        this(random, aeadCipher, SecretMemoryProvider.systemDefault());
     }
 
     public DefaultCryptoService(

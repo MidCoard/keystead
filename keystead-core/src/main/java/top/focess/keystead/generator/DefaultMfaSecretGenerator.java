@@ -22,7 +22,7 @@ public final class DefaultMfaSecretGenerator implements MfaSecretGenerator {
     }
 
     public DefaultMfaSecretGenerator(@NonNull SecureRandom random) {
-        this(random, SecretMemoryProvider.heap(), MfaSecret::new);
+        this(random, SecretMemoryProvider.systemDefault(), MfaSecret::new);
     }
 
     DefaultMfaSecretGenerator(

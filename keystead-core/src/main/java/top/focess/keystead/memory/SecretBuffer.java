@@ -21,7 +21,7 @@ public final class SecretBuffer implements AutoCloseable {
     }
 
     public static @NonNull SecretBuffer fromUtf8(byte @NonNull [] bytes) {
-        return fromUtf8(bytes, SecretMemoryProvider.heap());
+        return fromUtf8(bytes, SecretMemoryProvider.systemDefault());
     }
 
     public static @NonNull SecretBuffer fromUtf8(
@@ -33,7 +33,7 @@ public final class SecretBuffer implements AutoCloseable {
     }
 
     public static @NonNull SecretBuffer fromChars(char @NonNull [] chars) {
-        return fromChars(chars, SecretMemoryProvider.heap());
+        return fromChars(chars, SecretMemoryProvider.systemDefault());
     }
 
     public static @NonNull SecretBuffer fromChars(

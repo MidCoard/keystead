@@ -3,12 +3,16 @@ package top.focess.keystead.crypto;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Field;
+import java.security.SecureRandom;
 import org.junit.jupiter.api.Test;
+import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.model.KeyId;
 
 class DeviceProvisioningCryptoTest {
 
-    private final DefaultCryptoService crypto = new DefaultCryptoService();
+    private final DefaultCryptoService crypto =
+            new DefaultCryptoService(
+                    new SecureRandom(), new TinkAesGcmCipher(), SecretMemoryProvider.heap());
 
     @Test
     void devicePublicKeyWrapsVaultKeyForMatchingPrivateKey() {

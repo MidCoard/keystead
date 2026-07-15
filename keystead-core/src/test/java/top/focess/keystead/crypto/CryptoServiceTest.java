@@ -22,7 +22,9 @@ import top.focess.keystead.model.KeyId;
 
 class CryptoServiceTest {
 
-    private final DefaultCryptoService crypto = new DefaultCryptoService();
+    private final DefaultCryptoService crypto =
+            new DefaultCryptoService(
+                    new SecureRandom(), new TinkAesGcmCipher(), SecretMemoryProvider.heap());
 
     @Test
     void encryptDecryptRoundTripReturnsPlaintext() {

@@ -16,7 +16,7 @@ public final class VaultKey implements AutoCloseable {
     private final int keyBytesLength;
 
     VaultKey(@NonNull KeyId keyId, byte @NonNull [] keyBytes) {
-        this(keyId, keyBytes, SecretMemoryProvider.heap());
+        this(keyId, keyBytes, SecretMemoryProvider.systemDefault());
     }
 
     VaultKey(

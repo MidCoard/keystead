@@ -41,7 +41,7 @@ public final class DefaultGpgKeyGenerator implements GpgKeyGenerator {
     }
 
     public DefaultGpgKeyGenerator(@NonNull SecureRandom random) {
-        this(random, SecretMemoryProvider.heap(), GpgKeyPair::new);
+        this(random, SecretMemoryProvider.systemDefault(), GpgKeyPair::new);
     }
 
     DefaultGpgKeyGenerator(
