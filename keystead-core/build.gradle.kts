@@ -5,10 +5,33 @@ plugins {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(25)
+        vendor = JvmVendorSpec.ADOPTIUM
     }
+    modularity.inferModulePath = true
     withSourcesJar()
 }
+
+val classpathTest = sourceSets.create("classpathTest") {
+    compileClasspath += sourceSets.main.get().output + configurations.testCompileClasspath.get()
+    runtimeClasspath += output + compileClasspath + configurations.testRuntimeClasspath.get()
+}
+
+val coreModuleName = "top.focess.keystead.core"
+val mainModulePath = sourceSets.main.get().runtimeClasspath
+val namedModuleTestClasspath = sourceSets.test.get().runtimeClasspath.minus(mainModulePath)
+val namedModuleTestPackages =
+    listOf(
+        "top.focess.keystead",
+        "top.focess.keystead.aigc",
+        "top.focess.keystead.crypto",
+        "top.focess.keystead.generator",
+        "top.focess.keystead.memory",
+        "top.focess.keystead.model",
+        "top.focess.keystead.module",
+        "top.focess.keystead.recovery",
+        "top.focess.keystead.service",
+        "top.focess.keystead.store")
 
 dependencies {
     api("org.jspecify:jspecify:1.0.0")
@@ -31,5 +54,32 @@ spotless {
 }
 
 tasks.test {
+    classpath = namedModuleTestClasspath
     useJUnitPlatform()
+    jvmArgs(
+            "--module-path",
+            mainModulePath.asPath,
+            "--add-modules",
+            "$coreModuleName,ALL-MODULE-PATH",
+            "--patch-module",
+            "$coreModuleName=${sourceSets.test.get().output.asPath}",
+            "--add-reads=$coreModuleName=ALL-UNNAMED",
+            "--enable-native-access=$coreModuleName")
+    namedModuleTestPackages.forEach {
+        jvmArgs("--add-opens=$coreModuleName/$it=ALL-UNNAMED")
+    }
+}
+
+tasks.register<Test>("classpathTest") {
+    description = "Runs the classpath consumer compatibility fixture."
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    testClassesDirs = classpathTest.output.classesDirs
+    classpath = classpathTest.runtimeClasspath
+    modularity.inferModulePath = false
+    useJUnitPlatform()
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+tasks.check {
+    dependsOn("classpathTest")
 }
