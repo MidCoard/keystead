@@ -12,7 +12,10 @@ import top.focess.keystead.memory.NativeProtectionControl;
 import top.focess.keystead.memory.NativeProtectionResult;
 import top.focess.keystead.memory.NativeProtectionStatus;
 
-/** Deterministic fake {@link ProcessHardeningOperations} for control tests. */
+/**
+ * Deterministic, stateful fake {@link ProcessHardeningOperations} for control tests. Mutation
+ * operations update the readable state so {@code applyStrict()} read-backs observe the change.
+ */
 final class FakeHardeningOperations implements ProcessHardeningOperations {
 
     private final @NonNull NativePlatform platform;
@@ -20,6 +23,13 @@ final class FakeHardeningOperations implements ProcessHardeningOperations {
     private final boolean nativeAccessEnabled;
     private final @NonNull Map<@NonNull String, @NonNull String> hotSpotOptions;
     private final @NonNull NativeMemoryProtectionReport probe;
+
+    private @Nullable Integer dumpable;
+    private @Nullable CoreLimit coreLimit;
+    private boolean dumpableMutationSucceeds = true;
+    private boolean coreLimitMutationSucceeds = true;
+    private long dumpableMutationErrorCode;
+    private long coreLimitMutationErrorCode;
 
     private FakeHardeningOperations(
             @NonNull NativePlatform platform,
@@ -67,6 +77,34 @@ final class FakeHardeningOperations implements ProcessHardeningOperations {
         return probe;
     }
 
+    @Override
+    public @Nullable Integer readDumpable() {
+        return dumpable;
+    }
+
+    @Override
+    public @Nullable CoreLimit readCoreLimit() {
+        return coreLimit;
+    }
+
+    @Override
+    public @NonNull MutationResult setDumpableZero() {
+        if (dumpableMutationSucceeds) {
+            dumpable = 0;
+            return MutationResult.success();
+        }
+        return MutationResult.failure(dumpableMutationErrorCode);
+    }
+
+    @Override
+    public @NonNull MutationResult setCoreLimitZero() {
+        if (coreLimitMutationSucceeds) {
+            coreLimit = new CoreLimit(0L, 0L);
+            return MutationResult.success();
+        }
+        return MutationResult.failure(coreLimitMutationErrorCode);
+    }
+
     static final class Builder {
         private final @NonNull NativePlatform platform;
         private int javaMajorVersion = 25;
@@ -74,6 +112,12 @@ final class FakeHardeningOperations implements ProcessHardeningOperations {
         private final @NonNull Map<@NonNull String, @NonNull String> hotSpotOptions =
                 new HashMap<>();
         private @NonNull NativeProtectionStatus allocationStatus = NativeProtectionStatus.VERIFIED;
+        private @Nullable Integer dumpable;
+        private @Nullable CoreLimit coreLimit;
+        private boolean dumpableMutationSucceeds = true;
+        private long dumpableMutationErrorCode;
+        private boolean coreLimitMutationSucceeds = true;
+        private long coreLimitMutationErrorCode;
 
         Builder(@NonNull NativePlatform platform) {
             this.platform = platform;
@@ -99,9 +143,43 @@ final class FakeHardeningOperations implements ProcessHardeningOperations {
             return this;
         }
 
+        @NonNull Builder dumpable(int value) {
+            this.dumpable = value;
+            return this;
+        }
+
+        @NonNull Builder coreLimit(long soft, long hard) {
+            this.coreLimit = new CoreLimit(soft, hard);
+            return this;
+        }
+
+        @NonNull Builder dumpableMutationFails(long errorCode) {
+            this.dumpableMutationSucceeds = false;
+            this.dumpableMutationErrorCode = errorCode;
+            return this;
+        }
+
+        @NonNull Builder coreLimitMutationFails(long errorCode) {
+            this.coreLimitMutationSucceeds = false;
+            this.coreLimitMutationErrorCode = errorCode;
+            return this;
+        }
+
         @NonNull FakeHardeningOperations build() {
-            return new FakeHardeningOperations(
-                    platform, javaMajorVersion, nativeAccessEnabled, hotSpotOptions, probeReport());
+            FakeHardeningOperations operations =
+                    new FakeHardeningOperations(
+                            platform,
+                            javaMajorVersion,
+                            nativeAccessEnabled,
+                            hotSpotOptions,
+                            probeReport());
+            operations.dumpable = dumpable;
+            operations.coreLimit = coreLimit;
+            operations.dumpableMutationSucceeds = dumpableMutationSucceeds;
+            operations.dumpableMutationErrorCode = dumpableMutationErrorCode;
+            operations.coreLimitMutationSucceeds = coreLimitMutationSucceeds;
+            operations.coreLimitMutationErrorCode = coreLimitMutationErrorCode;
+            return operations;
         }
 
         private @NonNull NativeMemoryProtectionReport probeReport() {

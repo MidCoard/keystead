@@ -19,4 +19,16 @@ public final class ProcessHardening {
     public static @NonNull ProcessHardeningReport inspect() {
         return ProcessHardeningInspector.inspect(new HotSpotHardeningOperations());
     }
+
+    /**
+     * Applies strict process hardening for the current platform.
+     *
+     * <p>Serialized, monotonic, idempotent, and non-transactional. Completes every immutable
+     * prerequisite preflight before mutating; on Linux sets and verifies dumpability and the core
+     * limit, on macOS sets and verifies the core limit. Throws {@link ProcessHardeningException}
+     * with a complete redacted report if a prerequisite is unmet or a mutation fails.
+     */
+    public static @NonNull ProcessHardeningReport applyStrict() {
+        return ProcessHardeningInspector.applyStrict(new HotSpotHardeningOperations());
+    }
 }

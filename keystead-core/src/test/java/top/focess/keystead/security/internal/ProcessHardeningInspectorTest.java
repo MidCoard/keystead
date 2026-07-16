@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import top.focess.keystead.memory.NativePlatform;
 import top.focess.keystead.memory.NativeProtectionStatus;
 import top.focess.keystead.security.HardeningControl;
 import top.focess.keystead.security.HardeningStatus;
+import top.focess.keystead.security.ProcessHardeningException;
 import top.focess.keystead.security.ProcessHardeningReport;
 
 class ProcessHardeningInspectorTest {
@@ -127,11 +129,19 @@ class ProcessHardeningInspectorTest {
                 FakeHardeningOperations.linux()
                         .hotSpotOption("DisableAttachMechanism", "true")
                         .hotSpotOption("HeapDumpOnOutOfMemoryError", "false")
+                        .dumpable(0)
+                        .coreLimit(0L, 0L)
                         .build();
 
         ProcessHardeningReport report = ProcessHardeningInspector.inspect(operations);
 
         assertEquals(NativePlatform.LINUX_X86_64, report.platform());
+        assertEquals(
+                HardeningStatus.VERIFIED,
+                report.result(HardeningControl.LINUX_DUMPABLE_ZERO).status());
+        assertEquals(
+                HardeningStatus.VERIFIED,
+                report.result(HardeningControl.POSIX_CORE_RLIMIT_ZERO).status());
         assertNotNull(report.result(HardeningControl.LINUX_YAMA_PTRACE_SCOPE));
         assertEquals(
                 HardeningStatus.APPLICATION_REQUIRED,
@@ -160,6 +170,115 @@ class ProcessHardeningInspectorTest {
                 HardeningStatus.APPLICATION_REQUIRED,
                 report.result(HardeningControl.MACOS_LIBRARY_VALIDATION).status());
         assertNull(report.result(HardeningControl.LINUX_YAMA_PTRACE_SCOPE));
+    }
+
+    @Test
+    void applyStrictEnforcesMutableControlsOnLinux() {
+        FakeHardeningOperations operations =
+                FakeHardeningOperations.linux()
+                        .hotSpotOption("DisableAttachMechanism", "true")
+                        .hotSpotOption("HeapDumpOnOutOfMemoryError", "false")
+                        .dumpable(1)
+                        .coreLimit(7L, 7L)
+                        .build();
+
+        ProcessHardeningReport report = ProcessHardeningInspector.applyStrict(operations);
+
+        assertEquals(
+                HardeningStatus.ENFORCED,
+                report.result(HardeningControl.LINUX_DUMPABLE_ZERO).status());
+        assertEquals(
+                HardeningStatus.ENFORCED,
+                report.result(HardeningControl.POSIX_CORE_RLIMIT_ZERO).status());
+    }
+
+    @Test
+    void applyStrictIsIdempotentWhenAlreadyEnforced() {
+        FakeHardeningOperations operations =
+                FakeHardeningOperations.linux()
+                        .hotSpotOption("DisableAttachMechanism", "true")
+                        .hotSpotOption("HeapDumpOnOutOfMemoryError", "false")
+                        .dumpable(0)
+                        .coreLimit(0L, 0L)
+                        .build();
+
+        ProcessHardeningReport report = ProcessHardeningInspector.applyStrict(operations);
+
+        assertEquals(
+                HardeningStatus.VERIFIED,
+                report.result(HardeningControl.LINUX_DUMPABLE_ZERO).status());
+        assertEquals(
+                HardeningStatus.VERIFIED,
+                report.result(HardeningControl.POSIX_CORE_RLIMIT_ZERO).status());
+        report.results()
+                .forEach(result -> assertFalse(result.status() == HardeningStatus.ENFORCED));
+    }
+
+    @Test
+    void applyStrictThrowsBeforeMutationWhenAnImmutablePrerequisiteIsUnmet() {
+        FakeHardeningOperations operations =
+                FakeHardeningOperations.linux()
+                        .hotSpotOption("DisableAttachMechanism", "false")
+                        .hotSpotOption("HeapDumpOnOutOfMemoryError", "false")
+                        .dumpable(1)
+                        .coreLimit(7L, 7L)
+                        .build();
+
+        ProcessHardeningException exception =
+                assertThrows(
+                        ProcessHardeningException.class,
+                        () -> ProcessHardeningInspector.applyStrict(operations));
+
+        ProcessHardeningReport report = exception.report();
+        assertEquals(
+                HardeningStatus.NOT_ENFORCED,
+                report.result(HardeningControl.JVM_ATTACH_DISABLED).status());
+        // No mutation occurred.
+        assertEquals(
+                HardeningStatus.NOT_ENFORCED,
+                report.result(HardeningControl.LINUX_DUMPABLE_ZERO).status());
+    }
+
+    @Test
+    void applyStrictThrowsWhenMutationFailsAndMarksSubsequentNotAttempted() {
+        FakeHardeningOperations operations =
+                FakeHardeningOperations.linux()
+                        .hotSpotOption("DisableAttachMechanism", "true")
+                        .hotSpotOption("HeapDumpOnOutOfMemoryError", "false")
+                        .dumpable(1)
+                        .dumpableMutationFails(1L)
+                        .coreLimit(7L, 7L)
+                        .build();
+
+        ProcessHardeningException exception =
+                assertThrows(
+                        ProcessHardeningException.class,
+                        () -> ProcessHardeningInspector.applyStrict(operations));
+
+        ProcessHardeningReport report = exception.report();
+        assertEquals(
+                HardeningStatus.FAILED,
+                report.result(HardeningControl.LINUX_DUMPABLE_ZERO).status());
+        assertEquals(
+                HardeningStatus.NOT_ATTEMPTED,
+                report.result(HardeningControl.POSIX_CORE_RLIMIT_ZERO).status());
+    }
+
+    @Test
+    void applyStrictOnMacOsEnforcesOnlyTheCoreLimit() {
+        FakeHardeningOperations operations =
+                new FakeHardeningOperations.Builder(NativePlatform.MACOS_AARCH64)
+                        .hotSpotOption("DisableAttachMechanism", "true")
+                        .hotSpotOption("HeapDumpOnOutOfMemoryError", "false")
+                        .coreLimit(7L, 7L)
+                        .build();
+
+        ProcessHardeningReport report = ProcessHardeningInspector.applyStrict(operations);
+
+        assertNull(report.result(HardeningControl.LINUX_DUMPABLE_ZERO));
+        assertEquals(
+                HardeningStatus.ENFORCED,
+                report.result(HardeningControl.POSIX_CORE_RLIMIT_ZERO).status());
     }
 
     private static void assertInEnumOrder(ProcessHardeningReport report) {

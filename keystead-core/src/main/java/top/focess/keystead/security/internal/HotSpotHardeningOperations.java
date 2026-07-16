@@ -54,4 +54,28 @@ public final class HotSpotHardeningOperations implements ProcessHardeningOperati
         }
         return report;
     }
+
+    @Override
+    public @Nullable Integer readDumpable() {
+        // Linux prctl(PR_GET_DUMPABLE) is wired with the native mutation operations in a later
+        // task.
+        return null;
+    }
+
+    @Override
+    public @Nullable CoreLimit readCoreLimit() {
+        // POSIX getrlimit(RLIMIT_CORE) is wired with the native mutation operations in a later
+        // task.
+        return null;
+    }
+
+    @Override
+    public @NonNull MutationResult setDumpableZero() {
+        return MutationResult.failure(0L);
+    }
+
+    @Override
+    public @NonNull MutationResult setCoreLimitZero() {
+        return MutationResult.failure(0L);
+    }
 }
