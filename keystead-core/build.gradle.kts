@@ -31,6 +31,7 @@ val namedModuleTestPackages =
         "top.focess.keystead.model",
         "top.focess.keystead.module",
         "top.focess.keystead.recovery",
+        "top.focess.keystead.security",
         "top.focess.keystead.service",
         "top.focess.keystead.store")
 
