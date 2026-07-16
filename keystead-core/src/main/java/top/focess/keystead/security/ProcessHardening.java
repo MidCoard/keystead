@@ -27,6 +27,10 @@ public final class ProcessHardening {
      * prerequisite preflight before mutating; on Linux sets and verifies dumpability and the core
      * limit, on macOS sets and verifies the core limit. Throws {@link ProcessHardeningException}
      * with a complete redacted report if a prerequisite is unmet or a mutation fails.
+     *
+     * <p>The hard {@code RLIMIT_CORE} limit is lowered irreversibly for an unprivileged process, so
+     * {@code applyStrict()} is intended to run in an expendable child JVM rather than a long-lived
+     * host process; {@link ProcessHardening#inspect()} is the non-mutating entry point.
      */
     public static @NonNull ProcessHardeningReport applyStrict() {
         return ProcessHardeningInspector.applyStrict(new HotSpotHardeningOperations());

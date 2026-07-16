@@ -68,15 +68,12 @@ public final class HotSpotHardeningOperations implements ProcessHardeningOperati
 
     @Override
     public @NonNull MutationResult setDumpableZero() {
-        // prctl(PR_SET_DUMPABLE, 0) is wired with its subprocess mutation evidence in a later task.
-        return MutationResult.failure(0L);
+        return canReadPosixState() ? posixCalls().setDumpableZero() : MutationResult.failure(0L);
     }
 
     @Override
     public @NonNull MutationResult setCoreLimitZero() {
-        // setrlimit(RLIMIT_CORE, 0, 0) is wired with its subprocess mutation evidence in a later
-        // task.
-        return MutationResult.failure(0L);
+        return canReadPosixState() ? posixCalls().setCoreLimitZero() : MutationResult.failure(0L);
     }
 
     private boolean isPosixPlatform() {

@@ -59,6 +59,9 @@ spotless {
 tasks.test {
     classpath = namedModuleTestClasspath
     useJUnitPlatform()
+    systemProperty("keystead.coreModule", coreModuleName)
+    systemProperty("keystead.modulePath", mainModulePath.asPath)
+    systemProperty("keystead.testClassesDir", sourceSets.test.get().output.asPath)
     jvmArgs(
             "--module-path",
             mainModulePath.asPath,
