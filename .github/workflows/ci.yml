@@ -32,11 +32,9 @@ jobs:
             label: linux-x86_64
           - os: ubuntu-24.04-arm
             label: linux-aarch64
-          # macos-13 is the only GitHub-hosted Intel (x86-64) macOS runner. If GitHub withdraws
-          # it, drop this tuple rather than substituting an Apple Silicon label - there is no
-          # replacement Intel macOS runner.
-          - os: macos-13
-            label: macos-x86_64
+          # macOS x86-64 (macos-13) is omitted: it is the only GitHub-hosted Intel macOS runner
+          # and stays queued indefinitely, so the tuple is unreachable in practice. The library
+          # still supports macOS x86-64; only the CI leg is dropped.
           - os: macos-14
             label: macos-aarch64
     steps:

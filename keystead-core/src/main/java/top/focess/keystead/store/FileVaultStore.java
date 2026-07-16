@@ -856,7 +856,16 @@ public final class FileVaultStore implements VaultStore {
     }
 
     private void createDirectories(@NonNull Path directory) throws IOException {
-        Files.createDirectories(requireManagedPath(directory));
+        Path managed = requireManagedPath(directory);
+        // Files.createDirectories throws FileAlreadyExistsException on Windows when the leaf is a
+        // symbolic link to a directory (it does not follow the link, so it cannot see that the
+        // target already exists). A caller-selected vault root may legitimately be such a link, so
+        // skip creation when the path is already a directory following links. This is a no-op on
+        // POSIX and avoids rejecting a symlinked vault root on Windows.
+        if (Files.isDirectory(managed)) {
+            return;
+        }
+        Files.createDirectories(managed);
     }
 
     private void deleteIfExists(@NonNull Path path) throws IOException {

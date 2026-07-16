@@ -404,9 +404,10 @@ exercise internals). The separate `classpathTest` source set is a consumer
 compatibility fixture that runs on the classpath with
 `--enable-native-access=ALL-UNNAMED`. On Windows, use `gradlew.bat`.
 
-CI runs Temurin 25 across the five approved 64-bit tuples: Windows x86-64,
-Linux x86-64, Linux AArch64, macOS x86-64, and macOS AArch64. Spotless runs as
-an independent, non-skipping check.
+CI runs Temurin 25 across four 64-bit tuples: Windows x86-64, Linux x86-64,
+Linux AArch64, and macOS AArch64. The library also supports macOS x86-64, but
+the GitHub-hosted Intel macOS runner is unavailable, so that leg is omitted.
+Spotless runs as an independent, non-skipping check.
 
 ## Engineering assessment
 
