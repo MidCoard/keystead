@@ -1,5 +1,9 @@
 package top.focess.keystead.crypto;
 
+/**
+ * Thrown when an owned key (such as a {@link VaultKey} or {@link DeviceKeyPair}) is used after it
+ * has been closed and its key material wiped.
+ */
 public final class SecretKeyDestroyedException extends IllegalStateException {
 
     public SecretKeyDestroyedException() {

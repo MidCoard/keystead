@@ -3,6 +3,7 @@ package top.focess.keystead.model;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
+/** Stable identifier for a vault key generation. */
 public record KeyId(@NonNull String value) {
 
     public KeyId {

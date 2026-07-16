@@ -9,6 +9,13 @@ import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecurityLimits;
 
+/**
+ * Owned, wipeable vault key material.
+ *
+ * <p>The key bytes are copied on construction and wiped on {@link #close()}; {@link #copyBytes}
+ * hands a wiped copy to a callback; {@link #toString()} redacts the bytes. After close, access
+ * throws {@link SecretKeyDestroyedException}.
+ */
 public final class VaultKey implements AutoCloseable {
 
     private final KeyId keyId;
@@ -35,14 +42,20 @@ public final class VaultKey implements AutoCloseable {
                         "protected memory");
     }
 
+    /** @return the id of this key generation. */
     public @NonNull KeyId keyId() {
         return keyId;
     }
 
+    /** @return whether this key has been closed and its bytes wiped. */
     public boolean isClosed() {
         return keyBytes.isClosed();
     }
 
+    /**
+     * Copies the key bytes and hands them to the callback; the copy is wiped when the callback
+     * returns, so callers must not retain it.
+     */
     public void copyBytes(@NonNull Consumer<byte[]> consumer) {
         try {
             keyBytes.copyBytes(Objects.requireNonNull(consumer, "consumer"));
@@ -51,6 +64,7 @@ public final class VaultKey implements AutoCloseable {
         }
     }
 
+    /** Wipes the key bytes. Closing an already-closed key is a no-op. */
     @Override
     public void close() {
         keyBytes.close();

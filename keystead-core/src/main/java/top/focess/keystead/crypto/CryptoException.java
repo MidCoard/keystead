@@ -2,6 +2,10 @@ package top.focess.keystead.crypto;
 
 import org.jspecify.annotations.NonNull;
 
+/**
+ * Thrown when a cryptographic operation fails, such as an unwrapping failure from a wrong password
+ * or a corrupt or tampered ciphertext. The message never contains secret bytes.
+ */
 public class CryptoException extends RuntimeException {
 
     public CryptoException(@NonNull String message) {

@@ -1,5 +1,6 @@
 plugins {
     `java-library`
+    `maven-publish`
     id("com.diffplug.spotless") version "8.8.0"
 }
 
@@ -10,6 +11,7 @@ java {
     }
     modularity.inferModulePath = true
     withSourcesJar()
+    withJavadocJar()
 }
 
 val classpathTest = sourceSets.create("classpathTest") {
@@ -94,4 +96,24 @@ tasks.register<Test>("classpathTest") {
 
 tasks.check {
     dependsOn("classpathTest")
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("core") {
+            from(components["java"])
+            pom {
+                name.set("Keystead Core")
+                description.set(
+                    "Encrypted local vault library: key derivation, authenticated encryption, " +
+                        "typed secret schemas, local persistence, backup, sync, recovery, and key rotation.")
+                url.set("https://github.com/MidCoard/keystead")
+                scm {
+                    url.set("https://github.com/MidCoard/keystead")
+                    connection.set("scm:git:https://github.com/MidCoard/keystead.git")
+                    developerConnection.set("scm:git:https://github.com/MidCoard/keystead.git")
+                }
+            }
+        }
+    }
 }

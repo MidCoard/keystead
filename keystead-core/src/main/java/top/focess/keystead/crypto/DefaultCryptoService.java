@@ -27,6 +27,11 @@ import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.KeyId;
 
+/**
+ * Default cryptographic service: derives and wraps vault keys, encrypts and decrypts secret
+ * payloads with authenticated encryption, and wraps or unwraps vault keys for devices. The default
+ * configuration uses PBKDF2-HMAC-SHA-256 (120,000 iterations) and AES-256-GCM.
+ */
 public final class DefaultCryptoService {
 
     public static final String PAYLOAD_ALGORITHM = CryptoAlgorithmRegistry.AEAD_AES_256_GCM;

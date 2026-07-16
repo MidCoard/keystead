@@ -5,6 +5,17 @@ import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.NonNull;
 
+/**
+ * Non-secret metadata for a stored secret: id, type, profile, timestamps, and revision. Revisions
+ * are positive and monotonic within a vault.
+ *
+ * @param id the secret's stable id
+ * @param type the secret type
+ * @param profile the non-secret title, classification, tags, and attributes
+ * @param createdAt when the secret was first stored
+ * @param updatedAt when the secret was last updated
+ * @param revision the monotonic revision; must be positive
+ */
 public record SecretMetadata(
         @NonNull SecretId id,
         @NonNull SecretType type,

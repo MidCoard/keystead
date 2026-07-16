@@ -6,6 +6,13 @@ import java.util.Optional;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.*;
 
+/**
+ * Durable persistence abstraction for vault headers, secret records, tombstones, and revisions.
+ *
+ * <p>Mutations are coordinated through {@link #commitMutation}, which assigns the next monotonic
+ * revision. {@link #commitVaultKeyRotation} is optional and defaults to unsupported.
+ * Implementations must keep revisions positive and monotonic within a vault.
+ */
 public interface VaultStore {
 
     void saveVaultHeader(@NonNull VaultHeader header);

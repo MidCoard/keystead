@@ -21,6 +21,14 @@ import top.focess.keystead.crypto.KdfParameters;
 import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 import top.focess.keystead.model.*;
 
+/**
+ * A {@link VaultStore} backed by a local filesystem directory.
+ *
+ * <p>Header, secret records, and tombstones are stored as files under the vault directory, and
+ * durable writes use atomic replacement. A process lock guards concurrent access to the same
+ * directory. Vault-key rotation is journaled so an interrupted transition can be completed or
+ * rolled back on the next open.
+ */
 public final class FileVaultStore implements VaultStore {
 
     private static final String VAULT_FILE = "vault.properties";
@@ -42,6 +50,7 @@ public final class FileVaultStore implements VaultStore {
     private final FileDurability durability;
     private final Base64ValueDecoder base64Decoder;
 
+    /** Creates a store rooted at the given directory, creating it if needed. */
     public FileVaultStore(@NonNull Path vaultDirectory) {
         this(
                 vaultDirectory,

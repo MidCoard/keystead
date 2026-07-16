@@ -7,6 +7,11 @@ import java.util.stream.Collectors;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
+/**
+ * Normalized, non-secret taxonomy for a secret: category, provider, software, account, and labels.
+ * Taxonomy fields are trimmed and lowercased; blank values become {@code null}. Labels are trimmed,
+ * lowercased, and de-duplicated.
+ */
 public record SecretClassification(
         @Nullable String category,
         @Nullable String provider,
