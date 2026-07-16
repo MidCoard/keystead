@@ -5,15 +5,47 @@ on:
   pull_request:
 
 jobs:
-  test:
+  spotless:
+    name: Spotless
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
-          cache: gradle
+          java-version: '25'
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew :keystead-core:test --no-daemon --rerun-tasks
-      - run: git diff --check
+      - name: Spotless check
+        shell: bash
+        run: ./gradlew :keystead-core:spotlessCheck --no-daemon
+
+  test:
+    name: Test (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x86_64
+          - os: ubuntu-latest
+            label: linux-x86_64
+          - os: ubuntu-24.04-arm
+            label: linux-aarch64
+          - os: macos-13
+            label: macos-x86_64
+          - os: macos-14
+            label: macos-aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build and test
+        shell: bash
+        run: ./gradlew :keystead-core:assemble :keystead-core:test :keystead-core:classpathTest --no-daemon --rerun-tasks
+      - name: Check working tree clean
+        shell: bash
+        run: git diff --check

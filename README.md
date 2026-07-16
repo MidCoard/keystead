@@ -1,6 +1,6 @@
 # Keystead Core
 
-Keystead Core is a Java 21 library for building encrypted password and secret
+Keystead Core is a Java 25 library for building encrypted password and secret
 vaults. It owns the parts of Keystead that must remain independent of a user
 interface or synchronization server: key derivation, authenticated encryption,
 typed secret schemas, local persistence, backup, synchronization records,
@@ -166,19 +166,25 @@ unsupported parameters fail closed; Core does not fall back to another KDF.
 Key material is represented by owned objects such as `VaultKey`,
 `DeviceKeyPair`, and `SecretBuffer`. They copy caller data at boundaries,
 redact `toString()`, reject use after destruction, and wipe owned arrays when
-closed. `SecretBuffer` is a provider-backed facade. Its default provider owns a
-wiped heap array; applications can explicitly inject another
-`SecretMemoryProvider`, leaving a seam for a future optional native
-locked-memory provider without changing the public secret APIs. No such native
-provider is currently included.
+closed. `SecretBuffer` is a provider-backed facade over `SecretMemoryProvider`.
+The convenience default is `SecretMemoryProvider.systemDefault()`, which returns
+the fail-closed `NativeLockedSecretMemoryProvider`: secret bytes are copied into
+a page-locked, dump-excluded native buffer, and a missing native prerequisite
+raises `NativeMemoryUnavailableException` rather than silently falling back to
+heap memory. Applications that must tolerate the absence of native access can
+explicitly downgrade with `SecretMemoryProvider.heap()`, which keeps a wiped
+heap array, and every convenience type retains an overload that accepts an
+explicit provider. See
+[Native memory and process hardening](#native-memory-and-process-hardening)
+for the lifecycle, per-platform backends, and deployment responsibilities.
 
-Wiping reduces the lifetime of Keystead-owned copies, but it is not a guarantee
-of perfect erasure. It cannot defeat a debugger, an injected agent, a
-privileged process reader, copying garbage collection, JIT or native
-temporaries, or a copy owned by a cryptographic or memory provider. Native page
-locking through facilities such as `VirtualLock` or `mlock` would prevent those
-pages from being paged to disk; it would not prevent a live-memory attacker
-from reading them.
+Wiping and page locking reduce the lifetime and exposure of Keystead-owned
+copies, but they are not a guarantee of perfect erasure or full live-memory
+resistance. Locking prevents locked pages from being paged to disk and dump
+exclusion removes them from core dumps on supported platforms; neither defeats
+a debugger, an injected agent, a privileged process reader, copying garbage
+collection, JIT or native temporaries, or a copy owned by a cryptographic or
+memory provider.
 
 Recovery-kit material follows the same ownership model. New code should use
 `RecoveryKitCodec.encodeSecret(RecoveryKit)` and
@@ -209,6 +215,65 @@ The 1 MiB envelope limit remains available to non-file formats. The properties
 file store additionally rejects any model-valid value whose serialized Base64
 properties representation would exceed its 1 MiB stored-file limit, before
 replacing an existing file.
+
+## Native memory and process hardening
+
+Keystead Core uses the Java 25 Foreign Function and Memory API to keep secret
+material in locked native memory and to expose strict, process-wide hardening.
+The public contracts live in `top.focess.keystead.memory` and
+`top.focess.keystead.security`; FFM segments, addresses, and raw causes never
+leave the internal packages.
+
+`SecretMemoryProvider.systemDefault()` (alias `nativeLocked()`) returns the
+fail-closed `NativeLockedSecretMemoryProvider`. `protect(byte[])` copies the
+value into a page-locked, dump-excluded native buffer owned by a shared
+`Arena`; a missing prerequisite raises `NativeMemoryUnavailableException`
+instead of falling back to heap memory. `SecretMemoryProvider.heap()` is the
+explicit downgrade for deployments without native access, and every convenience
+type retains an overload that accepts an explicit provider.
+
+Native protection is bounded and lifecycle-closed. `NativeSecretMemory` runs an
+`ALLOCATED -> LOCKED -> DUMP_EXCLUDED -> COPY_STARTED -> LIVE` state machine:
+allocation, locking, and (on Linux) dump exclusion are verified before the
+buffer is live, a one-pass volatile wipe and unlock run on close, and an
+owner-free `Cleaner` releases the page if an owner is abandoned. Quota
+exhaustion does not reopen access to a closed buffer.
+`NativeMemoryProtection.inspect()` performs a one-page
+allocate/lock/dump-exclude/wipe/unlock/release probe without retaining the page
+and returns a redacted `NativeMemoryProtectionReport` with one entry per
+`NativeProtectionControl` in enum order; capability failure is report data and
+never throws.
+
+The backends share a reviewed ABI layer and capture `errno` or the Windows last
+error into redacted results:
+
+| Platform | Memory backend | Process hardening |
+| --- | --- | --- |
+| Windows x86-64 | Kernel32 `VirtualAlloc`/`VirtualLock`/`VirtualUnlock`/`VirtualFree` with dump exclusion | OS debugger isolation is `APPLICATION_REQUIRED` |
+| Linux x86-64/AArch64 | libc `mmap`/`mlock`/`munmap` with `madvise(MADV_DONTDUMP)` | `prctl(PR_SET_DUMPABLE)` and `setrlimit(RLIMIT_CORE)` |
+| macOS x86-64/AArch64 | libc `mmap`/`mlock`/`munlock` | `setrlimit(RLIMIT_CORE)` |
+
+`ProcessHardening.inspect()` returns a redacted `ProcessHardeningReport`
+snapshot of the applicable controls without mutating, so it never reports
+`HardeningStatus.ENFORCED`. `ProcessHardening.applyStrict()` is serialized,
+monotonic, idempotent, and non-transactional: it completes every immutable
+prerequisite preflight before mutating, then sets and verifies dumpability and
+the core limit on Linux and the core limit on macOS. Deployment
+responsibilities Core cannot safely enforce are reported as
+`HardeningStatus.APPLICATION_REQUIRED`. The hard `RLIMIT_CORE` limit is lowered
+irreversibly for an unprivileged process, so `applyStrict()` is intended to run
+in an expendable child JVM rather than a long-lived host process; `inspect()`
+is the non-mutating entry point.
+
+Consuming applications must grant native access to the Core module:
+`--enable-native-access=top.focess.keystead.core` on the module path, or
+`--enable-native-access=ALL-UNNAMED` on the classpath. Under
+`--illegal-native-access=deny` or without the grant, the native provider fails
+closed. On Linux, `mlock` is bounded by `RLIMIT_MEMLOCK` and `CAP_IPC_LOCK`;
+deployments that want locked secret memory should raise the memlock limit or
+grant the capability. Locked memory and dump exclusion are bounded in-memory
+guarantees: they reduce paging and core-dump exposure, not resistance to a
+live-memory attacker with process control.
 
 ## Synchronization model
 
@@ -301,28 +366,47 @@ to immutable `String` values.
 
 ```text
 keystead-core/src/main/java/top/focess/keystead/
+|-- aigc/        AI-generated-content organization context
 |-- crypto/      key ownership, algorithms, wrapping, and AEAD
 |-- generator/   password, token, SSH, GPG, MFA, and certificate generation
-|-- memory/      wipeable secret buffers
+|-- memory/      wipeable and native-locked secret buffers
 |-- model/       vault IDs, schemas, encrypted rows, and metadata
+|-- recovery/    recovery kits, device requests, and vault-key packages
+|-- security/    process-hardening inspection and strict application
 |-- service/     public vault, backup, and sync workflows
 `-- store/       persistence abstraction and filesystem implementation
 ```
 
-Production Java APIs use explicit JSpecify annotations. Tests cover value
-invariants, crypto behavior, persistence recovery, synchronization, backups,
-device provisioning, schema consistency, and nullness semantics.
+The module descriptor `module-info.java` declares the named module
+`top.focess.keystead.core` and exports the public packages above; the
+`memory.internal` and `security.internal` packages hold the FFM backends and
+are not exported. Production Java APIs use explicit JSpecify annotations. Tests
+cover value invariants, crypto behavior, persistence recovery, synchronization,
+backups, device provisioning, schema consistency, nullness semantics, and
+native-memory/process-hardening lifecycle and subprocess behavior.
 
 ## Build and verification
 
-Requires JDK 21.
+Requires JDK 25. The Gradle toolchain requests Temurin/Adoptium 25 and
+auto-provisions it through the Foojay resolver, so an explicit local install is
+optional.
 
 ```bash
 ./gradlew :keystead-core:test --no-daemon --rerun-tasks
+./gradlew :keystead-core:classpathTest --no-daemon --rerun-tasks
 ./gradlew :keystead-core:spotlessCheck
 ```
 
-On Windows, use `gradlew.bat`.
+Core is a named module (`top.focess.keystead.core`). The `test` task runs on the
+module path with `--enable-native-access=top.focess.keystead.core` (plus
+`--patch-module`, `--add-reads`, and per-package `--add-opens` so tests can
+exercise internals). The separate `classpathTest` source set is a consumer
+compatibility fixture that runs on the classpath with
+`--enable-native-access=ALL-UNNAMED`. On Windows, use `gradlew.bat`.
+
+CI runs Temurin 25 across the five approved 64-bit tuples: Windows x86-64,
+Linux x86-64, Linux AArch64, macOS x86-64, and macOS AArch64. Spotless runs as
+an independent, non-skipping check.
 
 ## Engineering assessment
 
