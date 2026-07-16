@@ -1,0 +1,22 @@
+package top.focess.keystead.security;
+
+import org.jspecify.annotations.NonNull;
+import top.focess.keystead.security.internal.HotSpotHardeningOperations;
+import top.focess.keystead.security.internal.ProcessHardeningInspector;
+
+/**
+ * Process-wide hardening inspection and strict application for the current platform.
+ *
+ * <p>{@link #inspect()} returns a redacted {@link ProcessHardeningReport} snapshot of the
+ * applicable controls without mutating, so it never reports {@link HardeningStatus#ENFORCED}.
+ * Deployment responsibilities Core cannot safely enforce are reported as
+ * {@link HardeningStatus#APPLICATION_REQUIRED}.
+ */
+public final class ProcessHardening {
+
+    private ProcessHardening() {}
+
+    public static @NonNull ProcessHardeningReport inspect() {
+        return ProcessHardeningInspector.inspect(new HotSpotHardeningOperations());
+    }
+}
