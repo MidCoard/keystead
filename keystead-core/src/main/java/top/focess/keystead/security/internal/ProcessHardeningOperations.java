@@ -24,7 +24,7 @@ public interface ProcessHardeningOperations {
 
     @NonNull NativeMemoryProtectionReport nativeMemoryProbe();
 
-    /** Linux {@code PR_GET_DUMPABLE} value (0 or 1), or {@code null} if it cannot be read. */
+    /** Linux {@code PR_GET_DUMPABLE} value (0, 1, or 2), or {@code null} if it cannot be read. */
     @Nullable Integer readDumpable();
 
     /** POSIX {@code RLIMIT_CORE} soft and hard values, or {@code null} if they cannot be read. */

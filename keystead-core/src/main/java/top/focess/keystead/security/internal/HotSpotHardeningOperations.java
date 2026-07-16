@@ -13,6 +13,7 @@ public final class HotSpotHardeningOperations implements ProcessHardeningOperati
 
     private final @Nullable HotSpotDiagnosticMXBean mxBean;
     private @Nullable NativeMemoryProtectionReport cachedProbe;
+    private @Nullable PosixHardeningCalls posixCalls;
 
     public HotSpotHardeningOperations() {
         this.mxBean = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
@@ -57,25 +58,50 @@ public final class HotSpotHardeningOperations implements ProcessHardeningOperati
 
     @Override
     public @Nullable Integer readDumpable() {
-        // Linux prctl(PR_GET_DUMPABLE) is wired with the native mutation operations in a later
-        // task.
-        return null;
+        return canReadPosixState() ? posixCalls().readDumpable() : null;
     }
 
     @Override
     public @Nullable CoreLimit readCoreLimit() {
-        // POSIX getrlimit(RLIMIT_CORE) is wired with the native mutation operations in a later
-        // task.
-        return null;
+        return canReadPosixState() ? posixCalls().readCoreLimit() : null;
     }
 
     @Override
     public @NonNull MutationResult setDumpableZero() {
+        // prctl(PR_SET_DUMPABLE, 0) is wired with its subprocess mutation evidence in a later task.
         return MutationResult.failure(0L);
     }
 
     @Override
     public @NonNull MutationResult setCoreLimitZero() {
+        // setrlimit(RLIMIT_CORE, 0, 0) is wired with its subprocess mutation evidence in a later
+        // task.
         return MutationResult.failure(0L);
+    }
+
+    private boolean isPosixPlatform() {
+        NativePlatform platform = platform();
+        return platform == NativePlatform.LINUX_X86_64
+                || platform == NativePlatform.LINUX_AARCH64
+                || platform == NativePlatform.MACOS_X86_64
+                || platform == NativePlatform.MACOS_AARCH64;
+    }
+
+    /**
+     * POSIX reads require both a POSIX platform and enabled module native access; without native
+     * access the restricted {@code downcallHandle} would throw {@code IllegalCallerException}, so
+     * the reads degrade to {@code null} (reported {@code UNAVAILABLE}) instead of throwing.
+     */
+    private boolean canReadPosixState() {
+        return isPosixPlatform() && nativeAccessEnabled();
+    }
+
+    private @NonNull PosixHardeningCalls posixCalls() {
+        PosixHardeningCalls existing = posixCalls;
+        if (existing == null) {
+            existing = new PosixHardeningCalls(platform());
+            posixCalls = existing;
+        }
+        return existing;
     }
 }
