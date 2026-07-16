@@ -169,7 +169,7 @@ redact `toString()`, reject use after destruction, and wipe owned arrays when
 closed. `SecretBuffer` is a provider-backed facade over `SecretMemoryProvider`.
 The convenience default is `SecretMemoryProvider.systemDefault()`, which returns
 the fail-closed `NativeLockedSecretMemoryProvider`: secret bytes are copied into
-a page-locked, dump-excluded native buffer, and a missing native prerequisite
+a page-locked native buffer, and a missing native prerequisite
 raises `NativeMemoryUnavailableException` rather than silently falling back to
 heap memory. Applications that must tolerate the absence of native access can
 explicitly downgrade with `SecretMemoryProvider.heap()`, which keeps a wiped
@@ -226,7 +226,7 @@ leave the internal packages.
 
 `SecretMemoryProvider.systemDefault()` (alias `nativeLocked()`) returns the
 fail-closed `NativeLockedSecretMemoryProvider`. `protect(byte[])` copies the
-value into a page-locked, dump-excluded native buffer owned by a shared
+value into a page-locked native buffer owned by a shared
 `Arena`; a missing prerequisite raises `NativeMemoryUnavailableException`
 instead of falling back to heap memory. `SecretMemoryProvider.heap()` is the
 explicit downgrade for deployments without native access, and every convenience
@@ -249,7 +249,7 @@ error into redacted results:
 
 | Platform | Memory backend | Process hardening |
 | --- | --- | --- |
-| Windows x86-64 | Kernel32 `VirtualAlloc`/`VirtualLock`/`VirtualUnlock`/`VirtualFree` with dump exclusion | OS debugger isolation is `APPLICATION_REQUIRED` |
+| Windows x86-64 | Kernel32 `VirtualAlloc`/`VirtualLock`/`VirtualUnlock`/`VirtualFree` | OS debugger isolation is `APPLICATION_REQUIRED` |
 | Linux x86-64/AArch64 | libc `mmap`/`mlock`/`munmap` with `madvise(MADV_DONTDUMP)` | `prctl(PR_SET_DUMPABLE)` and `setrlimit(RLIMIT_CORE)` |
 | macOS x86-64/AArch64 | libc `mmap`/`mlock`/`munlock` | `setrlimit(RLIMIT_CORE)` |
 

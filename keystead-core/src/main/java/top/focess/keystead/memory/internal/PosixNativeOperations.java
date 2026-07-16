@@ -26,7 +26,6 @@ abstract class PosixNativeOperations extends PlatformNativeOperations {
     private static final int PROT_WRITE = 0x2;
     private static final int MAP_PRIVATE = 0x02;
 
-    private final @NonNull Arena arena = Arena.ofShared();
     private final @NonNull MethodHandle mmap;
     private final @NonNull MethodHandle mlock;
     private final @NonNull MethodHandle munlock;

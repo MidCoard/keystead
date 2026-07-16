@@ -32,6 +32,9 @@ jobs:
             label: linux-x86_64
           - os: ubuntu-24.04-arm
             label: linux-aarch64
+          # macos-13 is the only GitHub-hosted Intel (x86-64) macOS runner. If GitHub withdraws
+          # it, drop this tuple rather than substituting an Apple Silicon label - there is no
+          # replacement Intel macOS runner.
           - os: macos-13
             label: macos-x86_64
           - os: macos-14

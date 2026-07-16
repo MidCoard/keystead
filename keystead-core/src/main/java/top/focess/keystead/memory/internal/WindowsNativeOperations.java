@@ -26,7 +26,10 @@ final class WindowsNativeOperations extends PlatformNativeOperations {
     private static final int MEM_RELEASE = 0x00008000;
     private static final int PAGE_READWRITE = 0x00000004;
 
-    private final @NonNull Arena arena = Arena.ofShared();
+    // The backend is cached as a process-wide singleton (see NativeBackends), so this library
+    // lookup intentionally uses the global, never-closed arena: kernel32 stays loaded once for the
+    // process lifetime rather than being reloaded and leaked per secret.
+    private final @NonNull Arena arena = Arena.global();
     private final @NonNull MethodHandle virtualAlloc;
     private final @NonNull MethodHandle virtualLock;
     private final @NonNull MethodHandle virtualUnlock;
