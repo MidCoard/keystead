@@ -24,10 +24,14 @@ import top.focess.keystead.model.VaultId;
  */
 public interface VaultHandle extends AutoCloseable {
 
-    /** @return the id of the vault this handle is bound to. */
+    /** Returns the id of the vault this handle is bound to.
+     *
+     * @return the vault id */
     @NonNull VaultId vaultId();
 
-    /** @return the id of the currently active vault key. */
+    /** Returns the id of the currently active vault key.
+     *
+     * @return the vault key id */
     @NonNull KeyId vaultKeyId();
 
     /**
@@ -118,7 +122,9 @@ public interface VaultHandle extends AutoCloseable {
      */
     void deleteSecret(@NonNull SecretId secretId);
 
-    /** @return metadata for every active secret in the vault, in store order. */
+    /** Returns metadata for every active secret in the vault, in store order.
+     *
+     * @return the secret metadata */
     @NonNull List<SecretMetadata> listSecrets();
 
     /**
@@ -202,7 +208,9 @@ public interface VaultHandle extends AutoCloseable {
             byte @NonNull [] devicePrivateKey,
             byte @NonNull [] context);
 
-    /** @return {@code true} if this handle has been closed and its key destroyed. */
+    /** Returns whether this handle has been closed and its key destroyed.
+     *
+     * @return {@code true} if this handle has been closed and its key destroyed */
     boolean isClosed();
 
     /**

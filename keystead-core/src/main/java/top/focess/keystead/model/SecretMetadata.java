@@ -24,6 +24,7 @@ public record SecretMetadata(
         @NonNull Instant updatedAt,
         long revision) {
 
+    /** Validates the record components. */
     public SecretMetadata {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(type, "type");
@@ -39,6 +40,18 @@ public record SecretMetadata(
         }
     }
 
+    /**
+     * Constructs metadata from an explicit title, classification, and tags.
+     *
+     * @param id the secret's stable id
+     * @param type the secret type
+     * @param title the non-blank secret title
+     * @param classification the non-secret taxonomy
+     * @param tags the tag set
+     * @param createdAt when the secret was first stored
+     * @param updatedAt when the secret was last updated
+     * @param revision the monotonic revision; must be positive
+     */
     public SecretMetadata(
             @NonNull SecretId id,
             @NonNull SecretType type,
@@ -57,6 +70,17 @@ public record SecretMetadata(
                 revision);
     }
 
+    /**
+     * Constructs metadata from an explicit title and tags with no classification.
+     *
+     * @param id the secret's stable id
+     * @param type the secret type
+     * @param title the non-blank secret title
+     * @param tags the tag set
+     * @param createdAt when the secret was first stored
+     * @param updatedAt when the secret was last updated
+     * @param revision the monotonic revision; must be positive
+     */
     public SecretMetadata(
             @NonNull SecretId id,
             @NonNull SecretType type,
@@ -68,14 +92,23 @@ public record SecretMetadata(
         this(id, type, title, SecretClassification.none(), tags, createdAt, updatedAt, revision);
     }
 
+    /** Returns the secret title.
+     *
+     * @return the secret title */
     public @NonNull String title() {
         return profile.title();
     }
 
+    /** Returns the secret classification.
+     *
+     * @return the secret classification */
     public @NonNull SecretClassification classification() {
         return profile.classification();
     }
 
+    /** Returns the secret tags.
+     *
+     * @return the secret tags */
     public @NonNull Set<String> tags() {
         return profile.tags();
     }

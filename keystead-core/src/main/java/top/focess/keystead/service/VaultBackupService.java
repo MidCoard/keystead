@@ -24,6 +24,7 @@ import top.focess.keystead.store.VaultStore;
  */
 public final class VaultBackupService {
 
+    /** The backup archive format version produced and accepted by this service. */
     public static final int FORMAT_VERSION = 1;
 
     private final Clock clock;
@@ -33,7 +34,11 @@ public final class VaultBackupService {
         this(Clock.systemUTC());
     }
 
-    /** Creates a backup service that uses the supplied clock for timestamps. */
+    /**
+     * Creates a backup service that uses the supplied clock for timestamps.
+     *
+     * @param clock the clock for timestamps
+     */
     public VaultBackupService(@NonNull Clock clock) {
         this.clock = Objects.requireNonNull(clock, "clock");
     }

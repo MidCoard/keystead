@@ -7,7 +7,14 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import org.jspecify.annotations.NonNull;
 
+/**
+ * JDK-backed ChaCha20-Poly1305 {@link AeadCipher} using a 256-bit key and a 96-bit nonce. Nonces
+ * are caller-supplied; the caller is responsible for uniqueness.
+ */
 public final class JdkChaCha20Poly1305Cipher implements AeadCipher {
+
+    /** Creates a JDK-backed ChaCha20-Poly1305 cipher. */
+    public JdkChaCha20Poly1305Cipher() {}
 
     private static final String JCA_ALGORITHM = "ChaCha20-Poly1305";
     private static final String KEY_ALGORITHM = "ChaCha20";

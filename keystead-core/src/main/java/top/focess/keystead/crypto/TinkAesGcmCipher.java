@@ -6,7 +6,15 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.SecurityLimits;
 
+/**
+ * Tink-backed AES-256-GCM {@link AeadCipher} that uses explicit caller-supplied nonces. Tink
+ * marks explicit-nonce AES-GCM as insecure because the caller must guarantee nonce uniqueness;
+ * {@link DefaultCryptoService} owns nonce generation for Keystead.
+ */
 public final class TinkAesGcmCipher implements AeadCipher {
+
+    /** Creates a Tink-backed AES-256-GCM cipher. */
+    public TinkAesGcmCipher() {}
 
     @Override
     public @NonNull String algorithm() {

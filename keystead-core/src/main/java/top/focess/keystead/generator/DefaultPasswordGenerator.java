@@ -8,6 +8,7 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
 
+/** Default {@link PasswordGenerator} that builds a password from enabled character groups. */
 public final class DefaultPasswordGenerator implements PasswordGenerator {
 
     private static final char[] UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray();
@@ -18,10 +19,16 @@ public final class DefaultPasswordGenerator implements PasswordGenerator {
 
     private final SecureRandom random;
 
+    /** Creates a generator with a default secure random. */
     public DefaultPasswordGenerator() {
         this(new SecureRandom());
     }
 
+    /**
+     * Creates a generator with the supplied secure random.
+     *
+     * @param random the secure random source
+     */
     public DefaultPasswordGenerator(@NonNull SecureRandom random) {
         this.random = Objects.requireNonNull(random, "random");
     }

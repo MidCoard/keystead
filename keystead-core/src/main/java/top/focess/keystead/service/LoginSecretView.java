@@ -15,18 +15,28 @@ import top.focess.keystead.model.SecretMetadata;
  */
 public interface LoginSecretView {
 
-    /** @return the secret's non-secret metadata. */
+    /** Returns the secret's non-secret metadata.
+     *
+     * @return the secret's non-secret metadata */
     @NonNull SecretMetadata metadata();
 
-    /** @return the optional URL, which is not treated as secret. */
+    /** Returns the optional URL, which is not treated as secret.
+     *
+     * @return the optional URL, which is not treated as secret */
     @NonNull Optional<String> url();
 
-    /** Exposes the username characters inside the callback. */
+    /** Exposes the username characters inside the callback.
+     *
+     * @param consumer callback that receives the username {@code char[]}; wiped after the call */
     void withUsername(@NonNull Consumer<char[]> consumer);
 
-    /** Exposes the password characters inside the callback. */
+    /** Exposes the password characters inside the callback.
+     *
+     * @param consumer callback that receives the password {@code char[]}; wiped after the call */
     void withPassword(@NonNull Consumer<char[]> consumer);
 
-    /** Exposes the notes characters inside the callback. */
+    /** Exposes the notes characters inside the callback.
+     *
+     * @param consumer callback that receives the notes {@code char[]}; wiped after the call */
     void withNotes(@NonNull Consumer<char[]> consumer);
 }

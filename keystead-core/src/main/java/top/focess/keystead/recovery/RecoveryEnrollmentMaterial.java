@@ -5,7 +5,11 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
-/** Client-owned secret and public material created during recovery enrollment. */
+/**
+ * Client-owned secret and public material created during recovery enrollment. The account
+ * credential and encrypted private key are defensively copied on construction and on access, and
+ * are wiped when the material is closed. Closing the material also closes the owned recovery kit.
+ */
 public final class RecoveryEnrollmentMaterial implements AutoCloseable {
 
     private static final int CREDENTIAL_BYTES = 32;
@@ -17,6 +21,14 @@ public final class RecoveryEnrollmentMaterial implements AutoCloseable {
     private final byte[] encryptedPrivateKey;
     private boolean closed;
 
+    /**
+     * Creates recovery enrollment material for the given kit and key material.
+     *
+     * @param kit the owned recovery kit; closed when this material is closed
+     * @param accountCredential the 32-byte account recovery credential; defensively copied
+     * @param publicKey the public wrapping key for this enrollment generation
+     * @param encryptedPrivateKey the encrypted recovery private key; defensively copied
+     */
     public RecoveryEnrollmentMaterial(
             @NonNull RecoveryKit kit,
             byte @NonNull [] accountCredential,
@@ -80,25 +92,40 @@ public final class RecoveryEnrollmentMaterial implements AutoCloseable {
         }
     }
 
+    /** Returns the owned recovery kit.
+     *
+     * @return the owned recovery kit */
     public synchronized @NonNull RecoveryKit kit() {
         requireOpen();
         return kit;
     }
 
+    /** Returns a defensive copy of the account recovery credential.
+     *
+     * @return a defensive copy of the account recovery credential */
     public synchronized byte @NonNull [] accountCredential() {
         requireOpen();
         return Arrays.copyOf(accountCredential, accountCredential.length);
     }
 
+    /** Returns the public wrapping key for this enrollment generation.
+     *
+     * @return the public wrapping key for this enrollment generation */
     public @NonNull RecoveryPublicKey publicKey() {
         return publicKey;
     }
 
+    /** Returns a defensive copy of the encrypted recovery private key.
+     *
+     * @return a defensive copy of the encrypted recovery private key */
     public synchronized byte @NonNull [] encryptedPrivateKey() {
         requireOpen();
         return Arrays.copyOf(encryptedPrivateKey, encryptedPrivateKey.length);
     }
 
+    /** Returns whether this material has been closed and its secrets wiped.
+     *
+     * @return {@code true} if this material has been closed */
     public synchronized boolean isClosed() {
         return closed;
     }

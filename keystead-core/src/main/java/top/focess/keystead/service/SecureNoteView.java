@@ -14,9 +14,13 @@ import top.focess.keystead.model.SecretMetadata;
  */
 public interface SecureNoteView {
 
-    /** @return the secret's non-secret metadata. */
+    /** Returns the secret's non-secret metadata.
+     *
+     * @return the secret's non-secret metadata */
     @NonNull SecretMetadata metadata();
 
-    /** Exposes the note body characters inside the callback. */
+    /** Exposes the note body characters inside the callback.
+     *
+     * @param consumer callback that receives the body {@code char[]}; wiped after the call */
     void withBody(@NonNull Consumer<char[]> consumer);
 }

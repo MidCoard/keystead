@@ -9,6 +9,7 @@ import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretMemoryProvider;
 
+/** Default {@link MfaSecretGenerator} that produces Base32 TOTP seeds and {@code otpauth} URIs. */
 public final class DefaultMfaSecretGenerator implements MfaSecretGenerator {
 
     private static final char[] BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".toCharArray();
@@ -17,10 +18,16 @@ public final class DefaultMfaSecretGenerator implements MfaSecretGenerator {
     private final SecretMemoryProvider memoryProvider;
     private final MfaSecretFactory secretFactory;
 
+    /** Creates a generator with a default secure random. */
     public DefaultMfaSecretGenerator() {
         this(new SecureRandom());
     }
 
+    /**
+     * Creates a generator with the supplied secure random.
+     *
+     * @param random the secure random source
+     */
     public DefaultMfaSecretGenerator(@NonNull SecureRandom random) {
         this(random, SecretMemoryProvider.systemDefault(), MfaSecret::new);
     }

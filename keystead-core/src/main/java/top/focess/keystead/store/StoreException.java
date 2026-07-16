@@ -10,6 +10,12 @@ import org.jspecify.annotations.Nullable;
  */
 public final class StoreException extends RuntimeException {
 
+    /**
+     * Creates a store exception with the given message and cause.
+     *
+     * @param message the non-secret detail message
+     * @param cause the underlying cause, or {@code null} if none
+     */
     public StoreException(@NonNull String message, @Nullable Throwable cause) {
         super(message, cause);
     }

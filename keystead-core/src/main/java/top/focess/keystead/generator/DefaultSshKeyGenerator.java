@@ -21,6 +21,7 @@ import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
 
+/** Default {@link SshKeyGenerator} that produces Ed25519 OpenSSH key pairs. */
 public final class DefaultSshKeyGenerator implements SshKeyGenerator {
 
     private static final String OPENSSH_ED25519 = "ssh-ed25519";
@@ -29,10 +30,16 @@ public final class DefaultSshKeyGenerator implements SshKeyGenerator {
 
     private final SecureRandom random;
 
+    /** Creates a generator with a default secure random. */
     public DefaultSshKeyGenerator() {
         this(new SecureRandom());
     }
 
+    /**
+     * Creates a generator with the supplied secure random.
+     *
+     * @param random the secure random source
+     */
     public DefaultSshKeyGenerator(@NonNull SecureRandom random) {
         this.random = Objects.requireNonNull(random, "random");
     }

@@ -18,6 +18,7 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
 
+/** Default {@link CertificateGenerator} that produces self-signed RSA X.509 certificates. */
 public final class DefaultCertificateGenerator implements CertificateGenerator {
 
     private static final String PROVIDER = BouncyCastleProvider.PROVIDER_NAME;
@@ -26,10 +27,16 @@ public final class DefaultCertificateGenerator implements CertificateGenerator {
 
     private final SecureRandom random;
 
+    /** Creates a generator with a default secure random. */
     public DefaultCertificateGenerator() {
         this(new SecureRandom());
     }
 
+    /**
+     * Creates a generator with the supplied secure random.
+     *
+     * @param random the secure random source
+     */
     public DefaultCertificateGenerator(@NonNull SecureRandom random) {
         this.random = Objects.requireNonNull(random, "random");
         ensureProvider();

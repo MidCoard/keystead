@@ -45,12 +45,16 @@ public final class DeviceKeyPair implements AutoCloseable {
                         "protected memory");
     }
 
-    /** @return the device key algorithm name. */
+    /** Returns the device key algorithm name.
+     *
+     * @return the device key algorithm name */
     public @NonNull String keyAlgorithm() {
         return keyAlgorithm;
     }
 
-    /** @return a defensive copy of the public key. */
+    /** Returns a defensive copy of the public key.
+     *
+     * @return a defensive copy of the public key */
     public byte @NonNull [] publicKey() {
         return Arrays.copyOf(publicKey, publicKey.length);
     }
@@ -84,7 +88,9 @@ public final class DeviceKeyPair implements AutoCloseable {
         }
     }
 
-    /** @return whether this pair has been closed and its private key wiped. */
+    /** Returns whether this pair has been closed and its private key wiped.
+     *
+     * @return whether this pair has been closed and its private key wiped */
     public boolean isClosed() {
         return privateKey.isClosed();
     }

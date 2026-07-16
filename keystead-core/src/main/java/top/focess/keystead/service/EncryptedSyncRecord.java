@@ -5,6 +5,18 @@ import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.SecretType;
 import top.focess.keystead.model.SecurityLimits;
 
+/**
+ * An encrypted secret record exchanged with a sync server. Active records carry an encrypted profile
+ * and envelope; deleted records carry neither.
+ *
+ * @param vaultId the vault id
+ * @param secretId the secret id
+ * @param revision the monotonic record revision
+ * @param secretType the secret type name
+ * @param encryptedProfile the encrypted profile envelope, or empty when deleted
+ * @param envelope the encrypted payload envelope, or empty when deleted
+ * @param deleted whether this record is a tombstone
+ */
 public record EncryptedSyncRecord(
         @NonNull String vaultId,
         @NonNull String secretId,
@@ -14,6 +26,7 @@ public record EncryptedSyncRecord(
         @NonNull String envelope,
         boolean deleted) {
 
+    /** Validates the record components. */
     public EncryptedSyncRecord {
         requireNotBlank(vaultId, "vaultId");
         requireNotBlank(secretId, "secretId");

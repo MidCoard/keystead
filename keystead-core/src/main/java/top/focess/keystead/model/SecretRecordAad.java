@@ -5,10 +5,18 @@ import java.util.Map;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
+/**
+ * Encodes additional authenticated data (AAD) for a secret record, binding the ciphertext to the
+ * vault id, metadata, and revision.
+ */
 public final class SecretRecordAad {
 
-    private SecretRecordAad() {}
-
+    /** Encodes the AAD bytes for the given vault, metadata, and revision.
+     *
+     * @param vaultId the vault id
+     * @param metadata the non-secret metadata
+     * @param revision the record revision
+     * @return the encoded AAD bytes */
     public static byte @NonNull [] encode(
             @NonNull VaultId vaultId, @NonNull SecretMetadata metadata, long revision) {
         StringBuilder value = new StringBuilder();
@@ -49,4 +57,6 @@ public final class SecretRecordAad {
     private static @NonNull String nullable(@Nullable String value) {
         return value == null ? "" : value;
     }
+
+    private SecretRecordAad() {}
 }

@@ -6,12 +6,22 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.NonNull;
 
+/**
+ * Non-secret profile of a stored secret: title, classification, tags, and attributes. Tags and
+ * attribute keys/values are trimmed; blank entries are discarded.
+ *
+ * @param title the non-blank secret title
+ * @param classification the non-secret taxonomy
+ * @param tags the trimmed, de-duplicated tag set
+ * @param attributes the trimmed key-value attribute map
+ */
 public record SecretProfile(
         @NonNull String title,
         @NonNull SecretClassification classification,
         @NonNull Set<String> tags,
         @NonNull Map<String, String> attributes) {
 
+    /** Validates and normalizes the record components. */
     public SecretProfile {
         title = Objects.requireNonNull(title, "title").trim();
         classification = Objects.requireNonNull(classification, "classification");
@@ -36,6 +46,13 @@ public record SecretProfile(
         }
     }
 
+    /**
+     * Constructs a profile without attributes.
+     *
+     * @param title the non-blank secret title
+     * @param classification the non-secret taxonomy
+     * @param tags the trimmed, de-duplicated tag set
+     */
     public SecretProfile(
             @NonNull String title,
             @NonNull SecretClassification classification,

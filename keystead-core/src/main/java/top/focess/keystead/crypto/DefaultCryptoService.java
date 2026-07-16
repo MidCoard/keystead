@@ -34,10 +34,17 @@ import top.focess.keystead.model.KeyId;
  */
 public final class DefaultCryptoService {
 
+    /** Approved AEAD algorithm used for secret payloads. */
     public static final String PAYLOAD_ALGORITHM = CryptoAlgorithmRegistry.AEAD_AES_256_GCM;
+
+    /** Approved device key-package algorithm used for device wrapping. */
     public static final String DEVICE_KEY_ALGORITHM =
             CryptoAlgorithmRegistry.DEVICE_TINK_ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM;
+
+    /** Approved KDF algorithm used to wrap vault keys from a master password. */
     public static final String KDF_ALGORITHM = CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256;
+
+    /** Default PBKDF2 iteration count. */
     public static final int DEFAULT_KDF_ITERATIONS = 120_000;
 
     private static final int KEY_BYTES = 32;
@@ -49,14 +56,26 @@ public final class DefaultCryptoService {
     private final Map<String, AeadCipher> aeadCiphers;
     private final Map<String, PasswordKeyDerivation> passwordKeyDerivations;
 
+    /** Creates a service with a default secure random and AES-256-GCM cipher. */
     public DefaultCryptoService() {
         this(new SecureRandom());
     }
 
+    /**
+     * Creates a service with the supplied secure random and AES-256-GCM cipher.
+     *
+     * @param random the secure random source
+     */
     public DefaultCryptoService(@NonNull SecureRandom random) {
         this(random, new TinkAesGcmCipher());
     }
 
+    /**
+     * Creates a service with the supplied secure random and primary AEAD cipher.
+     *
+     * @param random the secure random source
+     * @param aeadCipher the primary AEAD cipher
+     */
     public DefaultCryptoService(@NonNull SecureRandom random, @NonNull AeadCipher aeadCipher) {
         this(random, aeadCipher, SecretMemoryProvider.systemDefault());
     }
@@ -80,6 +99,12 @@ public final class DefaultCryptoService {
         this.passwordKeyDerivations = passwordKeyDerivations(passwordKeyDerivations);
     }
 
+    /**
+     * Generates a fresh random vault key with the given id.
+     *
+     * @param keyId the new key id
+     * @return the generated vault key
+     */
     public @NonNull VaultKey generateVaultKey(@NonNull KeyId keyId) {
         byte[] keyBytes = new byte[KEY_BYTES];
         random.nextBytes(keyBytes);
@@ -90,12 +115,22 @@ public final class DefaultCryptoService {
         }
     }
 
+    /**
+     * Generates a fresh random KDF salt.
+     *
+     * @return the salt
+     */
     public byte @NonNull [] randomSalt() {
         byte[] salt = new byte[SALT_BYTES];
         random.nextBytes(salt);
         return salt;
     }
 
+    /**
+     * Generates a new device ECIES key pair.
+     *
+     * @return the device key pair
+     */
     public @NonNull DeviceKeyPair generateDeviceKeyPair() {
         try {
             registerHybridPrimitives();
@@ -117,6 +152,15 @@ public final class DefaultCryptoService {
         }
     }
 
+    /**
+     * Encrypts plaintext as an envelope authenticated by the vault id, metadata, and revision.
+     *
+     * @param key the vault key
+     * @param plaintext the plaintext
+     * @param aad the additional authenticated data
+     * @param encryptedAt the encryption timestamp
+     * @return the encrypted envelope
+     */
     public @NonNull EncryptedEnvelope encrypt(
             @NonNull VaultKey key,
             byte @NonNull [] plaintext,
@@ -135,6 +179,14 @@ public final class DefaultCryptoService {
                 1, aeadCipher.algorithm(), key.keyId(), nonce, aad, ciphertext, encryptedAt);
     }
 
+    /**
+     * Decrypts an envelope, verifying the key id and AAD match.
+     *
+     * @param key the vault key
+     * @param envelope the encrypted envelope
+     * @param aad the additional authenticated data
+     * @return the plaintext
+     */
     public byte @NonNull [] decrypt(
             @NonNull VaultKey key, @NonNull EncryptedEnvelope envelope, byte @NonNull [] aad) {
         Objects.requireNonNull(key, "key");
@@ -164,6 +216,15 @@ public final class DefaultCryptoService {
                                 keyBytes, envelope.nonce(), envelope.ciphertext(), aad));
     }
 
+    /**
+     * Wraps a vault key with a password-derived key and the default KDF.
+     *
+     * @param vaultKey the vault key
+     * @param masterPassword caller-owned master password
+     * @param salt the KDF salt
+     * @param iterations the KDF iterations
+     * @return the wrapped vault key bytes
+     */
     public byte @NonNull [] wrapVaultKey(
             @NonNull VaultKey vaultKey,
             char @NonNull [] masterPassword,
@@ -172,6 +233,16 @@ public final class DefaultCryptoService {
         return wrapVaultKey(vaultKey, masterPassword, salt, iterations, KDF_ALGORITHM);
     }
 
+    /**
+     * Wraps a vault key with a password-derived key and the named KDF.
+     *
+     * @param vaultKey the vault key
+     * @param masterPassword caller-owned master password
+     * @param salt the KDF salt
+     * @param iterations the KDF iterations
+     * @param kdfAlgorithm the KDF algorithm
+     * @return the wrapped vault key bytes
+     */
     public byte @NonNull [] wrapVaultKey(
             @NonNull VaultKey vaultKey,
             char @NonNull [] masterPassword,
@@ -220,6 +291,16 @@ public final class DefaultCryptoService {
         }
     }
 
+    /**
+     * Unwraps a vault key with a password-derived key and the default KDF.
+     *
+     * @param keyId the key id
+     * @param wrappedVaultKey the wrapped bytes
+     * @param masterPassword caller-owned master password
+     * @param salt the KDF salt
+     * @param iterations the KDF iterations
+     * @return the unwrapped vault key
+     */
     public @NonNull VaultKey unwrapVaultKey(
             @NonNull KeyId keyId,
             byte @NonNull [] wrappedVaultKey,
@@ -230,6 +311,17 @@ public final class DefaultCryptoService {
                 keyId, wrappedVaultKey, masterPassword, salt, iterations, KDF_ALGORITHM);
     }
 
+    /**
+     * Unwraps a vault key with a password-derived key and the named KDF.
+     *
+     * @param keyId the key id
+     * @param wrappedVaultKey the wrapped bytes
+     * @param masterPassword caller-owned master password
+     * @param salt the KDF salt
+     * @param iterations the KDF iterations
+     * @param kdfAlgorithm the KDF algorithm
+     * @return the unwrapped vault key
+     */
     public @NonNull VaultKey unwrapVaultKey(
             @NonNull KeyId keyId,
             byte @NonNull [] wrappedVaultKey,
@@ -275,6 +367,14 @@ public final class DefaultCryptoService {
         }
     }
 
+    /**
+     * Wraps a vault key for a device's public key.
+     *
+     * @param vaultKey the vault key
+     * @param devicePublicKey the recipient device public key
+     * @param context the binding context
+     * @return the wrapped vault key bytes
+     */
     public byte @NonNull [] wrapVaultKeyForDevice(
             @NonNull VaultKey vaultKey,
             byte @NonNull [] devicePublicKey,
@@ -293,6 +393,15 @@ public final class DefaultCryptoService {
         }
     }
 
+    /**
+     * Unwraps a vault key from a device-wrapped package using the device private key.
+     *
+     * @param keyId the key id
+     * @param encryptedVaultKey the device-wrapped bytes
+     * @param devicePrivateKey caller-owned device private key
+     * @param context the binding context
+     * @return the unwrapped vault key
+     */
     public @NonNull VaultKey unwrapVaultKeyFromDevicePackage(
             @NonNull KeyId keyId,
             byte @NonNull [] encryptedVaultKey,

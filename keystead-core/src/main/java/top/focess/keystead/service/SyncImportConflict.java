@@ -3,6 +3,17 @@ package top.focess.keystead.service;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
+/**
+ * A conflict between a local and remote sync record where the local revision is at least as new as
+ * the remote revision.
+ *
+ * @param vaultId the vault id
+ * @param secretId the secret id
+ * @param localRevision the local revision that won
+ * @param remoteRevision the remote revision that was skipped
+ * @param localDeleted whether the local state is a tombstone
+ * @param remoteDeleted whether the remote state is a tombstone
+ */
 public record SyncImportConflict(
         @NonNull String vaultId,
         @NonNull String secretId,
@@ -11,6 +22,7 @@ public record SyncImportConflict(
         boolean localDeleted,
         boolean remoteDeleted) {
 
+    /** Validates the record components. */
     public SyncImportConflict {
         requireNotBlank(vaultId, "vaultId");
         requireNotBlank(secretId, "secretId");

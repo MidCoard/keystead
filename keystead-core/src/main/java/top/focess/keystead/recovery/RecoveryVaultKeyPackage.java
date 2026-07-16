@@ -6,7 +6,18 @@ import org.jspecify.annotations.NonNull;
 import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
 import top.focess.keystead.model.KeyId;
 
-/** Opaque vault-key package encrypted to a recovery enrollment. */
+/**
+ * Opaque vault-key package encrypted to a recovery enrollment. The encrypted key is defensively
+ * copied and redacted in {@link #toString()}.
+ *
+ * @param username the account username
+ * @param vaultId the vault the package targets
+ * @param vaultKeyId the id of the wrapped vault key
+ * @param enrollmentId the recovery enrollment identifier
+ * @param generation the enrollment generation; must be positive
+ * @param keyAlgorithm the approved device key-package algorithm
+ * @param encryptedVaultKey the encrypted vault key bytes
+ */
 public record RecoveryVaultKeyPackage(
         @NonNull String username,
         @NonNull String vaultId,
@@ -18,6 +29,7 @@ public record RecoveryVaultKeyPackage(
 
     private static final int MAX_CIPHERTEXT_BYTES = 1024 * 1024;
 
+    /** Validates and defensively copies the record components. */
     public RecoveryVaultKeyPackage {
         username = requireNotBlank(username, "username");
         vaultId = requireNotBlank(vaultId, "vaultId");
@@ -37,6 +49,9 @@ public record RecoveryVaultKeyPackage(
         encryptedVaultKey = Arrays.copyOf(encryptedVaultKey, encryptedVaultKey.length);
     }
 
+    /** Returns a defensive copy of the encrypted vault key bytes.
+     *
+     * @return a defensive copy of the encrypted vault key bytes */
     @Override
     public byte @NonNull [] encryptedVaultKey() {
         return Arrays.copyOf(encryptedVaultKey, encryptedVaultKey.length);

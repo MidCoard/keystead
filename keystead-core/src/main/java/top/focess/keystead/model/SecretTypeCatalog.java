@@ -7,6 +7,10 @@ import java.util.Map;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
+/**
+ * Registry of default catalog entries for all secret types, pairing each type's schema with default
+ * taxonomy values.
+ */
 public final class SecretTypeCatalog {
 
     private static final Map<SecretType, SecretTypeCatalogEntry> DEFAULTS = buildDefaults();
@@ -14,11 +18,18 @@ public final class SecretTypeCatalog {
 
     private SecretTypeCatalog() {}
 
+    /** Returns the default catalog entry for the given secret type.
+     *
+     * @param type the secret type
+     * @return the default catalog entry for the type */
     public static @NonNull SecretTypeCatalogEntry forType(@NonNull SecretType type) {
         Objects.requireNonNull(type, "type");
         return DEFAULTS.get(type);
     }
 
+    /** Returns the default catalog entries for all secret types.
+     *
+     * @return the default catalog entries for all secret types */
     public static @NonNull List<SecretTypeCatalogEntry> defaults() {
         return DEFAULT_LIST;
     }

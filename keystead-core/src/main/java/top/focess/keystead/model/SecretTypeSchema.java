@@ -9,6 +9,10 @@ import java.util.function.Predicate;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
+/**
+ * Schema describing the fields and custom-field policy for a secret type. Field schemas are copied
+ * and indexed by name on construction.
+ */
 public final class SecretTypeSchema {
 
     private final SecretType type;
@@ -18,6 +22,13 @@ public final class SecretTypeSchema {
     private final boolean customFieldsRevealable;
     private final Map<String, SecretFieldSchema> fieldByName;
 
+    /**
+     * Constructs a schema with default custom-field settings (secret type, revealable).
+     *
+     * @param type the secret type
+     * @param fields the field schemas
+     * @param allowsCustomFields whether custom fields are allowed
+     */
     public SecretTypeSchema(
             @NonNull SecretType type,
             @NonNull List<SecretFieldSchema> fields,
@@ -30,6 +41,15 @@ public final class SecretTypeSchema {
                 allowsCustomFields);
     }
 
+    /**
+     * Constructs a schema with explicit custom-field settings.
+     *
+     * @param type the secret type
+     * @param fields the field schemas
+     * @param allowsCustomFields whether custom fields are allowed
+     * @param customFieldType the field type for custom fields, or {@code null} when disabled
+     * @param customFieldsRevealable whether custom fields are revealable
+     */
     public SecretTypeSchema(
             @NonNull SecretType type,
             @NonNull List<SecretFieldSchema> fields,
@@ -60,60 +80,104 @@ public final class SecretTypeSchema {
         this.fieldByName = Collections.unmodifiableMap(map);
     }
 
+    /** Returns the secret type.
+     *
+     * @return the secret type */
     public @NonNull SecretType type() {
         return type;
     }
 
+    /** Returns the field schemas.
+     *
+     * @return the field schemas */
     public @NonNull List<SecretFieldSchema> fields() {
         return fields;
     }
 
+    /** Returns whether custom fields are allowed.
+     *
+     * @return {@code true} if custom fields are allowed */
     public boolean allowsCustomFields() {
         return allowsCustomFields;
     }
 
+    /** Returns the field type for custom fields.
+     *
+     * @return the custom field type, or {@code null} when custom fields are disabled */
     public @Nullable SecretFieldType customFieldType() {
         return customFieldType;
     }
 
+    /** Returns whether custom fields are revealable.
+     *
+     * @return {@code true} if custom fields are revealable */
     public boolean customFieldsRevealable() {
         return customFieldsRevealable;
     }
 
+    /** Returns the ordered field names.
+     *
+     * @return the ordered field names */
     public @NonNull List<String> fieldNames() {
         return fields.stream().map(SecretFieldSchema::name).toList();
     }
 
+    /** Returns the ordered names of required fields.
+     *
+     * @return the ordered names of required fields */
     public @NonNull List<String> requiredFieldNames() {
         return fieldNamesMatching(SecretFieldSchema::required);
     }
 
+    /** Returns the ordered names of optional fields.
+     *
+     * @return the ordered names of optional fields */
     public @NonNull List<String> optionalFieldNames() {
         return fieldNamesMatching(field -> !field.required());
     }
 
+    /** Returns the ordered names of secret-typed fields.
+     *
+     * @return the ordered names of secret-typed fields */
     public @NonNull List<String> secretFieldNames() {
         return fieldNamesMatching(field -> field.type() == SecretFieldType.SECRET);
     }
 
+    /** Returns the ordered names of text-typed (public) fields.
+     *
+     * @return the ordered names of text-typed fields */
     public @NonNull List<String> publicFieldNames() {
         return fieldNamesMatching(field -> field.type() == SecretFieldType.TEXT);
     }
 
+    /** Returns the ordered names of revealable fields.
+     *
+     * @return the ordered names of revealable fields */
     public @NonNull List<String> revealableFieldNames() {
         return fieldNamesMatching(SecretFieldSchema::revealable);
     }
 
+    /** Returns the field schema for the given name.
+     *
+     * @param name the field name
+     * @return the field schema, or {@code null} if not found */
     public @Nullable SecretFieldSchema field(@NonNull String name) {
         Objects.requireNonNull(name, "name");
         return fieldByName.get(name);
     }
 
+    /** Returns the default schema for the given secret type.
+     *
+     * @param type the secret type
+     * @return the default schema for the type */
     public static @NonNull SecretTypeSchema forType(@NonNull SecretType type) {
         Objects.requireNonNull(type, "type");
         return DEFAULTS.get(type);
     }
 
+    /** Returns the default schemas for all secret types.
+     *
+     * @return the default schemas for all secret types */
     public static @NonNull List<SecretTypeSchema> defaults() {
         return DEFAULT_LIST;
     }

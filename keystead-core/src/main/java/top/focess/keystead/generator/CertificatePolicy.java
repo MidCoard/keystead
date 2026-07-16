@@ -4,8 +4,13 @@ import java.util.Date;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
+/**
+ * Parameters for generating an X.509 certificate: subject common name, validity windows, and RSA key
+ * size (at least 3072 bits).
+ */
 public final class CertificatePolicy {
 
+    /** Default RSA key size. */
     public static final int DEFAULT_RSA_BITS = 3072;
 
     private final String commonName;
@@ -13,11 +18,26 @@ public final class CertificatePolicy {
     private final Date notAfter;
     private final int rsaBits;
 
+    /**
+     * Creates a policy with the default RSA key size.
+     *
+     * @param commonName the subject common name
+     * @param notBefore the validity start
+     * @param notAfter the validity end
+     */
     public CertificatePolicy(
             @NonNull String commonName, @NonNull Date notBefore, @NonNull Date notAfter) {
         this(commonName, notBefore, notAfter, DEFAULT_RSA_BITS);
     }
 
+    /**
+     * Creates a policy with an explicit RSA key size.
+     *
+     * @param commonName the subject common name
+     * @param notBefore the validity start
+     * @param notAfter the validity end
+     * @param rsaBits the RSA key size in bits; at least 3072
+     */
     public CertificatePolicy(
             @NonNull String commonName,
             @NonNull Date notBefore,
@@ -35,18 +55,30 @@ public final class CertificatePolicy {
         this.rsaBits = rsaBits;
     }
 
+    /** Returns the subject common name.
+     *
+     * @return the subject common name */
     public @NonNull String commonName() {
         return commonName;
     }
 
+    /** Returns the certificate validity start.
+     *
+     * @return the validity start */
     public @NonNull Date notBefore() {
         return new Date(notBefore.getTime());
     }
 
+    /** Returns the certificate validity end.
+     *
+     * @return the validity end */
     public @NonNull Date notAfter() {
         return new Date(notAfter.getTime());
     }
 
+    /** Returns the RSA key size in bits.
+     *
+     * @return the RSA key size */
     public int rsaBits() {
         return rsaBits;
     }

@@ -16,6 +16,18 @@ import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretType;
 
+/**
+ * Non-secret, derived view of a secret's organization metadata, suitable for feeding to an
+ * AI-generation context without exposing secret payloads.
+ *
+ * @param secretId the secret's stable id
+ * @param secretType the secret type
+ * @param title the trimmed secret title
+ * @param classification the secret classification
+ * @param tags the secret's tag set
+ * @param attributes the secret's custom attributes
+ * @param revision the secret revision; must be positive
+ */
 public record AigcOrganizationContext(
         @NonNull SecretId secretId,
         @NonNull SecretType secretType,
@@ -25,6 +37,7 @@ public record AigcOrganizationContext(
         @NonNull Map<String, String> attributes,
         long revision) {
 
+    /** Validates and copies the record components. */
     public AigcOrganizationContext {
         Objects.requireNonNull(secretId, "secretId");
         Objects.requireNonNull(secretType, "secretType");
@@ -40,11 +53,23 @@ public record AigcOrganizationContext(
         }
     }
 
+    /**
+     * Derives a context from an encrypted secret record's metadata.
+     *
+     * @param record the source record
+     * @return the derived context
+     */
     public static @NonNull AigcOrganizationContext from(@NonNull EncryptedSecretRecord record) {
         Objects.requireNonNull(record, "record");
         return from(record.metadata());
     }
 
+    /**
+     * Derives a context from secret metadata.
+     *
+     * @param metadata the source metadata
+     * @return the derived context
+     */
     public static @NonNull AigcOrganizationContext from(@NonNull SecretMetadata metadata) {
         Objects.requireNonNull(metadata, "metadata");
         return new AigcOrganizationContext(
@@ -57,6 +82,9 @@ public record AigcOrganizationContext(
                 metadata.revision());
     }
 
+    /** Returns the context as an unmodifiable map of non-secret prompt fields.
+     *
+     * @return the prompt field map */
     public @NonNull Map<String, String> promptFields() {
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("secretId", secretId.value().toString());
@@ -73,6 +101,9 @@ public record AigcOrganizationContext(
         return Collections.unmodifiableMap(new LinkedHashMap<>(fields));
     }
 
+    /** Returns the context as newline-joined {@code key=value} prompt text.
+     *
+     * @return the prompt text */
     public @NonNull String toPromptText() {
         return promptFields().entrySet().stream()
                 .map(entry -> entry.getKey() + "=" + entry.getValue())

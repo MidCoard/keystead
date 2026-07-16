@@ -3,6 +3,15 @@ package top.focess.keystead.generator;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
+/**
+ * Policy for generating an MFA secret: issuer, account name, secret length, digits, and period.
+ *
+ * @param issuer the issuer name
+ * @param accountName the account name
+ * @param secretBytes the number of secret bytes; must be positive
+ * @param digits the number of TOTP digits; between 6 and 8
+ * @param periodSeconds the TOTP period in seconds; must be positive
+ */
 public record MfaSecretPolicy(
         @NonNull String issuer,
         @NonNull String accountName,
@@ -10,6 +19,7 @@ public record MfaSecretPolicy(
         int digits,
         int periodSeconds) {
 
+    /** Validates the record components. */
     public MfaSecretPolicy {
         issuer = normalize(issuer, "issuer");
         accountName = normalize(accountName, "accountName");
@@ -24,6 +34,11 @@ public record MfaSecretPolicy(
         }
     }
 
+    /** Returns a standard TOTP policy (20 secret bytes, 6 digits, 30 seconds).
+     *
+     * @param issuer the issuer name
+     * @param accountName the account name
+     * @return the standard TOTP policy */
     public static @NonNull MfaSecretPolicy totp(
             @NonNull String issuer, @NonNull String accountName) {
         return new MfaSecretPolicy(issuer, accountName, 20, 6, 30);

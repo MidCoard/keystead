@@ -18,8 +18,13 @@ import top.focess.keystead.model.VaultId;
 import top.focess.keystead.store.VaultKeyRotation;
 import top.focess.keystead.store.VaultStore;
 
+/**
+ * Default {@link VaultService} implementation that derives and wraps vault keys and delegates
+ * persistence to a {@link top.focess.keystead.store.VaultStore}.
+ */
 public final class DefaultVaultService implements VaultService {
 
+    /** Device key-package algorithm used by this service. */
     public static final String DEVICE_KEY_PACKAGE_ALGORITHM =
             CryptoAlgorithmRegistry.DEVICE_TINK_DEVICE_KEY_PACKAGE;
 
@@ -28,14 +33,32 @@ public final class DefaultVaultService implements VaultService {
     private final Clock clock;
     private final VaultHandleFactory handleFactory;
 
+    /**
+     * Creates a service with a default crypto service and system clock.
+     *
+     * @param store the vault store
+     */
     public DefaultVaultService(@NonNull VaultStore store) {
         this(store, Clock.systemUTC());
     }
 
+    /**
+     * Creates a service with a default crypto service and the supplied clock.
+     *
+     * @param store the vault store
+     * @param clock the clock for timestamps
+     */
     public DefaultVaultService(@NonNull VaultStore store, @NonNull Clock clock) {
         this(store, new DefaultCryptoService(), clock);
     }
 
+    /**
+     * Creates a service with the supplied store, crypto service, and clock.
+     *
+     * @param store the vault store
+     * @param crypto the crypto service
+     * @param clock the clock for timestamps
+     */
     public DefaultVaultService(
             @NonNull VaultStore store, @NonNull DefaultCryptoService crypto, @NonNull Clock clock) {
         this(store, crypto, clock, DefaultVaultHandle::new);

@@ -15,13 +15,19 @@ import top.focess.keystead.model.VaultId;
  */
 public interface PreparedVaultKeyRotation extends AutoCloseable {
 
-    /** @return the vault this rotation targets. */
+    /** Returns the vault this rotation targets.
+     *
+     * @return the vault this rotation targets */
     @NonNull VaultId vaultId();
 
-    /** @return the id of the key currently protecting the vault. */
+    /** Returns the id of the key currently protecting the vault.
+     *
+     * @return the id of the key currently protecting the vault */
     @NonNull KeyId sourceVaultKeyId();
 
-    /** @return the id of the key that will protect the vault after commit. */
+    /** Returns the id of the key that will protect the vault after commit.
+     *
+     * @return the id of the key that will protect the vault after commit */
     @NonNull KeyId targetVaultKeyId();
 
     /**
@@ -45,7 +51,9 @@ public interface PreparedVaultKeyRotation extends AutoCloseable {
      */
     @NonNull VaultHandle commitWithDevicePackage(@NonNull DeviceVaultKeyPackage localPackage);
 
-    /** @return whether the rotation has been committed. */
+    /** Returns whether the rotation has been committed.
+     *
+     * @return whether the rotation has been committed */
     boolean isCommitted();
 
     /**

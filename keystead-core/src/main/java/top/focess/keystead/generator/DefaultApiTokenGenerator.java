@@ -8,14 +8,24 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
 
+/**
+ * Default {@link ApiTokenGenerator} that produces a {@code prefix_base64url(random)} token from a
+ * {@link SecureRandom}.
+ */
 public final class DefaultApiTokenGenerator implements ApiTokenGenerator {
 
     private final SecureRandom random;
 
+    /** Creates a generator with a default secure random. */
     public DefaultApiTokenGenerator() {
         this(new SecureRandom());
     }
 
+    /**
+     * Creates a generator with the supplied secure random.
+     *
+     * @param random the secure random source
+     */
     public DefaultApiTokenGenerator(@NonNull SecureRandom random) {
         this.random = Objects.requireNonNull(random, "random");
     }

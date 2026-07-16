@@ -4,10 +4,16 @@ import java.util.Arrays;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
-/** Offline authority for one recovery enrollment generation. */
+/**
+ * Offline authority for one recovery enrollment generation. The recovery secret is defensively
+ * copied on construction and on access, and is wiped when the kit is closed.
+ */
 public final class RecoveryKit implements AutoCloseable {
 
+    /** The recovery kit format version supported by this class. */
     public static final int FORMAT_VERSION = 1;
+
+    /** The required length, in bytes, of the recovery secret. */
     public static final int SECRET_BYTES = 32;
 
     private final int formatVersion;
@@ -16,6 +22,14 @@ public final class RecoveryKit implements AutoCloseable {
     private final byte[] recoverySecret;
     private boolean closed;
 
+    /**
+     * Creates a recovery kit for the given enrollment generation.
+     *
+     * @param formatVersion the kit format version; must equal {@link #FORMAT_VERSION}
+     * @param enrollmentId the recovery enrollment identifier
+     * @param generation the enrollment generation; must be positive
+     * @param recoverySecret the 32-byte recovery secret; defensively copied
+     */
     public RecoveryKit(
             int formatVersion,
             @NonNull String enrollmentId,
@@ -37,23 +51,38 @@ public final class RecoveryKit implements AutoCloseable {
         this.recoverySecret = Arrays.copyOf(recoverySecret, recoverySecret.length);
     }
 
+    /** Returns the kit format version.
+     *
+     * @return the kit format version */
     public int formatVersion() {
         return formatVersion;
     }
 
+    /** Returns the recovery enrollment identifier.
+     *
+     * @return the recovery enrollment identifier */
     public @NonNull String enrollmentId() {
         return enrollmentId;
     }
 
+    /** Returns the enrollment generation.
+     *
+     * @return the enrollment generation */
     public long generation() {
         return generation;
     }
 
+    /** Returns a defensive copy of the recovery secret.
+     *
+     * @return a defensive copy of the recovery secret */
     public synchronized byte @NonNull [] recoverySecret() {
         requireOpen();
         return Arrays.copyOf(recoverySecret, recoverySecret.length);
     }
 
+    /** Returns whether this kit has been closed and its secret wiped.
+     *
+     * @return {@code true} if this kit has been closed */
     public synchronized boolean isClosed() {
         return closed;
     }

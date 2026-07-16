@@ -9,8 +9,16 @@ import javax.crypto.spec.SecretKeySpec;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.SecurityLimits;
 
+/**
+ * JDK-backed AES-256-GCM {@link AeadCipher} using a 12-byte nonce and a 128-bit authentication
+ * tag. Nonces are caller-supplied; the caller is responsible for uniqueness.
+ */
 public final class JdkAesGcmCipher implements AeadCipher {
 
+    /** Creates a JDK-backed AES-256-GCM cipher. */
+    public JdkAesGcmCipher() {}
+
+    /** The approved algorithm name for AES-256-GCM. */
     public static final String ALGORITHM = "AES-256-GCM";
 
     private static final int NONCE_BYTES = 12;

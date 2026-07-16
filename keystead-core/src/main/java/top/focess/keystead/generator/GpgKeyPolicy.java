@@ -6,8 +6,14 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
 
+/**
+ * Parameters for generating an OpenPGP key: identity, passphrase, creation time, and RSA key size
+ * (at least 3072 bits). Owns the passphrase buffer; the constructor wipes the supplied passphrase
+ * array and closing wipes the retained copy.
+ */
 public final class GpgKeyPolicy implements AutoCloseable {
 
+    /** Default RSA key size. */
     public static final int DEFAULT_RSA_BITS = 3072;
 
     private final String identity;
@@ -16,15 +22,36 @@ public final class GpgKeyPolicy implements AutoCloseable {
     private final int rsaBits;
     private boolean closed;
 
+    /**
+     * Creates a policy with the current time and default RSA key size.
+     *
+     * @param identity the OpenPGP identity
+     * @param passphrase the passphrase; wiped after being copied
+     */
     public GpgKeyPolicy(@NonNull String identity, char @NonNull [] passphrase) {
         this(identity, passphrase, new Date(), DEFAULT_RSA_BITS);
     }
 
+    /**
+     * Creates a policy with the default RSA key size.
+     *
+     * @param identity the OpenPGP identity
+     * @param passphrase the passphrase; wiped after being copied
+     * @param createdAt the key creation time
+     */
     public GpgKeyPolicy(
             @NonNull String identity, char @NonNull [] passphrase, @NonNull Date createdAt) {
         this(identity, passphrase, createdAt, DEFAULT_RSA_BITS);
     }
 
+    /**
+     * Creates a policy with an explicit RSA key size.
+     *
+     * @param identity the OpenPGP identity
+     * @param passphrase the passphrase; wiped after being copied
+     * @param createdAt the key creation time
+     * @param rsaBits the RSA key size in bits; at least 3072
+     */
     public GpgKeyPolicy(
             @NonNull String identity,
             char @NonNull [] passphrase,
@@ -46,21 +73,35 @@ public final class GpgKeyPolicy implements AutoCloseable {
         this.rsaBits = rsaBits;
     }
 
+    /** Returns the OpenPGP identity.
+     *
+     * @return the OpenPGP identity */
     public @NonNull String identity() {
         requireOpen();
         return identity;
     }
 
+    /** Returns the key creation time.
+     *
+     * @return the key creation time */
     public @NonNull Date createdAt() {
         requireOpen();
         return new Date(createdAt.getTime());
     }
 
+    /** Returns the RSA key size in bits.
+     *
+     * @return the RSA key size */
     public int rsaBits() {
         requireOpen();
         return rsaBits;
     }
 
+    /**
+     * Exposes a copy of the passphrase to the consumer and wipes the copy afterwards.
+     *
+     * @param consumer the consumer of the passphrase copy
+     */
     public void copyPassphrase(@NonNull Consumer<char[]> consumer) {
         Objects.requireNonNull(consumer, "consumer");
         requireOpen();

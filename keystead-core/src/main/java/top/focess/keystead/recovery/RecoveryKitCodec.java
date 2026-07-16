@@ -73,6 +73,12 @@ public final class RecoveryKitCodec {
     /**
      * Compatibility encoder whose returned secret {@link String} remains visible in heap dumps.
      * Prefer {@link #encodeSecret(RecoveryKit)} for new code.
+     *
+     * @param kit recovery authority to encode
+     * @return the canonical printable encoding of the kit
+     * @deprecated the returned {@link String} keeps the secret on the heap until garbage
+     *     collection; use {@link #encodeSecret(RecoveryKit)} so the encoding lives in wipeable
+     *     secret memory.
      */
     @Deprecated(forRemoval = false)
     public static @NonNull String encode(@NonNull RecoveryKit kit) {
@@ -83,7 +89,13 @@ public final class RecoveryKitCodec {
         return Objects.requireNonNull(encodedText[0], "encoded recovery kit");
     }
 
-    /** Decodes a recovery kit without constructing a secret-bearing full-text {@link String}. */
+    /**
+     * Decodes a recovery kit without constructing a secret-bearing full-text {@link String}.
+     *
+     * @param encoded the canonical printable encoding held in secret memory
+     * @return the decoded recovery kit; the caller must close it
+     * @throws IllegalArgumentException if the encoding is malformed or the checksum does not match
+     */
     public static @NonNull RecoveryKit decode(@NonNull SecretBuffer encoded) {
         Objects.requireNonNull(encoded, "encoded");
         RecoveryKit[] decoded = new RecoveryKit[1];

@@ -16,15 +16,24 @@ import top.focess.keystead.model.SecretMetadata;
  */
 public interface StructuredSecretView {
 
-    /** @return the secret's non-secret metadata. */
+    /** Returns the secret's non-secret metadata.
+     *
+     * @return the secret's non-secret metadata */
     @NonNull SecretMetadata metadata();
 
-    /** @return the names of every field present. */
+    /** Returns the names of every field present.
+     *
+     * @return the names of every field present */
     @NonNull Set<String> fieldNames();
 
-    /** @return the names of every field present, in insertion order. */
+    /** Returns the names of every field present, in insertion order.
+     *
+     * @return the names of every field present, in insertion order */
     @NonNull List<String> orderedFieldNames();
 
-    /** Exposes the named field's characters inside the callback. */
+    /** Exposes the named field's characters inside the callback.
+     *
+     * @param name the field name
+     * @param consumer callback that receives the field's {@code char[]}; wiped after the call */
     void withField(@NonNull String name, @NonNull Consumer<char[]> consumer);
 }

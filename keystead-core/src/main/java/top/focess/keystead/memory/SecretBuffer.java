@@ -31,7 +31,12 @@ public final class SecretBuffer implements AutoCloseable {
         this.memory = Objects.requireNonNull(memory, "memory");
     }
 
-    /** Creates a buffer that owns a defensive copy of the given UTF-8 bytes. */
+    /**
+     * Creates a buffer that owns a defensive copy of the given UTF-8 bytes.
+     *
+     * @param bytes the UTF-8 bytes to copy
+     * @return a new buffer owning a copy of the bytes
+     */
     public static @NonNull SecretBuffer fromUtf8(byte @NonNull [] bytes) {
         return fromUtf8(bytes, SecretMemoryProvider.systemDefault());
     }
@@ -47,6 +52,9 @@ public final class SecretBuffer implements AutoCloseable {
     /**
      * Encodes the given characters as UTF-8 and owns the result. The input character array is
      * copied and wiped; the caller remains responsible for the original array.
+     *
+     * @param chars the characters to encode
+     * @return a new buffer owning the encoded UTF-8 bytes
      */
     public static @NonNull SecretBuffer fromChars(char @NonNull [] chars) {
         return fromChars(chars, SecretMemoryProvider.systemDefault());
@@ -81,12 +89,16 @@ public final class SecretBuffer implements AutoCloseable {
         }
     }
 
-    /** @return the number of secret bytes. */
+    /** Returns the number of secret bytes.
+     *
+     * @return the number of secret bytes */
     public int length() {
         return memory.length();
     }
 
-    /** @return whether this buffer has been closed and its bytes wiped. */
+    /** Returns whether this buffer has been closed and its bytes wiped.
+     *
+     * @return whether this buffer has been closed and its bytes wiped */
     public boolean isClosed() {
         return memory.isClosed();
     }
@@ -94,6 +106,8 @@ public final class SecretBuffer implements AutoCloseable {
     /**
      * Copies the secret bytes and hands them to the callback; the copy is wiped when the callback
      * returns, so callers must not retain it.
+     *
+     * @param consumer the callback that receives the temporary byte copy
      */
     public void copyBytes(@NonNull Consumer<byte[]> consumer) {
         memory.copyBytes(Objects.requireNonNull(consumer, "consumer"));
@@ -103,6 +117,8 @@ public final class SecretBuffer implements AutoCloseable {
      * Decodes the secret to characters and hands them to the callback; the copy is wiped when the
      * callback returns, so callers must not retain it and should avoid copying it into a {@link
      * String}.
+     *
+     * @param consumer the callback that receives the temporary character copy
      */
     public void copyChars(@NonNull Consumer<char[]> consumer) {
         Objects.requireNonNull(consumer, "consumer");

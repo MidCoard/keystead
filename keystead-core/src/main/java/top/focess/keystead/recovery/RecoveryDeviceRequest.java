@@ -6,7 +6,21 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
 
-/** Canonical public request that an existing verified device may approve. */
+/**
+ * Canonical public request that an existing verified device may approve to authorize recovery for a
+ * new device. Key-bearing fields are defensively copied and redacted in {@link #toString()}.
+ *
+ * @param formatVersion the request format version
+ * @param requestId the unique request identifier
+ * @param username the account username the request targets
+ * @param nonce the single-use nonce
+ * @param expiresAt the whole-second expiry time
+ * @param deviceId the requesting device's identifier
+ * @param proofKeyAlgorithm the proof-of-possession key algorithm
+ * @param proofPublicKey the proof-of-possession public key
+ * @param wrappingKeyAlgorithm the approved device key-package algorithm
+ * @param wrappingPublicKey the public key to wrap the recovered vault key for
+ */
 public record RecoveryDeviceRequest(
         int formatVersion,
         @NonNull String requestId,
@@ -19,9 +33,12 @@ public record RecoveryDeviceRequest(
         @NonNull String wrappingKeyAlgorithm,
         byte @NonNull [] wrappingPublicKey) {
 
+    /** The recovery device request format version supported by this record. */
     public static final int FORMAT_VERSION = 1;
+
     private static final int MAX_KEY_BYTES = 64 * 1024;
 
+    /** Validates and defensively copies the record components. */
     public RecoveryDeviceRequest {
         if (formatVersion != FORMAT_VERSION) {
             throw new IllegalArgumentException("Recovery device request format is unsupported");
@@ -51,11 +68,17 @@ public record RecoveryDeviceRequest(
         wrappingPublicKey = Arrays.copyOf(wrappingPublicKey, wrappingPublicKey.length);
     }
 
+    /** Returns a defensive copy of the proof-of-possession public key.
+     *
+     * @return a defensive copy of the proof public key */
     @Override
     public byte @NonNull [] proofPublicKey() {
         return Arrays.copyOf(proofPublicKey, proofPublicKey.length);
     }
 
+    /** Returns a defensive copy of the wrapping public key.
+     *
+     * @return a defensive copy of the wrapping public key */
     @Override
     public byte @NonNull [] wrappingPublicKey() {
         return Arrays.copyOf(wrappingPublicKey, wrappingPublicKey.length);

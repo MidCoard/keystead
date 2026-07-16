@@ -5,6 +5,19 @@ import java.util.Arrays;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
+/**
+ * An encrypted payload envelope: version, algorithm, key, nonce, AAD, ciphertext, and timestamp.
+ * The byte-array components are defensively copied on construction and on access so callers cannot
+ * mutate the envelope's internal state.
+ *
+ * @param version the envelope format version; must be positive
+ * @param algorithm the authenticated encryption algorithm name
+ * @param keyId the identifier of the key used to encrypt the payload
+ * @param nonce the nonce used for encryption
+ * @param aad the additional authenticated data bound to the ciphertext
+ * @param ciphertext the encrypted payload
+ * @param encryptedAt when the envelope was encrypted
+ */
 public record EncryptedEnvelope(
         int version,
         @NonNull String algorithm,
@@ -14,6 +27,7 @@ public record EncryptedEnvelope(
         byte @NonNull [] ciphertext,
         @NonNull Instant encryptedAt) {
 
+    /** Validates and defensively copies the record components. */
     public EncryptedEnvelope {
         Objects.requireNonNull(algorithm, "algorithm");
         Objects.requireNonNull(keyId, "keyId");
@@ -36,16 +50,25 @@ public record EncryptedEnvelope(
         ciphertext = Arrays.copyOf(ciphertext, ciphertext.length);
     }
 
+    /** Returns a defensive copy of the nonce.
+     *
+     * @return a defensive copy of the nonce */
     @Override
     public byte @NonNull [] nonce() {
         return Arrays.copyOf(nonce, nonce.length);
     }
 
+    /** Returns a defensive copy of the additional authenticated data.
+     *
+     * @return a defensive copy of the additional authenticated data */
     @Override
     public byte @NonNull [] aad() {
         return Arrays.copyOf(aad, aad.length);
     }
 
+    /** Returns a defensive copy of the ciphertext.
+     *
+     * @return a defensive copy of the ciphertext */
     @Override
     public byte @NonNull [] ciphertext() {
         return Arrays.copyOf(ciphertext, ciphertext.length);

@@ -28,6 +28,7 @@ import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 
+/** Default {@link GpgKeyGenerator} that produces RSA OpenPGP key rings. */
 public final class DefaultGpgKeyGenerator implements GpgKeyGenerator {
 
     private static final String PROVIDER = BouncyCastleProvider.PROVIDER_NAME;
@@ -36,10 +37,16 @@ public final class DefaultGpgKeyGenerator implements GpgKeyGenerator {
     private final SecretMemoryProvider memoryProvider;
     private final GpgKeyPairFactory keyPairFactory;
 
+    /** Creates a generator with a default secure random. */
     public DefaultGpgKeyGenerator() {
         this(new SecureRandom());
     }
 
+    /**
+     * Creates a generator with the supplied secure random.
+     *
+     * @param random the secure random source
+     */
     public DefaultGpgKeyGenerator(@NonNull SecureRandom random) {
         this(random, SecretMemoryProvider.systemDefault(), GpgKeyPair::new);
     }

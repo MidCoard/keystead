@@ -42,12 +42,16 @@ public final class VaultKey implements AutoCloseable {
                         "protected memory");
     }
 
-    /** @return the id of this key generation. */
+    /** Returns the id of this key generation.
+     *
+     * @return the id of this key generation */
     public @NonNull KeyId keyId() {
         return keyId;
     }
 
-    /** @return whether this key has been closed and its bytes wiped. */
+    /** Returns whether this key has been closed and its bytes wiped.
+     *
+     * @return whether this key has been closed and its bytes wiped */
     public boolean isClosed() {
         return keyBytes.isClosed();
     }
@@ -55,6 +59,8 @@ public final class VaultKey implements AutoCloseable {
     /**
      * Copies the key bytes and hands them to the callback; the copy is wiped when the callback
      * returns, so callers must not retain it.
+     *
+     * @param consumer the callback that receives the temporary key byte copy
      */
     public void copyBytes(@NonNull Consumer<byte[]> consumer) {
         try {

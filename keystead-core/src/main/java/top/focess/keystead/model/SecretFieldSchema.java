@@ -5,6 +5,18 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
+/**
+ * Schema for a single secret field: name, type, required/revealable flags, import aliases, export
+ * name, and optional max length.
+ *
+ * @param name the non-blank, stripped field name
+ * @param type the field sensitivity type
+ * @param required whether the field must be present
+ * @param revealable whether the field value may be revealed after decryption
+ * @param importAliases alternate names recognised when importing
+ * @param exportName the non-blank, stripped name used when exporting
+ * @param maxLength the optional maximum value length, or {@code null} for no limit
+ */
 public record SecretFieldSchema(
         @NonNull String name,
         @NonNull SecretFieldType type,
@@ -14,6 +26,15 @@ public record SecretFieldSchema(
         @NonNull String exportName,
         @Nullable Integer maxLength) {
 
+    /**
+     * Constructs a field schema with no import aliases, the field name as the export name, and no
+     * max length.
+     *
+     * @param name the non-blank, stripped field name
+     * @param type the field sensitivity type
+     * @param required whether the field must be present
+     * @param revealable whether the field value may be revealed after decryption
+     */
     public SecretFieldSchema(
             @NonNull String name,
             @NonNull SecretFieldType type,
@@ -22,6 +43,7 @@ public record SecretFieldSchema(
         this(name, type, required, revealable, List.of(), name, null);
     }
 
+    /** Validates and normalizes the record components. */
     public SecretFieldSchema {
         name = Objects.requireNonNull(name, "name").strip();
         Objects.requireNonNull(type, "type");

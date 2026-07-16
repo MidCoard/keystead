@@ -10,12 +10,22 @@ import top.focess.keystead.model.EncryptedSecretRecord;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.VaultHeader;
 
+/**
+ * An encrypted, versioned backup of a vault's header, records, and tombstones. The manifest, header,
+ * record list, and tombstone list must all refer to the same vault and agree on counts.
+ *
+ * @param manifest the archive manifest
+ * @param vaultHeader the vault header at backup time
+ * @param records the encrypted secret records
+ * @param tombstones the encrypted delete tombstones
+ */
 public record BackupArchive(
         @NonNull BackupManifest manifest,
         @NonNull VaultHeader vaultHeader,
         @NonNull List<EncryptedSecretRecord> records,
         @NonNull List<DeletedSecretRecord> tombstones) {
 
+    /** Validates the record components. */
     public BackupArchive {
         Objects.requireNonNull(manifest, "manifest");
         Objects.requireNonNull(vaultHeader, "vaultHeader");

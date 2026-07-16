@@ -24,6 +24,7 @@ public record DeviceVaultKeyPackage(
         @NonNull String keyAlgorithm,
         byte @NonNull [] encryptedVaultKey) {
 
+    /** Validates the record components. */
     public DeviceVaultKeyPackage {
         Objects.requireNonNull(vaultKeyId, "vaultKeyId");
         Objects.requireNonNull(keyAlgorithm, "keyAlgorithm");
@@ -40,6 +41,9 @@ public record DeviceVaultKeyPackage(
         encryptedVaultKey = Arrays.copyOf(encryptedVaultKey, encryptedVaultKey.length);
     }
 
+    /** Returns a defensive copy of the encrypted vault key bytes.
+     *
+     * @return a defensive copy of the encrypted vault key bytes */
     @Override
     public byte @NonNull [] encryptedVaultKey() {
         return Arrays.copyOf(encryptedVaultKey, encryptedVaultKey.length);

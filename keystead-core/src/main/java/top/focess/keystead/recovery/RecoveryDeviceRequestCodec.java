@@ -25,6 +25,12 @@ public final class RecoveryDeviceRequestCodec {
 
     private RecoveryDeviceRequestCodec() {}
 
+    /**
+     * Encodes a recovery device request into a canonical binary representation.
+     *
+     * @param request the request to encode
+     * @return the canonical binary encoding of the request
+     */
     public static byte @NonNull [] encode(@NonNull RecoveryDeviceRequest request) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -52,6 +58,12 @@ public final class RecoveryDeviceRequestCodec {
         }
     }
 
+    /**
+     * Decodes a canonical binary representation into a recovery device request.
+     *
+     * @param encoded the canonical binary encoding
+     * @return the decoded recovery device request
+     */
     public static @NonNull RecoveryDeviceRequest decode(byte @NonNull [] encoded) {
         if (encoded.length == 0 || encoded.length > MAX_ENCODED_BYTES) {
             throw invalid();
@@ -104,6 +116,12 @@ public final class RecoveryDeviceRequestCodec {
         }
     }
 
+    /**
+     * Computes a human-comparable fingerprint for a recovery device request.
+     *
+     * @param request the request to fingerprint
+     * @return a grouped hexadecimal fingerprint derived from the canonical encoding
+     */
     public static @NonNull String fingerprint(@NonNull RecoveryDeviceRequest request) {
         byte[] encoded = encode(request);
         byte[] digest = digest(encoded);

@@ -50,7 +50,9 @@ public final class FileVaultStore implements VaultStore {
     private final FileDurability durability;
     private final Base64ValueDecoder base64Decoder;
 
-    /** Creates a store rooted at the given directory, creating it if needed. */
+    /** Creates a store rooted at the given directory, creating it if needed.
+     *
+     * @param vaultDirectory the root directory for the vault */
     public FileVaultStore(@NonNull Path vaultDirectory) {
         this(
                 vaultDirectory,

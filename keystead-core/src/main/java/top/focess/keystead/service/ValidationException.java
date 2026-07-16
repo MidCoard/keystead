@@ -10,10 +10,17 @@ import org.jspecify.annotations.Nullable;
  */
 public final class ValidationException extends RuntimeException {
 
+    /** Constructs a validation exception with a message.
+     *
+     * @param message the non-secret detail message */
     public ValidationException(@NonNull String message) {
         super(message);
     }
 
+    /** Constructs a validation exception with a message and cause.
+     *
+     * @param message the non-secret detail message
+     * @param cause the underlying cause, or {@code null} */
     public ValidationException(@NonNull String message, @Nullable Throwable cause) {
         super(message, cause);
     }

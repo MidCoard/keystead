@@ -39,10 +39,16 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
     private final DefaultCryptoService crypto;
     private final RecoveryEnrollmentMaterialFactory enrollmentMaterialFactory;
 
+    /** Creates a recovery service with a default secure random. */
     public DefaultRecoveryCryptoService() {
         this(new SecureRandom());
     }
 
+    /**
+     * Creates a recovery service with the supplied secure random.
+     *
+     * @param random the secure random source
+     */
     public DefaultRecoveryCryptoService(@NonNull SecureRandom random) {
         this(random, RecoveryEnrollmentMaterial::new);
     }

@@ -8,10 +8,17 @@ import org.jspecify.annotations.NonNull;
  */
 public class CryptoException extends RuntimeException {
 
+    /** Creates an exception with a message.
+     *
+     * @param message the detail message */
     public CryptoException(@NonNull String message) {
         super(message);
     }
 
+    /** Creates an exception with a message and cause.
+     *
+     * @param message the detail message
+     * @param cause the cause */
     public CryptoException(@NonNull String message, @NonNull Throwable cause) {
         super(message, cause);
     }

@@ -11,6 +11,7 @@ import top.focess.keystead.model.VaultId;
  */
 public record CreateVaultRequest(@NonNull VaultId vaultId) {
 
+    /** Validates the record components. */
     public CreateVaultRequest {
         Objects.requireNonNull(vaultId, "vaultId");
     }
