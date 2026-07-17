@@ -76,8 +76,7 @@ class FileVaultStoreTest {
                         StoreException.class,
                         () -> new FileVaultStore(vaultDirectory).saveSecretRecord(record()));
 
-        // TEMP-DEBUG: relaxed to startsWith while requireManagedPath embeds diagnostic info.
-        assertTrue(failure.getMessage().startsWith("Vault path contains a symbolic link"));
+        assertEquals("Vault path contains a symbolic link", failure.getMessage());
         assertNull(failure.getCause());
         try (var paths = Files.list(outsideDirectory)) {
             assertEquals(

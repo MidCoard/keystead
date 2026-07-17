@@ -879,21 +879,17 @@ public final class FileVaultStore implements VaultStore {
         }
         Path component = vaultDirectory;
         for (Path name : vaultDirectory.relativize(target)) {
+            // Path.relativize yields a single empty-name element when target is the vault root
+            // itself (vd.relativize(vd) has nameCount 1, not 0), and resolving it leaves
+            // component at the caller-selected root. The root may legitimately be a symbolic
+            // link because the caller chose it; only reject symbolic links below the root,
+            // which would escape the managed tree.
+            if (name.toString().isEmpty()) {
+                continue;
+            }
             component = component.resolve(name);
             if (Files.isSymbolicLink(component)) {
-                // TEMP-DEBUG(symlink test): embed path arithmetic in the message so it appears in
-                // the CI failure output (Gradle does not stream test stdout/stderr by default).
-                // Remove after diagnosis.
-                throw new StoreException(
-                        "Vault path contains a symbolic link; target="
-                                + target
-                                + " vd="
-                                + vaultDirectory
-                                + " rel="
-                                + vaultDirectory.relativize(target)
-                                + " comp="
-                                + component,
-                        null);
+                throw new StoreException("Vault path contains a symbolic link", null);
             }
         }
         return target;
