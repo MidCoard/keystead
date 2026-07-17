@@ -74,6 +74,12 @@ tasks.test {
     namedModuleTestPackages.forEach {
         jvmArgs("--add-opens=$coreModuleName/$it=ALL-UNNAMED")
     }
+    testLogging {
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showExceptions = true
+        showCauses = true
+        showStackTraces = true
+    }
 }
 
 tasks.register<Test>("classpathTest") {
