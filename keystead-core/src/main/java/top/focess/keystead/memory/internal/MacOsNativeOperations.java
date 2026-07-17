@@ -11,8 +11,10 @@ import top.focess.keystead.memory.NativePlatform;
  */
 final class MacOsNativeOperations extends PosixNativeOperations {
 
-    // _SC_PAGESIZE, <unistd.h> (Darwin)
-    private static final int SC_PAGESIZE = 47;
+    // _SC_PAGESIZE, <unistd.h> (Darwin). NOTE: Darwin _SC_PAGESIZE is 29, not 47; 47 is
+    // _SC_MQ_PRIO_MAX, which macOS returns -1 for (no POSIX message queues) and caused the
+    // backend to fail platform setup with operation=PLATFORM on macOS CI.
+    private static final int SC_PAGESIZE = 29;
     // MAP_ANON, <sys/mman.h> (Darwin)
     private static final int MAP_ANON = 0x1000;
 

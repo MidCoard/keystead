@@ -874,13 +874,18 @@ public final class FileVaultStore implements VaultStore {
 
     private @NonNull Path requireManagedPath(@NonNull Path path) {
         Path target = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
+        // TEMP-DEBUG(symlink test): capture exact path arithmetic on CI. Remove after diagnosis.
+        System.err.println("RMP-ENTRY target=[" + target + "] vd=[" + vaultDirectory + "]");
+        System.err.println("RMP-ENTRY rel=[" + vaultDirectory.relativize(target) + "]");
         if (!target.startsWith(vaultDirectory)) {
             throw new StoreException("Vault path is outside the vault directory", null);
         }
         Path component = vaultDirectory;
         for (Path name : vaultDirectory.relativize(target)) {
             component = component.resolve(name);
-            if (Files.isSymbolicLink(component)) {
+            boolean link = Files.isSymbolicLink(component);
+            System.err.println("RMP-COMP [" + component + "] isLink=" + link);
+            if (link) {
                 throw new StoreException("Vault path contains a symbolic link", null);
             }
         }
