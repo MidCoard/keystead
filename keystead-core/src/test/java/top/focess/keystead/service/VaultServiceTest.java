@@ -96,14 +96,18 @@ class VaultServiceTest {
             assertNotEquals(originalKeyId, rotatedKeyId);
             rotated.withLogin(
                     secretId,
-                    view -> view.withPassword(chars -> assertArrayEquals(chars("secret-password"), chars)));
+                    view ->
+                            view.withPassword(
+                                    chars -> assertArrayEquals(chars("secret-password"), chars)));
         }
 
         try (VaultHandle reopened = service.openVault(VAULT_ID, master())) {
             assertEquals(rotatedKeyId, reopened.vaultKeyId());
             reopened.withLogin(
                     secretId,
-                    view -> view.withUsername(chars -> assertArrayEquals(chars("alice@example.com"), chars)));
+                    view ->
+                            view.withUsername(
+                                    chars -> assertArrayEquals(chars("alice@example.com"), chars)));
         }
     }
 
