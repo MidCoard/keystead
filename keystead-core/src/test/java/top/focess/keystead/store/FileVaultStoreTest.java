@@ -1119,6 +1119,98 @@ class FileVaultStoreTest {
                 });
     }
 
+    @Test
+    void rotationCrashDuringStagingLeavesPreviousVaultUntouchedAndRetryable() {
+        VaultHeader previous = header();
+        EncryptedSecretRecord previousRecord = record();
+        FileVaultStore setup = new FileVaultStore(tempDir);
+        setup.saveVaultHeader(previous);
+        setup.saveSecretRecord(previousRecord);
+
+        assertThrows(
+                StoreException.class,
+                () -> crashDuringRotation(4).commitVaultKeyRotation(rotation(previousRecord)));
+
+        // The staged replacement was written but no journal exists, so recovery is a no-op and
+        // the previous vault is intact; a retry must first clean the stale stage directory.
+        assertRecoveredRotation(previous, previousRecord);
+
+        FileVaultStore retry = new FileVaultStore(tempDir);
+        VaultKeyRotation rotation = rotation(previousRecord);
+        retry.commitVaultKeyRotation(rotation);
+        assertEquals(Optional.of(rotation.header()), retry.loadVaultHeader(previous.vaultId()));
+        assertEquals(
+                Optional.of(rotation.activeRecords().getFirst()),
+                retry.loadSecretRecord(previous.vaultId(), previousRecord.metadata().id()));
+    }
+
+    @Test
+    void rotationCrashBeforeJournalBecomesDurableLeavesNoJournalToRecover() {
+        VaultHeader previous = header();
+        EncryptedSecretRecord previousRecord = record();
+        FileVaultStore setup = new FileVaultStore(tempDir);
+        setup.saveVaultHeader(previous);
+        setup.saveSecretRecord(previousRecord);
+
+        assertThrows(
+                StoreException.class,
+                () -> crashDuringRotation(5).commitVaultKeyRotation(rotation(previousRecord)));
+
+        // The PREPARED journal temp file was forced but never moved into place, so no journal
+        // exists, recovery is a no-op, and the previous vault is intact.
+        assertFalse(Files.exists(tempDir.resolve(".keystead-rotation.properties")));
+        assertRecoveredRotation(previous, previousRecord);
+    }
+
+    @Test
+    void rotationRetrySucceedsAfterRecoveryFromCrashFollowingPreparedJournal() {
+        VaultHeader previous = header();
+        EncryptedSecretRecord previousRecord = record();
+        FileVaultStore setup = new FileVaultStore(tempDir);
+        setup.saveVaultHeader(previous);
+        setup.saveSecretRecord(previousRecord);
+
+        assertThrows(
+                StoreException.class,
+                () -> crashDuringRotation(6).commitVaultKeyRotation(rotation(previousRecord)));
+
+        assertRecoveredRotation(previous, previousRecord);
+
+        FileVaultStore retry = new FileVaultStore(tempDir);
+        VaultKeyRotation rotation = rotation(previousRecord);
+        retry.commitVaultKeyRotation(rotation);
+        assertEquals(Optional.of(rotation.header()), retry.loadVaultHeader(previous.vaultId()));
+        assertEquals(
+                Optional.of(rotation.activeRecords().getFirst()),
+                retry.loadSecretRecord(previous.vaultId(), previousRecord.metadata().id()));
+    }
+
+    @Test
+    void rotationCrashAfterJournalDeletionLeavesCommittedVaultConsistent() {
+        VaultHeader previous = header();
+        EncryptedSecretRecord previousRecord = record();
+        FileVaultStore setup = new FileVaultStore(tempDir);
+        setup.saveVaultHeader(previous);
+        setup.saveSecretRecord(previousRecord);
+        VaultKeyRotation rotation = rotation(previousRecord);
+
+        assertThrows(
+                StoreException.class,
+                () -> crashDuringRotation(9).commitVaultKeyRotation(rotation));
+
+        // The journal delete had already happened when the simulated crash hit its directory
+        // force, so the rotation had effectively committed: recovery is a no-op and the
+        // replacement vault is consistent despite the reported failure.
+        FileVaultStore recovered = new FileVaultStore(tempDir);
+        assertEquals(Optional.of(rotation.header()), recovered.loadVaultHeader(previous.vaultId()));
+        assertEquals(
+                Optional.of(rotation.activeRecords().getFirst()),
+                recovered.loadSecretRecord(previous.vaultId(), previousRecord.metadata().id()));
+        assertFalse(Files.exists(tempDir.resolve(".keystead-rotation.properties")));
+        assertFalse(Files.exists(tempDir.resolve(".keystead-rotation-backup")));
+        assertFalse(Files.exists(tempDir.resolve(".keystead-rotation-stage")));
+    }
+
     private void assertRecoveredRotation(
             @NonNull VaultHeader previous, @NonNull EncryptedSecretRecord previousRecord) {
         FileVaultStore recovered = new FileVaultStore(tempDir);
