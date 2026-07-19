@@ -80,6 +80,13 @@ public final class DefaultCryptoService {
         this(random, aeadCipher, SecretMemoryProvider.systemDefault());
     }
 
+    /**
+     * Creates a service with an explicit secret-memory provider for key material.
+     *
+     * @param random the secure random source
+     * @param aeadCipher the primary AEAD cipher
+     * @param memoryProvider the provider used to protect key material
+     */
     public DefaultCryptoService(
             @NonNull SecureRandom random,
             @NonNull AeadCipher aeadCipher,
@@ -87,6 +94,14 @@ public final class DefaultCryptoService {
         this(random, aeadCipher, memoryProvider, defaultPasswordKeyDerivations());
     }
 
+    /**
+     * Creates a service with explicit password KDF implementations.
+     *
+     * @param random the secure random source
+     * @param aeadCipher the primary AEAD cipher
+     * @param memoryProvider the provider used to protect key material
+     * @param passwordKeyDerivations the supported password key-derivation functions
+     */
     public DefaultCryptoService(
             @NonNull SecureRandom random,
             @NonNull AeadCipher aeadCipher,
@@ -253,6 +268,14 @@ public final class DefaultCryptoService {
                 vaultKey, masterPassword, KdfParameters.pbkdf2(kdfAlgorithm, salt, iterations));
     }
 
+    /**
+     * Wraps a vault key with a key derived from a master password.
+     *
+     * @param vaultKey the vault key to wrap
+     * @param masterPassword caller-owned master password
+     * @param kdfParameters the password KDF parameters
+     * @return the wrapped vault key bytes, including the nonce prefix
+     */
     public byte @NonNull [] wrapVaultKey(
             @NonNull VaultKey vaultKey,
             char @NonNull [] masterPassword,
@@ -336,6 +359,15 @@ public final class DefaultCryptoService {
                 KdfParameters.pbkdf2(kdfAlgorithm, salt, iterations));
     }
 
+    /**
+     * Unwraps a password-wrapped vault key.
+     *
+     * @param keyId the identifier of the vault key generation
+     * @param wrappedVaultKey the wrapped vault key bytes, including the nonce prefix
+     * @param masterPassword caller-owned master password
+     * @param kdfParameters the password KDF parameters used at wrap time
+     * @return the unwrapped vault key; the caller must close it
+     */
     public @NonNull VaultKey unwrapVaultKey(
             @NonNull KeyId keyId,
             byte @NonNull [] wrappedVaultKey,
@@ -428,6 +460,12 @@ public final class DefaultCryptoService {
         }
     }
 
+    /**
+     * Returns whether a password KDF algorithm is supported.
+     *
+     * @param algorithm the KDF algorithm name
+     * @return whether the algorithm has a registered implementation
+     */
     public boolean supportsPasswordKdf(@NonNull String algorithm) {
         Objects.requireNonNull(algorithm, "algorithm");
         return passwordKeyDerivations.containsKey(algorithm);

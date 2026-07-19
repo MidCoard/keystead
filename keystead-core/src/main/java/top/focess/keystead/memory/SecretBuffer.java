@@ -41,6 +41,14 @@ public final class SecretBuffer implements AutoCloseable {
         return fromUtf8(bytes, SecretMemoryProvider.systemDefault());
     }
 
+    /**
+     * Creates a buffer that owns a defensive copy of the given UTF-8 bytes, held by the given
+     * provider.
+     *
+     * @param bytes the UTF-8 bytes to copy
+     * @param memoryProvider the provider used to protect the bytes
+     * @return a new buffer owning a copy of the bytes
+     */
     public static @NonNull SecretBuffer fromUtf8(
             byte @NonNull [] bytes, @NonNull SecretMemoryProvider memoryProvider) {
         Objects.requireNonNull(bytes, "bytes");
@@ -60,6 +68,15 @@ public final class SecretBuffer implements AutoCloseable {
         return fromChars(chars, SecretMemoryProvider.systemDefault());
     }
 
+    /**
+     * Encodes the given characters as UTF-8 and owns the result, held by the given provider. The
+     * input character array is copied and the copy wiped; the caller remains responsible for the
+     * original array.
+     *
+     * @param chars the characters to encode
+     * @param memoryProvider the provider used to protect the encoded bytes
+     * @return a new buffer owning the encoded UTF-8 bytes
+     */
     public static @NonNull SecretBuffer fromChars(
             char @NonNull [] chars, @NonNull SecretMemoryProvider memoryProvider) {
         Objects.requireNonNull(chars, "chars");

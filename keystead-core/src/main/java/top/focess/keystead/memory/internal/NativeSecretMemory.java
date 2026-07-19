@@ -68,6 +68,13 @@ public final class NativeSecretMemory implements SecretMemory {
         return new NativeSecretMemory(state, value.length);
     }
 
+    /**
+     * Protects a copy of {@code value} in native locked memory using the default platform backend.
+     *
+     * @param value the secret bytes to protect
+     * @return the native secret memory owning a protected copy of {@code value}
+     * @throws NativeMemoryUnavailableException if native protection is unavailable
+     */
     public static @NonNull SecretMemory protect(byte @NonNull [] value) {
         Objects.requireNonNull(value, "value");
         return create(value, resolveDefaultOperations());

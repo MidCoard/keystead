@@ -19,6 +19,11 @@ public final class NativeLockedSecretMemoryProvider implements SecretMemoryProvi
 
     private NativeLockedSecretMemoryProvider() {}
 
+    /**
+     * Returns the process-wide singleton. Acquiring it has no native side effects.
+     *
+     * @return the process-wide singleton
+     */
     public static @NonNull NativeLockedSecretMemoryProvider instance() {
         return INSTANCE;
     }

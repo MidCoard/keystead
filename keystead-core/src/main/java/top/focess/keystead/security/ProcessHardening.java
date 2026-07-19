@@ -16,6 +16,11 @@ public final class ProcessHardening {
 
     private ProcessHardening() {}
 
+    /**
+     * Inspects the applicable process-hardening controls without mutating the process.
+     *
+     * @return a redacted snapshot report; never reports {@link HardeningStatus#ENFORCED}
+     */
     public static @NonNull ProcessHardeningReport inspect() {
         return ProcessHardeningInspector.inspect(new HotSpotHardeningOperations());
     }
@@ -31,6 +36,10 @@ public final class ProcessHardening {
      * <p>The hard {@code RLIMIT_CORE} limit is lowered irreversibly for an unprivileged process, so
      * {@code applyStrict()} is intended to run in an expendable child JVM rather than a long-lived
      * host process; {@link ProcessHardening#inspect()} is the non-mutating entry point.
+     *
+     * @return a redacted report of the resulting control states
+     * @throws ProcessHardeningException if a prerequisite is unmet or a mutation fails; carries the
+     *     complete redacted report
      */
     public static @NonNull ProcessHardeningReport applyStrict() {
         return ProcessHardeningInspector.applyStrict(new HotSpotHardeningOperations());

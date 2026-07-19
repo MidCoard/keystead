@@ -1,3 +1,7 @@
+/**
+ * Keystead Core: zero-knowledge vault cryptography, secret memory management, and process
+ * hardening.
+ */
 module top.focess.keystead.core {
     requires com.google.crypto.tink;
     requires java.management;

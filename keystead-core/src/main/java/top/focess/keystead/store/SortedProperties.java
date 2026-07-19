@@ -13,6 +13,9 @@ import org.jspecify.annotations.NonNull;
 /** Properties whose standard serializer enumerates keys in deterministic lexical order. */
 public final class SortedProperties extends Properties {
 
+    /** Creates an empty property set. */
+    public SortedProperties() {}
+
     @Override
     public synchronized @NonNull Enumeration<Object> keys() {
         TreeSet<Object> sorted = new TreeSet<>(Comparator.comparing(value -> (String) value));

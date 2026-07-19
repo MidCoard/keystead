@@ -30,6 +30,12 @@ public final class ProcessHardeningInspector {
 
     private ProcessHardeningInspector() {}
 
+    /**
+     * Builds a non-mutating snapshot of the applicable controls.
+     *
+     * @param operations the operations used to read process and platform state
+     * @return a redacted snapshot report; never reports {@link HardeningStatus#ENFORCED}
+     */
     public static @NonNull ProcessHardeningReport inspect(
             @NonNull ProcessHardeningOperations operations) {
         NativePlatform platform = operations.platform();
@@ -73,6 +79,14 @@ public final class ProcessHardeningInspector {
         return new ProcessHardeningReport(platform, results);
     }
 
+    /**
+     * Applies strict hardening: preflights immutable prerequisites, then mutates and verifies the
+     * platform's mutable controls.
+     *
+     * @param operations the operations used to read and mutate process state
+     * @return a redacted report of the resulting control states
+     * @throws ProcessHardeningException if a prerequisite is unmet or a mutation fails
+     */
     public static @NonNull ProcessHardeningReport applyStrict(
             @NonNull ProcessHardeningOperations operations) {
         synchronized (APPLY_LOCK) {

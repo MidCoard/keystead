@@ -18,6 +18,12 @@ public final class NativeMemoryProtection {
 
     private NativeMemoryProtection() {}
 
+    /**
+     * Probes native-memory protection capabilities for the current platform.
+     *
+     * @return a redacted report with one entry per {@link NativeProtectionControl} in enum order;
+     *     capability failures are report data and never throw
+     */
     public static @NonNull NativeMemoryProtectionReport inspect() {
         return NativeMemoryProtectionInspector.inspect();
     }

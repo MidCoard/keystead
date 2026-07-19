@@ -5,7 +5,14 @@ import java.util.Set;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
-/** Immutable, redaction-safe result for one native-memory protection control. */
+/**
+ * Immutable, redaction-safe result for one native-memory protection control.
+ *
+ * @param control the protection control this result describes
+ * @param status the control's status at report-return time
+ * @param detail a fixed redacted detail code; one of the {@code DETAIL_*} constants
+ * @param osErrorCode the OS error code for a failed operation, or {@code null}
+ */
 public record NativeProtectionResult(
         @NonNull NativeProtectionControl control,
         @NonNull NativeProtectionStatus status,
@@ -45,6 +52,7 @@ public record NativeProtectionResult(
                     DETAIL_NOT_ATTEMPTED,
                     DETAIL_ZERO_ADDRESS_REJECTED);
 
+    /** Validates the components and restricts {@code detail} to the fixed detail codes. */
     public NativeProtectionResult {
         Objects.requireNonNull(control, "control");
         Objects.requireNonNull(status, "status");
@@ -57,6 +65,15 @@ public record NativeProtectionResult(
         }
     }
 
+    /**
+     * Creates a result carrying a Windows error code, widened to its unsigned value.
+     *
+     * @param control the protection control this result describes
+     * @param status the control's status at report-return time
+     * @param detail a fixed redacted detail code; one of the {@code DETAIL_*} constants
+     * @param windowsErrorCode the Windows {@code GetLastError} value
+     * @return the protection result with the unsigned error code
+     */
     public static @NonNull NativeProtectionResult withWindowsError(
             @NonNull NativeProtectionControl control,
             @NonNull NativeProtectionStatus status,
@@ -66,21 +83,41 @@ public record NativeProtectionResult(
                 control, status, detail, Integer.toUnsignedLong(windowsErrorCode));
     }
 
+    /**
+     * Returns the protection control this result describes.
+     *
+     * @return the protection control this result describes
+     */
     @Override
     public @NonNull NativeProtectionControl control() {
         return control;
     }
 
+    /**
+     * Returns the control's status at report-return time.
+     *
+     * @return the control's status at report-return time
+     */
     @Override
     public @NonNull NativeProtectionStatus status() {
         return status;
     }
 
+    /**
+     * Returns the fixed redacted detail code.
+     *
+     * @return the fixed redacted detail code
+     */
     @Override
     public @NonNull String detail() {
         return detail;
     }
 
+    /**
+     * Returns the OS error code for a failed operation.
+     *
+     * @return the OS error code, or {@code null} when no OS error was involved
+     */
     @Override
     public @Nullable Long osErrorCode() {
         return osErrorCode;

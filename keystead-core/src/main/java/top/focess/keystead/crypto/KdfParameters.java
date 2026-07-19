@@ -9,13 +9,23 @@ import java.util.TreeMap;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.SecurityLimits;
 
+/**
+ * Key-derivation function parameters: the algorithm name, a salt, and positive integer parameters
+ * such as an iteration count. The salt is defensively copied and {@link #toString()} redacts it.
+ *
+ * @param algorithm the KDF algorithm name
+ * @param salt the KDF salt
+ * @param parameters named positive integer parameters, sorted by name
+ */
 public record KdfParameters(
         @NonNull String algorithm,
         byte @NonNull [] salt,
         @NonNull Map<String, Integer> parameters) {
 
+    /** The standard parameter name for a KDF iteration count. */
     public static final String ITERATIONS = "iterations";
 
+    /** Validates the components, defensively copies the salt, and sorts the parameters. */
     public KdfParameters {
         Objects.requireNonNull(algorithm, "algorithm");
         Objects.requireNonNull(salt, "salt");
@@ -42,11 +52,26 @@ public record KdfParameters(
         parameters = Collections.unmodifiableMap(new LinkedHashMap<>(sorted));
     }
 
+    /**
+     * Creates PBKDF2-style parameters with a single iteration count.
+     *
+     * @param algorithm the KDF algorithm name
+     * @param salt the KDF salt
+     * @param iterations the iteration count; must be positive
+     * @return the KDF parameters
+     */
     public static @NonNull KdfParameters pbkdf2(
             @NonNull String algorithm, byte @NonNull [] salt, int iterations) {
         return new KdfParameters(algorithm, salt, Map.of(ITERATIONS, iterations));
     }
 
+    /**
+     * Returns a required named parameter.
+     *
+     * @param name the parameter name
+     * @return the parameter value
+     * @throws IllegalArgumentException if the parameter is absent
+     */
     public int required(@NonNull String name) {
         Objects.requireNonNull(name, "name");
         Integer value = parameters.get(name);
@@ -56,6 +81,11 @@ public record KdfParameters(
         return value;
     }
 
+    /**
+     * Returns a defensive copy of the KDF salt.
+     *
+     * @return a defensive copy of the KDF salt
+     */
     @Override
     public byte @NonNull [] salt() {
         return Arrays.copyOf(salt, salt.length);

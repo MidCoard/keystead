@@ -113,6 +113,13 @@ public final class RecoveryKitCodec {
     /**
      * Compatibility decoder for an already heap-visible secret {@link String}. Prefer {@link
      * #decode(SecretBuffer)} for new code.
+     *
+     * @param encoded the canonical printable encoding
+     * @return the decoded recovery kit; the caller must close it
+     * @throws IllegalArgumentException if the encoding is malformed or the checksum does not match
+     * @deprecated the {@link String} parameter keeps the secret on the heap until garbage
+     *     collection; use {@link #decode(SecretBuffer)} so the encoding stays in wipeable secret
+     *     memory.
      */
     @Deprecated(forRemoval = false)
     public static @NonNull RecoveryKit decode(@NonNull String encoded) {

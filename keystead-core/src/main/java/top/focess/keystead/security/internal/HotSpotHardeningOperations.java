@@ -15,6 +15,7 @@ public final class HotSpotHardeningOperations implements ProcessHardeningOperati
     private @Nullable NativeMemoryProtectionReport cachedProbe;
     private @Nullable PosixHardeningCalls posixCalls;
 
+    /** Creates the operations backed by the platform {@link HotSpotDiagnosticMXBean}. */
     public HotSpotHardeningOperations() {
         this.mxBean = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
     }

@@ -14,13 +14,24 @@ public final class ProcessHardeningException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
 
+    /** The redacted report describing the unmet prerequisites or failed mutations. */
     private final @NonNull ProcessHardeningReport report;
 
+    /**
+     * Creates the exception carrying the complete hardening report.
+     *
+     * @param report the redacted report describing the unmet prerequisites or failed mutations
+     */
     public ProcessHardeningException(@NonNull ProcessHardeningReport report) {
         super(message(report), null);
         this.report = Objects.requireNonNull(report, "report");
     }
 
+    /**
+     * Returns the complete hardening report captured at failure time.
+     *
+     * @return the complete hardening report captured at failure time
+     */
     public @NonNull ProcessHardeningReport report() {
         return report;
     }

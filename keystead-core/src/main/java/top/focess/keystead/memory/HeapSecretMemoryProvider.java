@@ -5,12 +5,22 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
 
+/**
+ * Heap-backed {@link SecretMemoryProvider} that wipes secret bytes on close. Used as the explicit
+ * fallback when native locked memory is not required; it provides no page-locking or dump-exclusion
+ * guarantees.
+ */
 public final class HeapSecretMemoryProvider implements SecretMemoryProvider {
 
     private static final HeapSecretMemoryProvider INSTANCE = new HeapSecretMemoryProvider();
 
     private HeapSecretMemoryProvider() {}
 
+    /**
+     * Returns the process-wide singleton.
+     *
+     * @return the process-wide singleton
+     */
     public static @NonNull HeapSecretMemoryProvider instance() {
         return INSTANCE;
     }

@@ -10,10 +10,17 @@ import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.model.SecurityLimits;
 
+/** PBKDF2 {@link PasswordKeyDerivation} backed by the JCA {@link SecretKeyFactory}. */
 public final class Pbkdf2KeyDerivation implements PasswordKeyDerivation {
 
     private final String algorithm;
 
+    /**
+     * Creates the derivation for an approved PBKDF2 algorithm.
+     *
+     * @param algorithm the PBKDF2 algorithm name; must be approved by {@link
+     *     CryptoAlgorithmRegistry}
+     */
     public Pbkdf2KeyDerivation(@NonNull String algorithm) {
         this.algorithm = Objects.requireNonNull(algorithm, "algorithm");
         if (!CryptoAlgorithmRegistry.isApprovedKdf(algorithm)) {

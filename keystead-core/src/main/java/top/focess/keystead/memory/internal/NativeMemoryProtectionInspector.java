@@ -27,6 +27,11 @@ public final class NativeMemoryProtectionInspector {
 
     private NativeMemoryProtectionInspector() {}
 
+    /**
+     * Runs the transient one-page probe and builds the platform's protection report.
+     *
+     * @return a redacted report with one entry per {@link NativeProtectionControl} in enum order
+     */
     public static @NonNull NativeMemoryProtectionReport inspect() {
         NativePlatform platform =
                 NativeAbi.detectPlatform(
