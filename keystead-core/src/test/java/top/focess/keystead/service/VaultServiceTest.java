@@ -175,7 +175,7 @@ class VaultServiceTest {
                             crypto.unwrapVaultKeyFromDevicePackage(
                                             new KeyId("vault-key"),
                                             packageBytes,
-                                            device.privateKey(),
+                                            privateKeyBytes(device),
                                             context)
                                     .close());
             assertThrows(
@@ -184,7 +184,7 @@ class VaultServiceTest {
                             crypto.unwrapVaultKeyFromDevicePackage(
                                     new KeyId("vault-key"),
                                     packageBytes,
-                                    device.privateKey(),
+                                    privateKeyBytes(device),
                                     "wrong-context".getBytes(StandardCharsets.UTF_8)));
         }
     }
@@ -466,5 +466,11 @@ class VaultServiceTest {
 
     private static String b64(String value) {
         return Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] privateKeyBytes(DeviceKeyPair device) {
+        final byte[][] output = new byte[1][];
+        device.copyPrivateKey(bytes -> output[0] = bytes.clone());
+        return output[0];
     }
 }

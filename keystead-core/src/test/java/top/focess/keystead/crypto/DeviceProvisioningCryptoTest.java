@@ -27,7 +27,7 @@ class DeviceProvisioningCryptoTest {
                     crypto.unwrapVaultKeyFromDevicePackage(
                             new KeyId("vault-key"),
                             encryptedVaultKey,
-                            device.privateKey(),
+                            privateKeyBytes(device),
                             context)) {
                 assertArrayEquals(copy(vaultKey), copy(opened));
             }
@@ -49,7 +49,7 @@ class DeviceProvisioningCryptoTest {
                             crypto.unwrapVaultKeyFromDevicePackage(
                                     new KeyId("vault-key"),
                                     encryptedVaultKey,
-                                    device.privateKey(),
+                                    privateKeyBytes(device),
                                     "vault:vault-1:device:phone-1".getBytes()));
             assertThrows(
                     CryptoException.class,
@@ -57,7 +57,7 @@ class DeviceProvisioningCryptoTest {
                             crypto.unwrapVaultKeyFromDevicePackage(
                                     new KeyId("vault-key"),
                                     encryptedVaultKey,
-                                    otherDevice.privateKey(),
+                                    privateKeyBytes(otherDevice),
                                     context));
         }
     }
@@ -70,7 +70,13 @@ class DeviceProvisioningCryptoTest {
 
         assertTrue(device.isClosed());
         assertArrayEquals(new byte[rawPrivateKey(device).length], rawPrivateKey(device));
-        assertThrows(SecretKeyDestroyedException.class, device::privateKey);
+        assertThrows(SecretKeyDestroyedException.class, () -> device.copyPrivateKey(bytes -> {}));
+    }
+
+    private static byte[] privateKeyBytes(DeviceKeyPair device) {
+        final byte[][] output = new byte[1][];
+        device.copyPrivateKey(bytes -> output[0] = bytes.clone());
+        return output[0];
     }
 
     private static byte[] copy(VaultKey key) {

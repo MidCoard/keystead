@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.SecretMemoryProvider;
 
-@SuppressWarnings("deprecation")
 class RecoveryKitCodecTest {
 
     @Test
@@ -25,30 +25,26 @@ class RecoveryKitCodecTest {
     }
 
     @Test
-    void legacyStringApiRemainsCompatible() {
-        byte[] secret = secret((byte) 9);
-        try (RecoveryKit kit = new RecoveryKit(1, "enrollment-1", 4L, secret)) {
-            String encoded = RecoveryKitCodec.encode(kit);
-            try (RecoveryKit decoded = RecoveryKitCodec.decode(encoded)) {
-                assertEquals("enrollment-1", decoded.enrollmentId());
-                assertEquals(4L, decoded.generation());
-                assertArrayEquals(secret, decoded.recoverySecret());
-            }
-        }
-    }
-
-    @Test
     void rejectsChangedChecksum() {
-        String encoded;
-        try (RecoveryKit kit = new RecoveryKit(1, "enrollment-1", 1L, secret((byte) 2))) {
-            encoded = RecoveryKitCodec.encode(kit);
+        char[] encodedChars;
+        try (RecoveryKit kit = new RecoveryKit(1, "enrollment-1", 1L, secret((byte) 2));
+                SecretBuffer encoded = RecoveryKitCodec.encodeSecret(kit)) {
+            encodedChars = new char[encoded.length()];
+            encoded.copyChars(chars -> System.arraycopy(chars, 0, encodedChars, 0, chars.length));
         }
-        char replacement = encoded.endsWith("A") ? 'B' : 'A';
-        String tampered = encoded.substring(0, encoded.length() - 1) + replacement;
-        IllegalArgumentException error =
-                assertThrows(
-                        IllegalArgumentException.class, () -> RecoveryKitCodec.decode(tampered));
-        assertEquals("Recovery kit is invalid", error.getMessage());
+        try {
+            encodedChars[encodedChars.length - 1] =
+                    encodedChars[encodedChars.length - 1] == 'A' ? 'B' : 'A';
+            try (SecretBuffer tampered = SecretBuffer.fromChars(encodedChars)) {
+                IllegalArgumentException error =
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () -> RecoveryKitCodec.decode(tampered));
+                assertEquals("Recovery kit is invalid", error.getMessage());
+            }
+        } finally {
+            Arrays.fill(encodedChars, '\0');
+        }
     }
 
     @Test
@@ -71,7 +67,12 @@ class RecoveryKitCodecTest {
     }
 
     private static void assertInvalid(String encoded) {
-        assertThrows(IllegalArgumentException.class, () -> RecoveryKitCodec.decode(encoded));
+        char[] chars = encoded.toCharArray();
+        try (SecretBuffer buffer = SecretBuffer.fromChars(chars, SecretMemoryProvider.heap())) {
+            assertThrows(IllegalArgumentException.class, () -> RecoveryKitCodec.decode(buffer));
+        } finally {
+            Arrays.fill(chars, '\0');
+        }
     }
 
     private static byte[] secret(byte value) {

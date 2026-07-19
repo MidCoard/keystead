@@ -71,25 +71,6 @@ public final class RecoveryKitCodec {
     }
 
     /**
-     * Compatibility encoder whose returned secret {@link String} remains visible in heap dumps.
-     * Prefer {@link #encodeSecret(RecoveryKit)} for new code.
-     *
-     * @param kit recovery authority to encode
-     * @return the canonical printable encoding of the kit
-     * @deprecated the returned {@link String} keeps the secret on the heap until garbage
-     *     collection; use {@link #encodeSecret(RecoveryKit)} so the encoding lives in wipeable
-     *     secret memory.
-     */
-    @Deprecated(forRemoval = false)
-    public static @NonNull String encode(@NonNull RecoveryKit kit) {
-        String[] encodedText = new String[1];
-        try (SecretBuffer encoded = encodeSecret(kit)) {
-            encoded.copyChars(chars -> encodedText[0] = new String(chars));
-        }
-        return Objects.requireNonNull(encodedText[0], "encoded recovery kit");
-    }
-
-    /**
      * Decodes a recovery kit without constructing a secret-bearing full-text {@link String}.
      *
      * @param encoded the canonical printable encoding held in secret memory
@@ -107,38 +88,6 @@ public final class RecoveryKitCodec {
                 throw error;
             }
             throw invalid();
-        }
-    }
-
-    /**
-     * Compatibility decoder for an already heap-visible secret {@link String}. Prefer {@link
-     * #decode(SecretBuffer)} for new code.
-     *
-     * @param encoded the canonical printable encoding
-     * @return the decoded recovery kit; the caller must close it
-     * @throws IllegalArgumentException if the encoding is malformed or the checksum does not match
-     * @deprecated the {@link String} parameter keeps the secret on the heap until garbage
-     *     collection; use {@link #decode(SecretBuffer)} so the encoding stays in wipeable secret
-     *     memory.
-     */
-    @Deprecated(forRemoval = false)
-    public static @NonNull RecoveryKit decode(@NonNull String encoded) {
-        if (encoded == null || encoded.isEmpty() || encoded.length() > MAX_ENCODED_CHARACTERS) {
-            throw invalid();
-        }
-        char[] characters = new char[encoded.length()];
-        try {
-            encoded.getChars(0, encoded.length(), characters, 0);
-            try (SecretBuffer secretEncoded = SecretBuffer.fromChars(characters)) {
-                return decode(secretEncoded);
-            }
-        } catch (IllegalArgumentException error) {
-            if (isInvalid(error)) {
-                throw error;
-            }
-            throw invalid();
-        } finally {
-            Arrays.fill(characters, '\0');
         }
     }
 

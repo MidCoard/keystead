@@ -49,12 +49,13 @@ class ProvisionedVaultServiceTest {
 
             try (VaultHandle target =
                     targetService.provisionVault(
-                            VAULT_ID, packageBytes, device.privateKey(), context)) {
+                            VAULT_ID, packageBytes, privateKeyBytes(device), context)) {
                 assertEquals(1, target.importRecords(exported));
             }
 
             try (VaultHandle target =
-                    targetService.openVaultWithDeviceKey(VAULT_ID, device.privateKey(), context)) {
+                    targetService.openVaultWithDeviceKey(
+                            VAULT_ID, privateKeyBytes(device), context)) {
                 target.withLogin(
                         secretId,
                         view ->
@@ -88,7 +89,7 @@ class ProvisionedVaultServiceTest {
 
             try (VaultHandle target =
                     targetService.provisionVault(
-                            VAULT_ID, packageBytes, device.privateKey(), context)) {
+                            VAULT_ID, packageBytes, privateKeyBytes(device), context)) {
                 assertEquals(1, target.importRecords(created));
                 assertEquals(1, target.listSecrets().size());
             }
@@ -97,7 +98,8 @@ class ProvisionedVaultServiceTest {
             List<EncryptedSyncRecord> deleted = source.exportRecordsSince(1);
 
             try (VaultHandle target =
-                    targetService.openVaultWithDeviceKey(VAULT_ID, device.privateKey(), context)) {
+                    targetService.openVaultWithDeviceKey(
+                            VAULT_ID, privateKeyBytes(device), context)) {
                 assertEquals(1, target.importRecords(deleted));
                 assertEquals(0, target.listSecrets().size());
             }
@@ -129,7 +131,7 @@ class ProvisionedVaultServiceTest {
                             keyPackage.vaultKeyId(),
                             keyPackage.keyAlgorithm(),
                             ciphertext,
-                            device.privateKey(),
+                            privateKeyBytes(device),
                             context)) {
                 assertEquals(source.vaultKeyId(), target.vaultKeyId());
                 assertArrayEquals(expectedCiphertext, ciphertext);
@@ -219,5 +221,11 @@ class ProvisionedVaultServiceTest {
                 VaultId vaultId, byte[] devicePrivateKey, byte[] context) {
             throw new UnsupportedOperationException();
         }
+    }
+
+    private static byte[] privateKeyBytes(DeviceKeyPair device) {
+        final byte[][] output = new byte[1][];
+        device.copyPrivateKey(bytes -> output[0] = bytes.clone());
+        return output[0];
     }
 }

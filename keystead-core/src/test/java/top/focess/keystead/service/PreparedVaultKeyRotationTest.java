@@ -69,7 +69,7 @@ class PreparedVaultKeyRotationTest {
             }
 
             try (VaultHandle reopened =
-                    service.openVaultWithDeviceKey(VAULT_ID, device.privateKey(), CONTEXT)) {
+                    service.openVaultWithDeviceKey(VAULT_ID, privateKeyBytes(device), CONTEXT)) {
                 assertPassword(reopened, secretId);
             }
         }
@@ -143,7 +143,8 @@ class PreparedVaultKeyRotationTest {
 
             try (VaultHandle source = service.openVault(VAULT_ID, masterPassword());
                     PreparedVaultKeyRotation resumed =
-                            source.resumeVaultKeyRotation(staged, device.privateKey(), CONTEXT);
+                            source.resumeVaultKeyRotation(
+                                    staged, privateKeyBytes(device), CONTEXT);
                     VaultHandle rotated = resumed.commitWithDevicePackage(staged)) {
                 assertEquals(staged.vaultKeyId(), resumed.targetVaultKeyId());
                 assertTrue(resumed.isCommitted());
@@ -151,7 +152,7 @@ class PreparedVaultKeyRotationTest {
             }
 
             try (VaultHandle reopened =
-                    service.openVaultWithDeviceKey(VAULT_ID, device.privateKey(), CONTEXT)) {
+                    service.openVaultWithDeviceKey(VAULT_ID, privateKeyBytes(device), CONTEXT)) {
                 assertPassword(reopened, secretId);
             }
         }
@@ -174,7 +175,9 @@ class PreparedVaultKeyRotationTest {
             byte[] wrongContext = "wrong-context".getBytes(StandardCharsets.UTF_8);
             assertThrows(
                     RuntimeException.class,
-                    () -> source.resumeVaultKeyRotation(staged, device.privateKey(), wrongContext));
+                    () ->
+                            source.resumeVaultKeyRotation(
+                                    staged, privateKeyBytes(device), wrongContext));
             assertNotNull(source.vaultKeyId());
         }
     }
@@ -203,5 +206,11 @@ class PreparedVaultKeyRotationTest {
 
     private static char[] masterPassword() {
         return "correct horse battery staple".toCharArray();
+    }
+
+    private static byte[] privateKeyBytes(DeviceKeyPair device) {
+        final byte[][] output = new byte[1][];
+        device.copyPrivateKey(bytes -> output[0] = bytes.clone());
+        return output[0];
     }
 }

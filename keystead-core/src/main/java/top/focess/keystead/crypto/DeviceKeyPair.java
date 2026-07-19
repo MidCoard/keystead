@@ -2,7 +2,6 @@ package top.focess.keystead.crypto;
 
 import java.util.Arrays;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretDestroyedException;
@@ -13,8 +12,8 @@ import top.focess.keystead.memory.SecretMemoryProvider;
  * Owned, wipeable device key pair used to wrap or unwrap vault keys for a device.
  *
  * <p>Both keys are copied on construction; {@link #close()} wipes the private key. {@link
- * #privateKey()} throws {@link SecretKeyDestroyedException} after close. {@link #toString()}
- * redacts both keys.
+ * #copyPrivateKey(Consumer)} throws {@link SecretKeyDestroyedException} after close. {@link
+ * #toString()} redacts both keys.
  */
 public final class DeviceKeyPair implements AutoCloseable {
 
@@ -57,21 +56,6 @@ public final class DeviceKeyPair implements AutoCloseable {
      * @return a defensive copy of the public key */
     public byte @NonNull [] publicKey() {
         return Arrays.copyOf(publicKey, publicKey.length);
-    }
-
-    /**
-     * Returns a defensive copy of the private key.
-     *
-     * @return a defensive copy of the private key.
-     * @deprecated prefer {@link #copyPrivateKey(Consumer)} so the private key is handed to a
-     *     callback instead of being copied into a caller-retained array; this accessor remains for
-     *     compatibility.
-     */
-    @Deprecated(forRemoval = false)
-    public byte @NonNull [] privateKey() {
-        AtomicReference<byte[]> copy = new AtomicReference<>();
-        copyPrivateKey(bytes -> copy.set(Arrays.copyOf(bytes, bytes.length)));
-        return copy.get();
     }
 
     /**
