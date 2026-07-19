@@ -8,8 +8,8 @@ import org.jspecify.annotations.NonNull;
 
 /**
  * Parameters for generating an OpenPGP key: identity, passphrase, creation time, and RSA key size
- * (at least 3072 bits). Owns the passphrase buffer; the constructor wipes the supplied passphrase
- * array and closing wipes the retained copy.
+ * (at least 3072 bits). The constructor defensively copies the passphrase; the caller retains
+ * ownership of the supplied array and must wipe it. Closing wipes the retained copy.
  */
 public final class GpgKeyPolicy implements AutoCloseable {
 
@@ -26,7 +26,7 @@ public final class GpgKeyPolicy implements AutoCloseable {
      * Creates a policy with the current time and default RSA key size.
      *
      * @param identity the OpenPGP identity
-     * @param passphrase the passphrase; wiped after being copied
+     * @param passphrase the passphrase; copied, and remains the caller's responsibility to wipe
      */
     public GpgKeyPolicy(@NonNull String identity, char @NonNull [] passphrase) {
         this(identity, passphrase, new Date(), DEFAULT_RSA_BITS);
@@ -36,7 +36,7 @@ public final class GpgKeyPolicy implements AutoCloseable {
      * Creates a policy with the default RSA key size.
      *
      * @param identity the OpenPGP identity
-     * @param passphrase the passphrase; wiped after being copied
+     * @param passphrase the passphrase; copied, and remains the caller's responsibility to wipe
      * @param createdAt the key creation time
      */
     public GpgKeyPolicy(
@@ -48,7 +48,7 @@ public final class GpgKeyPolicy implements AutoCloseable {
      * Creates a policy with an explicit RSA key size.
      *
      * @param identity the OpenPGP identity
-     * @param passphrase the passphrase; wiped after being copied
+     * @param passphrase the passphrase; copied, and remains the caller's responsibility to wipe
      * @param createdAt the key creation time
      * @param rsaBits the RSA key size in bits; at least 3072
      */
