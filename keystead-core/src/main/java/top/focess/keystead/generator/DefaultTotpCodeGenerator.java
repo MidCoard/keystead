@@ -24,12 +24,9 @@ public final class DefaultTotpCodeGenerator implements TotpCodeGenerator {
 
     @Override
     public char @NonNull [] generate(
-            @NonNull MfaSecretPolicy policy, @NonNull SecretBuffer seed, @NonNull Instant now) {
-        Objects.requireNonNull(policy, "policy");
+            int digits, int periodSeconds, @NonNull SecretBuffer seed, @NonNull Instant now) {
         Objects.requireNonNull(seed, "seed");
         Objects.requireNonNull(now, "now");
-        int digits = policy.digits();
-        int periodSeconds = policy.periodSeconds();
         if (digits < 6 || digits > 8) {
             throw new IllegalArgumentException("TOTP digits must be between 6 and 8: " + digits);
         }

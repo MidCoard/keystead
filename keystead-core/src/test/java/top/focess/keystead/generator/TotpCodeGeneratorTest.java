@@ -18,14 +18,12 @@ class TotpCodeGeneratorTest {
     void matchesRfc6238VectorsAtEightDigits() {
         SecretBuffer seed = rfcSeed();
         try {
-            MfaSecretPolicy policy =
-                    new MfaSecretPolicy("Keystead", "alice@example.com", 20, 8, 30);
-            assertEquals("94287082", code(policy, seed, 59L));
-            assertEquals("07081804", code(policy, seed, 1111111109L));
-            assertEquals("14050471", code(policy, seed, 1111111111L));
-            assertEquals("89005924", code(policy, seed, 1234567890L));
-            assertEquals("69279037", code(policy, seed, 2000000000L));
-            assertEquals("65353130", code(policy, seed, 20000000000L));
+            assertEquals("94287082", code(8, 30, seed, 59L));
+            assertEquals("07081804", code(8, 30, seed, 1111111109L));
+            assertEquals("14050471", code(8, 30, seed, 1111111111L));
+            assertEquals("89005924", code(8, 30, seed, 1234567890L));
+            assertEquals("69279037", code(8, 30, seed, 2000000000L));
+            assertEquals("65353130", code(8, 30, seed, 20000000000L));
         } finally {
             seed.close();
         }
@@ -35,12 +33,10 @@ class TotpCodeGeneratorTest {
     void matchesRfc4226HotpCountersAtSixDigits() {
         SecretBuffer seed = rfcSeed();
         try {
-            MfaSecretPolicy policy =
-                    new MfaSecretPolicy("Keystead", "alice@example.com", 20, 6, 30);
             // Counters 0, 1, 2 at a 30s period: t=29 -> counter 0, t=59 -> 1, t=89 -> 2.
-            assertEquals("755224", code(policy, seed, 29L));
-            assertEquals("287082", code(policy, seed, 59L));
-            assertEquals("359152", code(policy, seed, 89L));
+            assertEquals("755224", code(6, 30, seed, 29L));
+            assertEquals("287082", code(6, 30, seed, 59L));
+            assertEquals("359152", code(6, 30, seed, 89L));
         } finally {
             seed.close();
         }
@@ -50,13 +46,10 @@ class TotpCodeGeneratorTest {
     void periodChangesTheCounter() {
         SecretBuffer seed = rfcSeed();
         try {
-            MfaSecretPolicy thirty =
-                    new MfaSecretPolicy("Keystead", "alice@example.com", 20, 8, 30);
-            MfaSecretPolicy sixty = new MfaSecretPolicy("Keystead", "alice@example.com", 20, 8, 60);
             // t=59: a 30s period -> counter 1 (RFC 94287082); a 60s period -> counter 0
             // (different).
-            assertEquals("94287082", code(thirty, seed, 59L));
-            assertNotEquals(code(thirty, seed, 59L), code(sixty, seed, 59L));
+            assertEquals("94287082", code(8, 30, seed, 59L));
+            assertNotEquals(code(8, 30, seed, 59L), code(8, 60, seed, 59L));
         } finally {
             seed.close();
         }
@@ -66,10 +59,8 @@ class TotpCodeGeneratorTest {
     void sameInstantProducesSameCodeAndMatchesDigitsLength() {
         SecretBuffer seed = rfcSeed();
         try {
-            MfaSecretPolicy policy =
-                    new MfaSecretPolicy("Keystead", "alice@example.com", 20, 7, 30);
-            char[] first = generator.generate(policy, seed, Instant.ofEpochSecond(1234567890L));
-            char[] second = generator.generate(policy, seed, Instant.ofEpochSecond(1234567890L));
+            char[] first = generator.generate(7, 30, seed, Instant.ofEpochSecond(1234567890L));
+            char[] second = generator.generate(7, 30, seed, Instant.ofEpochSecond(1234567890L));
             assertEquals(7, first.length);
             assertArrayEquals(first, second);
             Arrays.fill(first, '\0');
@@ -80,17 +71,22 @@ class TotpCodeGeneratorTest {
     }
 
     @Test
-    void rejectsNullArguments() {
+    void rejectsNullArgumentsAndInvalidPolicy() {
         SecretBuffer seed = rfcSeed();
         try {
-            MfaSecretPolicy policy = MfaSecretPolicy.totp("Keystead", "alice@example.com");
             assertThrows(
                     NullPointerException.class,
-                    () -> generator.generate(null, seed, Instant.EPOCH));
+                    () -> generator.generate(6, 30, null, Instant.EPOCH));
+            assertThrows(NullPointerException.class, () -> generator.generate(6, 30, seed, null));
             assertThrows(
-                    NullPointerException.class,
-                    () -> generator.generate(policy, null, Instant.EPOCH));
-            assertThrows(NullPointerException.class, () -> generator.generate(policy, seed, null));
+                    IllegalArgumentException.class,
+                    () -> generator.generate(5, 30, seed, Instant.EPOCH));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> generator.generate(9, 30, seed, Instant.EPOCH));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> generator.generate(6, 0, seed, Instant.EPOCH));
         } finally {
             seed.close();
         }
@@ -106,8 +102,9 @@ class TotpCodeGeneratorTest {
         return seed;
     }
 
-    private String code(MfaSecretPolicy policy, SecretBuffer seed, long epochSecond) {
-        char[] chars = generator.generate(policy, seed, Instant.ofEpochSecond(epochSecond));
+    private String code(int digits, int periodSeconds, SecretBuffer seed, long epochSecond) {
+        char[] chars =
+                generator.generate(digits, periodSeconds, seed, Instant.ofEpochSecond(epochSecond));
         String value = new String(chars);
         Arrays.fill(chars, '\0');
         return value;
