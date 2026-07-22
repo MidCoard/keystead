@@ -161,6 +161,20 @@ class StructuredSecretServiceTest {
     }
 
     @Test
+    void saveSecretRejectsDedicatedPayloadTypes() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+
+        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            assertThrows(
+                    ValidationException.class,
+                    () -> vault.saveSecret(SecretType.LOGIN_PASSWORD, draft -> {}));
+            assertThrows(
+                    ValidationException.class,
+                    () -> vault.saveSecret(SecretType.SECURE_NOTE, draft -> {}));
+        }
+    }
+
+    @Test
     void structuredSecretViewIsInvalidAfterCallbackReturns() {
         VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
         AtomicReference<StructuredSecretView> captured = new AtomicReference<>();

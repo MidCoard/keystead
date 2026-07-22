@@ -65,6 +65,13 @@ class DefaultPasswordGeneratorTest {
         }
     }
 
+    @Test
+    void rejectsPasswordLengthShorterThanEnabledGroupCount() {
+        PasswordPolicy policy = new PasswordPolicy(3, true, true, true, true, false, Set.of());
+
+        assertThrows(IllegalArgumentException.class, () -> generator.generate(policy));
+    }
+
     private static boolean containsAny(char[] chars, char start, char end) {
         for (char c : chars) {
             if (c >= start && c <= end) {

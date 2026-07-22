@@ -268,6 +268,44 @@ class KdfProviderTest {
         assertThrows(IllegalArgumentException.class, () -> parameters.required("missing"));
     }
 
+    @Test
+    void pbkdf2RejectsUnapprovedAlgorithm() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new Pbkdf2KeyDerivation("PBKDF2WithHmacSHA1"));
+    }
+
+    @Test
+    void pbkdf2RejectsInvalidOutputSize() {
+        Pbkdf2KeyDerivation provider =
+                new Pbkdf2KeyDerivation(CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256);
+        KdfParameters parameters = KdfParameters.pbkdf2(provider.algorithm(), new byte[16], 1_000);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> provider.derive(new char[] {'x'}, parameters, 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> provider.derive(new char[] {'x'}, parameters, -1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> provider.derive(new char[] {'x'}, parameters, Integer.MAX_VALUE / 8 + 1));
+    }
+
+    @Test
+    void unwrapRejectsTooShortWrappedKey() {
+        DefaultCryptoService crypto = new DefaultCryptoService();
+        KdfParameters parameters =
+                KdfParameters.pbkdf2(
+                        CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256, new byte[16], 1_000);
+
+        assertThrows(
+                CryptoException.class,
+                () ->
+                        crypto.unwrapVaultKey(
+                                new KeyId("vault-key"), new byte[0], new char[] {'x'}, parameters));
+    }
+
     private static @NonNull PasswordKeyDerivation recordingProvider(
             @NonNull String algorithm, @NonNull AtomicInteger calls) {
         return new PasswordKeyDerivation() {

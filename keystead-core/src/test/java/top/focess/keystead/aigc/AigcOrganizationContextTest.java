@@ -2,6 +2,7 @@ package top.focess.keystead.aigc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -72,5 +73,33 @@ class AigcOrganizationContextTest {
         assertFalse(promptText.contains("plain-password-sentinel"));
         assertFalse(promptText.contains("nonce-sentinel"));
         assertFalse(promptText.contains("aad-sentinel"));
+    }
+
+    @Test
+    void rejectsBlankTitleAndNonPositiveRevision() {
+        SecretId secretId = new SecretId(UUID.fromString("11111111-1111-1111-1111-111111111111"));
+        SecretClassification classification = SecretClassification.none();
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new AigcOrganizationContext(
+                                secretId,
+                                SecretType.API_TOKEN,
+                                "  ",
+                                classification,
+                                Set.of(),
+                                Map.of(),
+                                1L));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new AigcOrganizationContext(
+                                secretId,
+                                SecretType.API_TOKEN,
+                                "valid title",
+                                classification,
+                                Set.of(),
+                                Map.of(),
+                                0L));
     }
 }

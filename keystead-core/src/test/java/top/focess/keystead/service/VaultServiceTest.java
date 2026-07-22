@@ -125,6 +125,20 @@ class VaultServiceTest {
     }
 
     @Test
+    void openVaultWithDeviceKeyRejectsPasswordProtectedVault() {
+        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+
+        try (VaultHandle ignored =
+                service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+            // create a master-password-protected vault
+        }
+
+        assertThrows(
+                ValidationException.class,
+                () -> service.openVaultWithDeviceKey(VAULT_ID, new byte[32], new byte[16]));
+    }
+
+    @Test
     void openVaultAcceptsApprovedSha512KdfHeader() {
         FileVaultStore store = new FileVaultStore(tempDir);
         DefaultCryptoService crypto = new DefaultCryptoService();

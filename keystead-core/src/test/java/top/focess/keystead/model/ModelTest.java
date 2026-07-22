@@ -413,4 +413,36 @@ class ModelTest {
                                 Instant.parse("2026-07-02T00:00:00Z"),
                                 Instant.parse("2026-07-02T00:01:00Z")));
     }
+
+    @Test
+    void encryptedEnvelopeRejectsNonPositiveVersion() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedEnvelope(
+                                0,
+                                "AES-256-GCM",
+                                new KeyId("vault-key"),
+                                new byte[12],
+                                new byte[1],
+                                new byte[1],
+                                Instant.parse("2026-07-02T00:00:00Z")));
+    }
+
+    @Test
+    void vaultHeaderRejectsNonPositiveFormatVersion() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new VaultHeader(
+                                new VaultId(UUID.randomUUID()),
+                                0,
+                                "PBKDF2WithHmacSHA256",
+                                new byte[] {1, 2},
+                                120_000,
+                                new KeyId("vault-key"),
+                                new byte[] {3, 4},
+                                Instant.parse("2026-07-02T00:00:00Z"),
+                                Instant.parse("2026-07-02T00:01:00Z")));
+    }
 }

@@ -2,6 +2,7 @@ package top.focess.keystead.service;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -13,11 +14,13 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.DeviceKeyPair;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretId;
+import top.focess.keystead.model.SecurityLimits;
 import top.focess.keystead.model.VaultId;
 import top.focess.keystead.store.FileVaultStore;
 
@@ -160,6 +163,74 @@ class ProvisionedVaultServiceTest {
 
         assertArrayEquals(new byte[] {1, 2, 3}, callerCiphertext);
         assertArrayEquals(new byte[] {0, 0, 0}, service.captured.encryptedVaultKey());
+    }
+
+    @Test
+    void provisionVaultRejectsInvalidKeyPackageArguments() {
+        DefaultVaultService service =
+                new DefaultVaultService(new FileVaultStore(tempDir.resolve("validate")), CLOCK);
+        KeyId keyId = new KeyId("vault-key");
+        byte[] devicePrivateKey = new byte[32];
+        byte[] context = new byte[16];
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        service.provisionVault(
+                                VAULT_ID,
+                                keyId,
+                                CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256,
+                                new byte[] {1},
+                                devicePrivateKey,
+                                context));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        service.provisionVault(
+                                VAULT_ID,
+                                keyId,
+                                DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
+                                new byte[0],
+                                devicePrivateKey,
+                                context));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        service.provisionVault(
+                                VAULT_ID,
+                                keyId,
+                                DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
+                                new byte[SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES + 1],
+                                devicePrivateKey,
+                                context));
+    }
+
+    @Test
+    void openVaultRejectsDeviceKeyProtectedVault() {
+        DefaultCryptoService crypto = new DefaultCryptoService();
+        DefaultVaultService sourceService =
+                new DefaultVaultService(
+                        new FileVaultStore(tempDir.resolve("mismatch-source")), CLOCK);
+        DefaultVaultService targetService =
+                new DefaultVaultService(
+                        new FileVaultStore(tempDir.resolve("mismatch-target")), CLOCK);
+        byte[] context = "vault:vault-mismatch:device:laptop-1".getBytes(StandardCharsets.UTF_8);
+
+        try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
+                VaultHandle source =
+                        sourceService.createVault(
+                                new CreateVaultRequest(VAULT_ID), masterPassword())) {
+            byte[] packageBytes = source.wrapVaultKeyForDevice(device.publicKey(), context);
+            try (VaultHandle target =
+                    targetService.provisionVault(
+                            VAULT_ID, packageBytes, privateKeyBytes(device), context)) {
+                // provision a device-key-package-protected vault
+            }
+        }
+
+        assertThrows(
+                ValidationException.class,
+                () -> targetService.openVault(VAULT_ID, masterPassword()));
     }
 
     private static SecretId saveLogin(VaultHandle vault) {
