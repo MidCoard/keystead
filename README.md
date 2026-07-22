@@ -98,6 +98,7 @@ key or plaintext secret fields.
 - Ed25519 and RSA SSH key material.
 - RSA-first OpenPGP key pairs.
 - MFA seeds and `otpauth` URIs.
+- RFC 6238 TOTP current codes generated from an MFA seed.
 - X.509 certificate/private-key bundles.
 
 Generated private material is owned by `SecretBuffer`-based or
@@ -368,7 +369,7 @@ to immutable `String` values.
 keystead-core/src/main/java/top/focess/keystead/
 |-- aigc/        AI-generated-content organization context
 |-- crypto/      key ownership, algorithms, wrapping, and AEAD
-|-- generator/   password, token, SSH, GPG, MFA, and certificate generation
+|-- generator/   password, token, SSH, GPG, MFA, TOTP, and certificate generation
 |-- memory/      wipeable and native-locked secret buffers
 |-- model/       vault IDs, schemas, encrypted rows, and metadata
 |-- recovery/    recovery kits, device requests, and vault-key packages
