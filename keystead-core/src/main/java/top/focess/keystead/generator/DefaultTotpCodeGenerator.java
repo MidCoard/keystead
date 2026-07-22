@@ -18,6 +18,9 @@ import top.focess.keystead.memory.SecretBuffer;
  */
 public final class DefaultTotpCodeGenerator implements TotpCodeGenerator {
 
+    /** Creates a default TOTP code generator. */
+    public DefaultTotpCodeGenerator() {}
+
     private static final int[] POWERS_OF_TEN = {
         1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000,
     };
