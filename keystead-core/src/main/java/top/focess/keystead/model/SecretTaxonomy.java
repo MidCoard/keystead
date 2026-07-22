@@ -11,52 +11,52 @@ import org.jspecify.annotations.Nullable;
 public final class SecretTaxonomy {
 
     /** Category for development-oriented secrets. */
-    public static final String CATEGORY_DEVELOPMENT = "development";
+    public static final @NonNull String CATEGORY_DEVELOPMENT = "development";
 
     /** Category for communication-oriented secrets. */
-    public static final String CATEGORY_COMMUNICATION = "communication";
+    public static final @NonNull String CATEGORY_COMMUNICATION = "communication";
 
     /** Provider value for generic API tokens. */
-    public static final String PROVIDER_API = "api";
+    public static final @NonNull String PROVIDER_API = "api";
 
     /** Provider value for GitHub. */
-    public static final String PROVIDER_GITHUB = "github";
+    public static final @NonNull String PROVIDER_GITHUB = "github";
 
     /** Provider value for Google. */
-    public static final String PROVIDER_GOOGLE = "google";
+    public static final @NonNull String PROVIDER_GOOGLE = "google";
 
     /** Provider value for GPG. */
-    public static final String PROVIDER_GPG = "gpg";
+    public static final @NonNull String PROVIDER_GPG = "gpg";
 
     /** Provider value for SSH. */
-    public static final String PROVIDER_SSH = "ssh";
+    public static final @NonNull String PROVIDER_SSH = "ssh";
 
     /** Provider value for WeChat. */
-    public static final String PROVIDER_WECHAT = "wechat";
+    public static final @NonNull String PROVIDER_WECHAT = "wechat";
 
     /** Provider value for X.509 certificates. */
-    public static final String PROVIDER_X509 = "x509";
+    public static final @NonNull String PROVIDER_X509 = "x509";
 
     /** Software value for GitHub. */
-    public static final String SOFTWARE_GITHUB = "github.com";
+    public static final @NonNull String SOFTWARE_GITHUB = "github.com";
 
     /** Software value for Google. */
-    public static final String SOFTWARE_GOOGLE = "google";
+    public static final @NonNull String SOFTWARE_GOOGLE = "google";
 
     /** Software value for Google Authenticator. */
-    public static final String SOFTWARE_GOOGLE_AUTHENTICATOR = "google-authenticator";
+    public static final @NonNull String SOFTWARE_GOOGLE_AUTHENTICATOR = "google-authenticator";
 
     /** Software value for GPG. */
-    public static final String SOFTWARE_GPG = "gpg";
+    public static final @NonNull String SOFTWARE_GPG = "gpg";
 
     /** Software value for OpenSSH. */
-    public static final String SOFTWARE_OPENSSH = "openssh";
+    public static final @NonNull String SOFTWARE_OPENSSH = "openssh";
 
     /** Software value for WeChat. */
-    public static final String SOFTWARE_WECHAT = "wechat";
+    public static final @NonNull String SOFTWARE_WECHAT = "wechat";
 
     /** Software value for X.509 tooling. */
-    public static final String SOFTWARE_X509 = "x509";
+    public static final @NonNull String SOFTWARE_X509 = "x509";
 
     private SecretTaxonomy() {}
 

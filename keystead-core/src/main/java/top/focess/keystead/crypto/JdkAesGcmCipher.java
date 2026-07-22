@@ -19,7 +19,7 @@ public final class JdkAesGcmCipher implements AeadCipher {
     public JdkAesGcmCipher() {}
 
     /** The approved algorithm name for AES-256-GCM. */
-    public static final String ALGORITHM = "AES-256-GCM";
+    public static final @NonNull String ALGORITHM = "AES-256-GCM";
 
     private static final int NONCE_BYTES = 12;
     private static final int GCM_TAG_BITS = 128;

@@ -25,7 +25,7 @@ import top.focess.keystead.store.VaultStore;
 public final class DefaultVaultService implements VaultService {
 
     /** Device key-package algorithm used by this service. */
-    public static final String DEVICE_KEY_PACKAGE_ALGORITHM =
+    public static final @NonNull String DEVICE_KEY_PACKAGE_ALGORITHM =
             CryptoAlgorithmRegistry.DEVICE_TINK_DEVICE_KEY_PACKAGE;
 
     private final VaultStore store;

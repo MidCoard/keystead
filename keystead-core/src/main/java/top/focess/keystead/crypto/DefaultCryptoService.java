@@ -35,14 +35,16 @@ import top.focess.keystead.model.KeyId;
 public final class DefaultCryptoService {
 
     /** Approved AEAD algorithm used for secret payloads. */
-    public static final String PAYLOAD_ALGORITHM = CryptoAlgorithmRegistry.AEAD_AES_256_GCM;
+    public static final @NonNull String PAYLOAD_ALGORITHM =
+            CryptoAlgorithmRegistry.AEAD_AES_256_GCM;
 
     /** Approved device key-package algorithm used for device wrapping. */
-    public static final String DEVICE_KEY_ALGORITHM =
+    public static final @NonNull String DEVICE_KEY_ALGORITHM =
             CryptoAlgorithmRegistry.DEVICE_TINK_ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM;
 
     /** Approved KDF algorithm used to wrap vault keys from a master password. */
-    public static final String KDF_ALGORITHM = CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256;
+    public static final @NonNull String KDF_ALGORITHM =
+            CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256;
 
     /** Default PBKDF2 iteration count. */
     public static final int DEFAULT_KDF_ITERATIONS = 120_000;

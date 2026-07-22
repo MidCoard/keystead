@@ -23,7 +23,7 @@ public record KdfParameters(
         @NonNull Map<String, Integer> parameters) {
 
     /** The standard parameter name for a KDF iteration count. */
-    public static final String ITERATIONS = "iterations";
+    public static final @NonNull String ITERATIONS = "iterations";
 
     /** Validates the components, defensively copies the salt, and sorts the parameters. */
     public KdfParameters {
