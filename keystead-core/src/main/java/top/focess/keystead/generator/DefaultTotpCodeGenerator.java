@@ -2,12 +2,12 @@ package top.focess.keystead.generator;
 
 import java.io.ByteArrayOutputStream;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Objects;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.Wipe;
 
 /**
  * Default {@link TotpCodeGenerator} implementing RFC 6238 with HMAC-SHA1.
@@ -58,10 +58,10 @@ public final class DefaultTotpCodeGenerator implements TotpCodeGenerator {
                         }
                     } finally {
                         if (hash != null) {
-                            Arrays.fill(hash, (byte) 0);
+                            Wipe.wipe(hash);
                         }
-                        Arrays.fill(message, (byte) 0);
-                        Arrays.fill(key, (byte) 0);
+                        Wipe.wipe(message);
+                        Wipe.wipe(key);
                     }
                 });
         return code;

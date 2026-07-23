@@ -2,11 +2,11 @@ package top.focess.keystead.generator;
 
 import java.security.SecureRandom;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.Wipe;
 
 /** Default {@link PasswordGenerator} that builds a password from enabled character groups. */
 public final class DefaultPasswordGenerator implements PasswordGenerator {
@@ -59,10 +59,10 @@ public final class DefaultPasswordGenerator implements PasswordGenerator {
             shuffle(password);
             return SecretBuffer.fromChars(password);
         } finally {
-            Arrays.fill(password, '\0');
-            Arrays.fill(pool, '\0');
+            Wipe.wipe(password);
+            Wipe.wipe(pool);
             for (char[] group : groups) {
-                Arrays.fill(group, '\0');
+                Wipe.wipe(group);
             }
         }
     }

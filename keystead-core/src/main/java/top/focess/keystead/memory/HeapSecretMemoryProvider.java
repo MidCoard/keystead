@@ -59,14 +59,14 @@ public final class HeapSecretMemoryProvider implements SecretMemoryProvider {
             try {
                 consumer.accept(copy);
             } finally {
-                Arrays.fill(copy, (byte) 0);
+                Wipe.wipe(copy);
             }
         }
 
         @Override
         public synchronized void close() {
             if (!closed) {
-                Arrays.fill(bytes, (byte) 0);
+                Wipe.wipe(bytes);
                 closed = true;
             }
         }

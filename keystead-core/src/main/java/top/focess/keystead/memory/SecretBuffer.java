@@ -97,12 +97,12 @@ public final class SecretBuffer implements AutoCloseable {
             throw new IllegalArgumentException("Secret characters could not be encoded", e);
         } finally {
             if (output != null) {
-                Arrays.fill(output, (byte) 0);
+                Wipe.wipe(output);
             }
             if (work != null) {
-                Arrays.fill(work, (byte) 0);
+                Wipe.wipe(work);
             }
-            Arrays.fill(copy, '\0');
+            Wipe.wipe(copy);
         }
     }
 
@@ -145,7 +145,7 @@ public final class SecretBuffer implements AutoCloseable {
                     try {
                         consumer.accept(copy);
                     } finally {
-                        Arrays.fill(copy, '\0');
+                        Wipe.wipe(copy);
                     }
                 });
     }
@@ -174,7 +174,7 @@ public final class SecretBuffer implements AutoCloseable {
             throw new IllegalStateException("Secret bytes could not be decoded", e);
         } finally {
             if (work != null) {
-                Arrays.fill(work, '\0');
+                Wipe.wipe(work);
             }
         }
     }

@@ -18,6 +18,7 @@ import java.util.stream.Collectors;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.crypto.KdfParameters;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 import top.focess.keystead.model.*;
 
@@ -824,7 +825,7 @@ public final class FileVaultStore implements VaultStore {
             throw new StoreException("Could not store vault data", e);
         } finally {
             if (serialized != null) {
-                Arrays.fill(serialized, (byte) 0);
+                Wipe.wipe(serialized);
             }
             try {
                 if (temp != null) {
@@ -857,7 +858,7 @@ public final class FileVaultStore implements VaultStore {
             throw new StoreException("Could not load vault data", e);
         } finally {
             if (serialized != null) {
-                Arrays.fill(serialized, (byte) 0);
+                Wipe.wipe(serialized);
             }
         }
     }
@@ -964,7 +965,7 @@ public final class FileVaultStore implements VaultStore {
                     : new KdfParameters(algorithm, salt, canonical);
         } finally {
             if (salt != null) {
-                Arrays.fill(salt, (byte) 0);
+                Wipe.wipe(salt);
             }
         }
     }
@@ -1013,7 +1014,7 @@ public final class FileVaultStore implements VaultStore {
             throw new IllegalArgumentException(label + " is invalid");
         }
         if (decoded.length > maximumBytes) {
-            Arrays.fill(decoded, (byte) 0);
+            Wipe.wipe(decoded);
             throw new IllegalArgumentException(label + " exceeds the size limit");
         }
         return decoded;

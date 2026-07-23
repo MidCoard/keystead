@@ -12,7 +12,6 @@ import java.security.SecureRandom;
 import java.security.interfaces.EdECPrivateKey;
 import java.security.interfaces.EdECPublicKey;
 import java.security.spec.NamedParameterSpec;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters;
@@ -20,6 +19,7 @@ import org.bouncycastle.crypto.util.OpenSSHPrivateKeyUtil;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.Wipe;
 
 /** Default {@link SshKeyGenerator} that produces Ed25519 OpenSSH key pairs. */
 public final class DefaultSshKeyGenerator implements SshKeyGenerator {
@@ -79,9 +79,9 @@ public final class DefaultSshKeyGenerator implements SshKeyGenerator {
             }
             return OPENSSH_ED25519 + " " + encoded + " " + comment;
         } finally {
-            Arrays.fill(raw, (byte) 0);
+            Wipe.wipe(raw);
             if (wire != null) {
-                Arrays.fill(wire, (byte) 0);
+                Wipe.wipe(wire);
             }
         }
     }
@@ -93,7 +93,7 @@ public final class DefaultSshKeyGenerator implements SshKeyGenerator {
         if (publicKey.getPoint().isXOdd()) {
             littleEndian[ED25519_PUBLIC_KEY_BYTES - 1] |= (byte) 0x80;
         }
-        Arrays.fill(bigEndian, (byte) 0);
+        Wipe.wipe(bigEndian);
         return littleEndian;
     }
 
@@ -103,7 +103,7 @@ public final class DefaultSshKeyGenerator implements SshKeyGenerator {
         int sourceOffset = Math.max(0, source.length - size);
         int copyLength = Math.min(source.length, size);
         System.arraycopy(source, sourceOffset, output, size - copyLength, copyLength);
-        Arrays.fill(source, (byte) 0);
+        Wipe.wipe(source);
         return output;
     }
 
@@ -134,16 +134,16 @@ public final class DefaultSshKeyGenerator implements SshKeyGenerator {
             return SecretBuffer.fromChars(pem);
         } finally {
             if (seed != null) {
-                Arrays.fill(seed, (byte) 0);
+                Wipe.wipe(seed);
             }
             if (blob != null) {
-                Arrays.fill(blob, (byte) 0);
+                Wipe.wipe(blob);
             }
             if (base64 != null) {
-                Arrays.fill(base64, (byte) 0);
+                Wipe.wipe(base64);
             }
             if (pem != null) {
-                Arrays.fill(pem, '\0');
+                Wipe.wipe(pem);
             }
         }
     }

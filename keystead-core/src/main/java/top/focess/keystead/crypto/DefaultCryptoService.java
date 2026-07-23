@@ -125,7 +125,7 @@ public final class DefaultCryptoService {
         try {
             return new VaultKey(keyId, keyBytes, memoryProvider);
         } finally {
-            Arrays.fill(keyBytes, (byte) 0);
+            Wipe.wipe(keyBytes);
         }
     }
 
@@ -158,8 +158,8 @@ public final class DefaultCryptoService {
                 return new DeviceKeyPair(
                         DEVICE_KEY_ALGORITHM, publicKey, privateKey, memoryProvider);
             } finally {
-                Arrays.fill(publicKey, (byte) 0);
-                Arrays.fill(privateKey, (byte) 0);
+                Wipe.wipe(publicKey);
+                Wipe.wipe(privateKey);
             }
         } catch (GeneralSecurityException e) {
             throw new CryptoException("Could not generate device key pair", e);
@@ -459,7 +459,7 @@ public final class DefaultCryptoService {
             throw new CryptoException("Could not unwrap device vault key package", e);
         } finally {
             if (opened != null) {
-                Arrays.fill(opened, (byte) 0);
+                Wipe.wipe(opened);
             }
         }
     }
@@ -494,9 +494,9 @@ public final class DefaultCryptoService {
             result = null;
             return output;
         } finally {
-            Arrays.fill(passwordCopy, '\0');
+            Wipe.wipe(passwordCopy);
             if (result != null) {
-                Arrays.fill(result, (byte) 0);
+                Wipe.wipe(result);
             }
         }
     }

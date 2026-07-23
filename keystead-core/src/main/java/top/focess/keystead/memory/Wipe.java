@@ -4,7 +4,7 @@ import java.util.Arrays;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Best-effort zeroing of heap-allocated secret byte arrays after use.
+ * Best-effort zeroing of heap-allocated secret byte and char arrays after use.
  *
  * <p>This is a defense-in-depth measure that shortens the window during which secret material
  * remains live on the Java heap. It is <em>not</em> a guarantee: the garbage collector and the JIT
@@ -12,7 +12,8 @@ import org.jspecify.annotations.Nullable;
  * For strongly protected secret storage prefer {@link SecretBuffer}, which backs secrets with native
  * locked memory where available.
  *
- * <p>The {@link #wipe(byte[])} method is null-safe: a {@code null} reference is ignored.
+ * <p>Both {@link #wipe(byte[])} and {@link #wipe(char[])} are null-safe: a {@code null} reference
+ * is ignored.
  */
 public final class Wipe {
 
@@ -29,6 +30,20 @@ public final class Wipe {
     public static void wipe(byte @Nullable [] value) {
         if (value != null) {
             Arrays.fill(value, (byte) 0);
+        }
+    }
+
+    /**
+     * Overwrites every element of {@code value} with {@code '\0'}.
+     *
+     * <p>This is a best-effort heap zeroing helper; see the class documentation for its limits. It
+     * does nothing when {@code value} is {@code null}.
+     *
+     * @param value the char array to zero, or {@code null} to do nothing
+     */
+    public static void wipe(char @Nullable [] value) {
+        if (value != null) {
+            Arrays.fill(value, '\0');
         }
     }
 }

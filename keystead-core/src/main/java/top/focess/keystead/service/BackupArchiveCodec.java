@@ -26,6 +26,7 @@ import java.util.zip.ZipOutputStream;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.crypto.KdfParameters;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 import top.focess.keystead.model.DeletedSecretRecord;
 import top.focess.keystead.model.EncryptedEnvelope;
@@ -259,7 +260,7 @@ final class BackupArchiveCodec {
             return (int) nextTotal;
         } finally {
             if (!transferred) {
-                Arrays.fill(bytes, (byte) 0);
+                Wipe.wipe(bytes);
             }
         }
     }
@@ -422,7 +423,7 @@ final class BackupArchiveCodec {
                     : new KdfParameters(algorithm, salt, canonical);
         } finally {
             if (salt != null) {
-                Arrays.fill(salt, (byte) 0);
+                Wipe.wipe(salt);
             }
         }
     }
@@ -658,7 +659,7 @@ final class BackupArchiveCodec {
             throw new ValidationException(label + " is invalid");
         }
         if (decoded.length > maximumBytes) {
-            Arrays.fill(decoded, (byte) 0);
+            Wipe.wipe(decoded);
             throw new ValidationException(label + " exceeds the size limit");
         }
         return decoded;
@@ -724,7 +725,7 @@ final class BackupArchiveCodec {
         }
 
         private void wipe() {
-            Arrays.fill(bytes, (byte) 0);
+            Wipe.wipe(bytes);
         }
     }
 

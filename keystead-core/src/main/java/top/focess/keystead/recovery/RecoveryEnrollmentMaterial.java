@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.memory.Wipe;
 
 /**
  * Client-owned secret and public material created during recovery enrollment. The account
@@ -82,10 +83,10 @@ public final class RecoveryEnrollmentMaterial implements AutoCloseable {
         } finally {
             if (!completed) {
                 if (credentialCopy != null) {
-                    Arrays.fill(credentialCopy, (byte) 0);
+                    Wipe.wipe(credentialCopy);
                 }
                 if (privateKeyCopy != null) {
-                    Arrays.fill(privateKeyCopy, (byte) 0);
+                    Wipe.wipe(privateKeyCopy);
                 }
                 kit.close();
             }
@@ -134,8 +135,8 @@ public final class RecoveryEnrollmentMaterial implements AutoCloseable {
     public synchronized void close() {
         if (!closed) {
             kit.close();
-            Arrays.fill(accountCredential, (byte) 0);
-            Arrays.fill(encryptedPrivateKey, (byte) 0);
+            Wipe.wipe(accountCredential);
+            Wipe.wipe(encryptedPrivateKey);
             closed = true;
         }
     }

@@ -14,6 +14,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Arrays;
 import org.jspecify.annotations.NonNull;
+import top.focess.keystead.memory.Wipe;
 
 /** Strict binary encoding and human-comparable fingerprint for device recovery requests. */
 public final class RecoveryDeviceRequestCodec {
@@ -49,7 +50,7 @@ public final class RecoveryDeviceRequestCodec {
             }
             byte[] encoded = bytes.toByteArray();
             if (encoded.length > MAX_ENCODED_BYTES) {
-                Arrays.fill(encoded, (byte) 0);
+                Wipe.wipe(encoded);
                 throw invalid();
             }
             return encoded;
@@ -102,8 +103,8 @@ public final class RecoveryDeviceRequestCodec {
                 }
                 return request;
             } finally {
-                Arrays.fill(proofKey, (byte) 0);
-                Arrays.fill(wrappingKey, (byte) 0);
+                Wipe.wipe(proofKey);
+                Wipe.wipe(wrappingKey);
             }
         } catch (IOException | RuntimeException error) {
             if (error instanceof IllegalArgumentException illegal
@@ -112,7 +113,7 @@ public final class RecoveryDeviceRequestCodec {
             }
             throw invalid();
         } finally {
-            Arrays.fill(inputBytes, (byte) 0);
+            Wipe.wipe(inputBytes);
         }
     }
 
@@ -135,8 +136,8 @@ public final class RecoveryDeviceRequestCodec {
             }
             return fingerprint.toString();
         } finally {
-            Arrays.fill(encoded, (byte) 0);
-            Arrays.fill(digest, (byte) 0);
+            Wipe.wipe(encoded);
+            Wipe.wipe(digest);
         }
     }
 
@@ -150,7 +151,7 @@ public final class RecoveryDeviceRequestCodec {
             output.writeInt(encoded.length);
             output.write(encoded);
         } finally {
-            Arrays.fill(encoded, (byte) 0);
+            Wipe.wipe(encoded);
         }
     }
 
@@ -160,7 +161,7 @@ public final class RecoveryDeviceRequestCodec {
             output.writeInt(value.length);
             output.write(value);
         } finally {
-            Arrays.fill(value, (byte) 0);
+            Wipe.wipe(value);
         }
     }
 
@@ -176,7 +177,7 @@ public final class RecoveryDeviceRequestCodec {
         } catch (CharacterCodingException error) {
             throw invalid();
         } finally {
-            Arrays.fill(encoded, (byte) 0);
+            Wipe.wipe(encoded);
         }
     }
 
@@ -188,7 +189,7 @@ public final class RecoveryDeviceRequestCodec {
         }
         byte[] value = input.readNBytes(length);
         if (value.length != length) {
-            Arrays.fill(value, (byte) 0);
+            Wipe.wipe(value);
             throw invalid();
         }
         return value;

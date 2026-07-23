@@ -8,6 +8,7 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.SecurityLimits;
 
 /** PBKDF2 {@link PasswordKeyDerivation} backed by the JCA {@link SecretKeyFactory}. */
@@ -70,16 +71,16 @@ public final class Pbkdf2KeyDerivation implements PasswordKeyDerivation {
             throw new CryptoException("Could not derive password key", e);
         } finally {
             if (passwordCopy != null) {
-                Arrays.fill(passwordCopy, '\0');
+                Wipe.wipe(passwordCopy);
             }
             if (saltCopy != null) {
-                Arrays.fill(saltCopy, (byte) 0);
+                Wipe.wipe(saltCopy);
             }
             if (spec != null) {
                 spec.clearPassword();
             }
             if (result != null) {
-                Arrays.fill(result, (byte) 0);
+                Wipe.wipe(result);
             }
         }
     }

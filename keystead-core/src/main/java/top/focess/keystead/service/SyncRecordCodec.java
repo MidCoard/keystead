@@ -15,6 +15,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretClassification;
@@ -243,7 +244,7 @@ final class SyncRecordCodec {
             throw new ValidationException(label + " is invalid");
         }
         if (decoded.length > maximumBytes) {
-            Arrays.fill(decoded, (byte) 0);
+            Wipe.wipe(decoded);
             throw new ValidationException(label + " exceeds the size limit");
         }
         return decoded;

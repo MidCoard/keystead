@@ -2,11 +2,11 @@ package top.focess.keystead.generator;
 
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.Wipe;
 
 /**
  * Default {@link ApiTokenGenerator} that produces a {@code prefix_base64url(random)} token from a
@@ -51,12 +51,12 @@ public final class DefaultApiTokenGenerator implements ApiTokenGenerator {
             }
             return SecretBuffer.fromChars(token);
         } finally {
-            Arrays.fill(randomBytes, (byte) 0);
+            Wipe.wipe(randomBytes);
             if (encoded != null) {
-                Arrays.fill(encoded, (byte) 0);
+                Wipe.wipe(encoded);
             }
             if (token != null) {
-                Arrays.fill(token, '\0');
+                Wipe.wipe(token);
             }
         }
     }

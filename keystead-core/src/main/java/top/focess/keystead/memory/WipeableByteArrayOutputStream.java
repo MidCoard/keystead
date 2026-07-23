@@ -24,13 +24,13 @@ public class WipeableByteArrayOutputStream extends ByteArrayOutputStream {
         try {
             return SecretBuffer.fromUtf8(copy, memoryProvider);
         } finally {
-            Arrays.fill(copy, (byte) 0);
+            Wipe.wipe(copy);
         }
     }
 
     @Override
     public synchronized void close() {
-        Arrays.fill(buf, (byte) 0);
+        Wipe.wipe(buf);
         count = 0;
     }
 }

@@ -5,7 +5,6 @@ import java.security.GeneralSecurityException;
 import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
 import java.security.Security;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -17,6 +16,7 @@ import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.Wipe;
 
 /** Default {@link CertificateGenerator} that produces self-signed RSA X.509 certificates. */
 public final class DefaultCertificateGenerator implements CertificateGenerator {
@@ -85,8 +85,8 @@ public final class DefaultCertificateGenerator implements CertificateGenerator {
         try {
             return SecretBuffer.fromUtf8(pem);
         } finally {
-            Arrays.fill(encodedPrivateKey, (byte) 0);
-            Arrays.fill(pem, (byte) 0);
+            Wipe.wipe(encodedPrivateKey);
+            Wipe.wipe(pem);
         }
     }
 
@@ -95,8 +95,8 @@ public final class DefaultCertificateGenerator implements CertificateGenerator {
         try {
             return new String(pem, java.nio.charset.StandardCharsets.US_ASCII);
         } finally {
-            Arrays.fill(der, (byte) 0);
-            Arrays.fill(pem, (byte) 0);
+            Wipe.wipe(der);
+            Wipe.wipe(pem);
         }
     }
 
@@ -111,7 +111,7 @@ public final class DefaultCertificateGenerator implements CertificateGenerator {
         System.arraycopy(base64, 0, output, headerBytes.length, base64.length);
         System.arraycopy(
                 footerBytes, 0, output, headerBytes.length + base64.length, footerBytes.length);
-        Arrays.fill(base64, (byte) 0);
+        Wipe.wipe(base64);
         return output;
     }
 

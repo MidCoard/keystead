@@ -5,6 +5,7 @@ import java.util.Date;
 import java.util.Objects;
 import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
+import top.focess.keystead.memory.Wipe;
 
 /**
  * Parameters for generating an OpenPGP key: identity, passphrase, creation time, and RSA key size
@@ -109,14 +110,14 @@ public final class GpgKeyPolicy implements AutoCloseable {
         try {
             consumer.accept(copy);
         } finally {
-            Arrays.fill(copy, '\0');
+            Wipe.wipe(copy);
         }
     }
 
     @Override
     public void close() {
         if (!closed) {
-            Arrays.fill(passphrase, '\0');
+            Wipe.wipe(passphrase);
             closed = true;
         }
     }

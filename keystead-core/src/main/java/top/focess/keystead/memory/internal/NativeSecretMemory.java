@@ -5,7 +5,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.ref.Cleaner;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -18,6 +17,7 @@ import top.focess.keystead.memory.NativeMemoryUnavailableException;
 import top.focess.keystead.memory.NativePlatform;
 import top.focess.keystead.memory.SecretDestroyedException;
 import top.focess.keystead.memory.SecretMemory;
+import top.focess.keystead.memory.Wipe;
 
 /**
  * One independently protected native secret mapping and its ownership lifecycle.
@@ -122,7 +122,7 @@ public final class NativeSecretMemory implements SecretMemory {
             try {
                 consumer.accept(copy);
             } finally {
-                Arrays.fill(copy, (byte) 0);
+                Wipe.wipe(copy);
             }
         } finally {
             callbackDepth--;

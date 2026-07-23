@@ -3,6 +3,7 @@ package top.focess.keystead.recovery;
 import java.util.Arrays;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
+import top.focess.keystead.memory.Wipe;
 
 /**
  * Offline authority for one recovery enrollment generation. The recovery secret is defensively
@@ -90,7 +91,7 @@ public final class RecoveryKit implements AutoCloseable {
     @Override
     public synchronized void close() {
         if (!closed) {
-            Arrays.fill(recoverySecret, (byte) 0);
+            Wipe.wipe(recoverySecret);
             closed = true;
         }
     }

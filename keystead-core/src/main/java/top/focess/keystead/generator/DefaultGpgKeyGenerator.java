@@ -6,7 +6,6 @@ import java.security.GeneralSecurityException;
 import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
 import java.security.Security;
-import java.util.Arrays;
 import java.util.Objects;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
@@ -26,6 +25,7 @@ import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyEncryptorBuilder;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretMemoryProvider;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 
 /** Default {@link GpgKeyGenerator} that produces RSA OpenPGP key rings. */
@@ -113,7 +113,7 @@ public final class DefaultGpgKeyGenerator implements GpgKeyGenerator {
                 }
             } finally {
                 if (passphraseHolder[0] != null) {
-                    Arrays.fill(passphraseHolder[0], '\0');
+                    Wipe.wipe(passphraseHolder[0]);
                 }
             }
         } catch (GeneralSecurityException | IOException | PGPException e) {

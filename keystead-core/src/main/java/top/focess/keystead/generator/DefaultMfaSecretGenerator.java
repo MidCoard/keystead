@@ -3,11 +3,11 @@ package top.focess.keystead.generator;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
-import java.util.Arrays;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretMemoryProvider;
+import top.focess.keystead.memory.Wipe;
 
 /** Default {@link MfaSecretGenerator} that produces Base32 TOTP seeds and {@code otpauth} URIs. */
 public final class DefaultMfaSecretGenerator implements MfaSecretGenerator {
@@ -70,12 +70,12 @@ public final class DefaultMfaSecretGenerator implements MfaSecretGenerator {
                     seedBuffer.close();
                 }
             }
-            Arrays.fill(secret, (byte) 0);
+            Wipe.wipe(secret);
             if (seed != null) {
-                Arrays.fill(seed, '\0');
+                Wipe.wipe(seed);
             }
             if (uri != null) {
-                Arrays.fill(uri, '\0');
+                Wipe.wipe(uri);
             }
         }
     }

@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecurityLimits;
 
@@ -50,7 +51,7 @@ public record DeviceVaultKeyPackage(
     }
 
     void destroy() {
-        Arrays.fill(encryptedVaultKey, (byte) 0);
+        Wipe.wipe(encryptedVaultKey);
     }
 
     @Override
