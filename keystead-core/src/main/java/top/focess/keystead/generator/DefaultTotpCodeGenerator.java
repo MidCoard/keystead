@@ -24,6 +24,7 @@ public final class DefaultTotpCodeGenerator implements TotpCodeGenerator {
     private static final int[] POWERS_OF_TEN = {
         1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000,
     };
+    private static final @NonNull String HMAC_ALGORITHM = "HmacSHA1";
 
     @Override
     public char @NonNull [] generate(
@@ -68,8 +69,8 @@ public final class DefaultTotpCodeGenerator implements TotpCodeGenerator {
 
     private static byte @NonNull [] hmacSha1(byte @NonNull [] key, byte @NonNull [] message) {
         try {
-            Mac mac = Mac.getInstance("HmacSHA1");
-            mac.init(new SecretKeySpec(key, "HmacSHA1"));
+            Mac mac = Mac.getInstance(HMAC_ALGORITHM);
+            mac.init(new SecretKeySpec(key, HMAC_ALGORITHM));
             return mac.doFinal(message);
         } catch (java.security.NoSuchAlgorithmException | java.security.InvalidKeyException e) {
             throw new IllegalStateException("HMAC-SHA1 is not available", e);
