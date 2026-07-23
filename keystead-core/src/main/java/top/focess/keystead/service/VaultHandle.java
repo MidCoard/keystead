@@ -21,6 +21,11 @@ import top.focess.keystead.model.VaultId;
  * top.focess.keystead.memory.SecretBuffer} inputs and views expose decoded fields only inside a
  * caller-supplied callback; callers should avoid copying plaintext into immutable {@link String}
  * values and should keep callbacks short-lived.
+ *
+ * <p>Handles are safe for concurrent use by multiple threads: each operation is atomic with
+ * respect to other operations on the same handle. Compound sequences that span multiple calls
+ * (for example, inspecting {@link #listSecrets()} and then deleting based on the result) are not
+ * atomic and require external coordination when concurrent mutation is possible.
  */
 public interface VaultHandle extends AutoCloseable {
 
