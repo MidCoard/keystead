@@ -42,4 +42,9 @@ public final class CertificateBundle implements AutoCloseable {
     public void close() {
         privateKey.close();
     }
+
+    @Override
+    public @NonNull String toString() {
+        return "CertificateBundle(<redacted>)";
+    }
 }

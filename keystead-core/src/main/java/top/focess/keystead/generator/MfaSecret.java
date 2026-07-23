@@ -43,4 +43,9 @@ public final class MfaSecret implements AutoCloseable {
         seed.close();
         otpauthUri.close();
     }
+
+    @Override
+    public @NonNull String toString() {
+        return "MfaSecret(<redacted>)";
+    }
 }
