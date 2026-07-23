@@ -10,8 +10,8 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.Wipe;
 
 /** Canonical printable encoding for {@link RecoveryKit}. */
 public final class RecoveryKitCodec {
@@ -58,15 +58,15 @@ public final class RecoveryKitCodec {
             encoded = appendChecksum(body, encodedChecksum);
             return SecretBuffer.fromUtf8(encoded);
         } finally {
-            wipe(enrollmentBytes);
-            wipe(encodedEnrollment);
-            wipe(generationBytes);
-            wipe(secret);
-            wipe(encodedSecret);
-            wipe(body);
-            wipe(checksum);
-            wipe(encodedChecksum);
-            wipe(encoded);
+            Wipe.wipe(enrollmentBytes);
+            Wipe.wipe(encodedEnrollment);
+            Wipe.wipe(generationBytes);
+            Wipe.wipe(secret);
+            Wipe.wipe(encodedSecret);
+            Wipe.wipe(body);
+            Wipe.wipe(checksum);
+            Wipe.wipe(encodedChecksum);
+            Wipe.wipe(encoded);
         }
     }
 
@@ -155,15 +155,15 @@ public final class RecoveryKitCodec {
             }
             return new RecoveryKit(RecoveryKit.FORMAT_VERSION, enrollmentId, generation, secret);
         } finally {
-            wipe(encodedEnrollment);
-            wipe(generationBytes);
-            wipe(encodedSecret);
-            wipe(encodedChecksum);
-            wipe(enrollmentBytes);
-            wipe(secret);
-            wipe(suppliedChecksum);
-            wipe(body);
-            wipe(expectedChecksum);
+            Wipe.wipe(encodedEnrollment);
+            Wipe.wipe(generationBytes);
+            Wipe.wipe(encodedSecret);
+            Wipe.wipe(encodedChecksum);
+            Wipe.wipe(enrollmentBytes);
+            Wipe.wipe(secret);
+            Wipe.wipe(suppliedChecksum);
+            Wipe.wipe(body);
+            Wipe.wipe(expectedChecksum);
         }
     }
 
@@ -195,9 +195,9 @@ public final class RecoveryKitCodec {
             throw invalid();
         } finally {
             if (!success) {
-                wipe(decoded);
+                Wipe.wipe(decoded);
             }
-            wipe(canonical);
+            Wipe.wipe(canonical);
         }
     }
 
@@ -276,13 +276,7 @@ public final class RecoveryKitCodec {
         } catch (NoSuchAlgorithmException error) {
             throw new IllegalStateException("SHA-256 is unavailable", error);
         } finally {
-            wipe(digest);
-        }
-    }
-
-    private static void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
+            Wipe.wipe(digest);
         }
     }
 

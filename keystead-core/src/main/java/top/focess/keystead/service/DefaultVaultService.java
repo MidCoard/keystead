@@ -10,6 +10,7 @@ import org.jspecify.annotations.Nullable;
 import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.VaultKey;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretRecordAad;
 import top.focess.keystead.model.SecurityLimits;
@@ -117,8 +118,8 @@ public final class DefaultVaultService implements VaultService {
             if (!transferred) {
                 vaultKey.close();
             }
-            wipe(salt);
-            wipe(wrappedVaultKey);
+            Wipe.wipe(salt);
+            Wipe.wipe(wrappedVaultKey);
         }
     }
 
@@ -193,8 +194,8 @@ public final class DefaultVaultService implements VaultService {
                                     crypto.encrypt(nextKey, plaintext, aad, clock.instant()),
                                     record.revision()));
                 } finally {
-                    wipe(aad);
-                    wipe(plaintext);
+                    Wipe.wipe(aad);
+                    Wipe.wipe(plaintext);
                 }
             }
             wrapped = crypto.wrapVaultKey(nextKey, masterPassword, previous.kdfParameters());
@@ -222,7 +223,7 @@ public final class DefaultVaultService implements VaultService {
                 nextKey.close();
             }
             oldKey.close();
-            wipe(wrapped);
+            Wipe.wipe(wrapped);
         }
     }
 
@@ -267,7 +268,7 @@ public final class DefaultVaultService implements VaultService {
                     devicePrivateKey,
                     context);
         } finally {
-            wipe(encryptedVaultKey);
+            Wipe.wipe(encryptedVaultKey);
         }
     }
 
@@ -360,12 +361,6 @@ public final class DefaultVaultService implements VaultService {
 
     private @NonNull KeyId defaultVaultKeyId(@NonNull VaultId vaultId) {
         return new KeyId("vault-key-" + vaultId.value());
-    }
-
-    private void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            java.util.Arrays.fill(value, (byte) 0);
-        }
     }
 
     @FunctionalInterface

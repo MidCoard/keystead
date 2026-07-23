@@ -23,6 +23,7 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretMemoryProvider;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.KeyId;
@@ -309,10 +310,10 @@ public final class DefaultCryptoService {
             output = null;
             return result;
         } finally {
-            wipe(wrappingKey);
-            wipe(nonce);
-            wipe(wrapped);
-            wipe(output);
+            Wipe.wipe(wrappingKey);
+            Wipe.wipe(nonce);
+            Wipe.wipe(wrapped);
+            Wipe.wipe(output);
         }
     }
 
@@ -394,10 +395,10 @@ public final class DefaultCryptoService {
             opened = aeadCipher.decrypt(wrappingKey, nonce, ciphertext, wrappingAad(keyId));
             return new VaultKey(keyId, opened, memoryProvider);
         } finally {
-            wipe(wrappingKey);
-            wipe(nonce);
-            wipe(ciphertext);
-            wipe(opened);
+            Wipe.wipe(wrappingKey);
+            Wipe.wipe(nonce);
+            Wipe.wipe(ciphertext);
+            Wipe.wipe(opened);
         }
     }
 
@@ -501,12 +502,6 @@ public final class DefaultCryptoService {
 
     private byte @NonNull [] wrappingAad(@NonNull KeyId keyId) {
         return keyId.value().getBytes(StandardCharsets.UTF_8);
-    }
-
-    private static void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
-        }
     }
 
     private byte @NonNull [] encryptForDevice(

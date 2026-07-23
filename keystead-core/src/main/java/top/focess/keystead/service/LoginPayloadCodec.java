@@ -2,9 +2,9 @@ package top.focess.keystead.service;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.SecretMetadata;
 
 final class LoginPayloadCodec {
@@ -33,10 +33,10 @@ final class LoginPayloadCodec {
             putBytes(buffer, notes);
             return buffer.array();
         } finally {
-            wipe(url);
-            wipe(username);
-            wipe(password);
-            wipe(notes);
+            Wipe.wipe(url);
+            Wipe.wipe(username);
+            Wipe.wipe(password);
+            Wipe.wipe(notes);
         }
     }
 
@@ -58,10 +58,10 @@ final class LoginPayloadCodec {
             }
             return new LoginSecretViewImpl(metadata, url, username, password, notes);
         } finally {
-            wipe(urlBytes);
-            wipe(username);
-            wipe(password);
-            wipe(notes);
+            Wipe.wipe(urlBytes);
+            Wipe.wipe(username);
+            Wipe.wipe(password);
+            Wipe.wipe(notes);
         }
     }
 
@@ -103,11 +103,5 @@ final class LoginPayloadCodec {
             throw new ValidationException("Login payload is truncated");
         }
         return buffer.getInt();
-    }
-
-    private static void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
-        }
     }
 }

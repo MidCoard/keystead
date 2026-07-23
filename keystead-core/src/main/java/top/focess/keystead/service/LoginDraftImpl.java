@@ -4,6 +4,7 @@ import java.util.*;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.SecretClassification;
 
 final class LoginDraftImpl implements LoginDraft, AutoCloseable {
@@ -124,9 +125,9 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
     @Override
     public void close() {
         if (!closed) {
-            wipe(username);
-            wipe(password);
-            wipe(notes);
+            Wipe.wipe(username);
+            Wipe.wipe(password);
+            Wipe.wipe(notes);
             closed = true;
         }
     }
@@ -139,17 +140,17 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
     }
 
     private void replaceUsername(byte @NonNull [] value) {
-        wipe(username);
+        Wipe.wipe(username);
         username = value;
     }
 
     private void replacePassword(byte @NonNull [] value) {
-        wipe(password);
+        Wipe.wipe(password);
         password = value;
     }
 
     private void replaceNotes(byte @NonNull [] value) {
-        wipe(notes);
+        Wipe.wipe(notes);
         notes = value;
     }
 
@@ -160,12 +161,6 @@ final class LoginDraftImpl implements LoginDraft, AutoCloseable {
     private void requireOpen() {
         if (closed) {
             throw new IllegalStateException("Login draft is closed");
-        }
-    }
-
-    private void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
         }
     }
 }

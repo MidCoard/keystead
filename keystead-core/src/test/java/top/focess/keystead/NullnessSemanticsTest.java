@@ -116,7 +116,10 @@ class NullnessSemanticsTest {
     }
 
     private static boolean endsDeclaration(String signature) {
-        return signature.endsWith("{") || signature.endsWith(";");
+        // A trailing '}' terminates a one-line empty body such as a private utility constructor
+        // ('private Foo() {}'); without this, such a declaration would bleed into the next member
+        // and be mis-parsed.
+        return signature.endsWith("{") || signature.endsWith(";") || signature.endsWith("}");
     }
 
     private static void checkReturnAnnotation(

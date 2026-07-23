@@ -6,7 +6,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
@@ -19,6 +18,7 @@ import org.jspecify.annotations.Nullable;
 import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.VaultKey;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.*;
 import top.focess.keystead.store.VaultKeyRotation;
 import top.focess.keystead.store.VaultStore;
@@ -96,12 +96,12 @@ final class DefaultVaultHandle implements VaultHandle {
                                     new EncryptedSecretRecord(
                                             vaultId, metadata, envelope, revision));
                         } finally {
-                            wipe(aad);
+                            Wipe.wipe(aad);
                         }
                     });
             return secretId;
         } finally {
-            wipe(payload);
+            Wipe.wipe(payload);
             draft.close();
         }
     }
@@ -153,11 +153,11 @@ final class DefaultVaultHandle implements VaultHandle {
                                     new EncryptedSecretRecord(
                                             vaultId, metadata, envelope, revision));
                         } finally {
-                            wipe(aad);
+                            Wipe.wipe(aad);
                         }
                     });
         } finally {
-            wipe(payload);
+            Wipe.wipe(payload);
             draft.close();
         }
     }
@@ -187,8 +187,8 @@ final class DefaultVaultHandle implements VaultHandle {
             if (view != null) {
                 view.close();
             }
-            wipe(payload);
-            wipe(aad);
+            Wipe.wipe(payload);
+            Wipe.wipe(aad);
         }
     }
 
@@ -232,12 +232,12 @@ final class DefaultVaultHandle implements VaultHandle {
                                     new EncryptedSecretRecord(
                                             vaultId, metadata, envelope, revision));
                         } finally {
-                            wipe(aad);
+                            Wipe.wipe(aad);
                         }
                     });
             return secretId;
         } finally {
-            wipe(payload);
+            Wipe.wipe(payload);
             draft.close();
         }
     }
@@ -267,8 +267,8 @@ final class DefaultVaultHandle implements VaultHandle {
             if (view != null) {
                 view.close();
             }
-            wipe(payload);
-            wipe(aad);
+            Wipe.wipe(payload);
+            Wipe.wipe(aad);
         }
     }
 
@@ -316,12 +316,12 @@ final class DefaultVaultHandle implements VaultHandle {
                                     new EncryptedSecretRecord(
                                             vaultId, metadata, envelope, revision));
                         } finally {
-                            wipe(aad);
+                            Wipe.wipe(aad);
                         }
                     });
             return secretId;
         } finally {
-            wipe(payload);
+            Wipe.wipe(payload);
             draft.close();
         }
     }
@@ -375,11 +375,11 @@ final class DefaultVaultHandle implements VaultHandle {
                                     new EncryptedSecretRecord(
                                             vaultId, metadata, envelope, revision));
                         } finally {
-                            wipe(aad);
+                            Wipe.wipe(aad);
                         }
                     });
         } finally {
-            wipe(payload);
+            Wipe.wipe(payload);
             draft.close();
         }
     }
@@ -408,8 +408,8 @@ final class DefaultVaultHandle implements VaultHandle {
             if (view != null) {
                 view.close();
             }
-            wipe(payload);
-            wipe(aad);
+            Wipe.wipe(payload);
+            Wipe.wipe(aad);
         }
     }
 
@@ -550,7 +550,7 @@ final class DefaultVaultHandle implements VaultHandle {
                             devicePrivateKey,
                             context);
         } finally {
-            wipe(encryptedVaultKey);
+            Wipe.wipe(encryptedVaultKey);
         }
         return beginPreparedRotation(targetKey, stagedPackage);
     }
@@ -591,8 +591,8 @@ final class DefaultVaultHandle implements VaultHandle {
                     SyncRecordCodec.envelopeWithoutAad(record.payload()),
                     false);
         } finally {
-            wipe(profileBytes);
-            wipe(profileAad);
+            Wipe.wipe(profileBytes);
+            Wipe.wipe(profileAad);
         }
     }
 
@@ -650,9 +650,9 @@ final class DefaultVaultHandle implements VaultHandle {
                             vaultId, metadata, payloadEnvelope, record.revision()));
             return ImportOutcome.importedOutcome();
         } finally {
-            wipe(profileAad);
-            wipe(profileBytes);
-            wipe(payloadAad);
+            Wipe.wipe(profileAad);
+            Wipe.wipe(profileBytes);
+            Wipe.wipe(payloadAad);
         }
     }
 
@@ -702,10 +702,10 @@ final class DefaultVaultHandle implements VaultHandle {
         } catch (CryptoException | IllegalArgumentException e) {
             throw new ValidationException("Active sync record cannot be decoded", e);
         } finally {
-            wipe(profileAad);
-            wipe(profileBytes);
-            wipe(payloadAad);
-            wipe(payloadBytes);
+            Wipe.wipe(profileAad);
+            Wipe.wipe(profileBytes);
+            Wipe.wipe(payloadAad);
+            Wipe.wipe(payloadBytes);
         }
     }
 
@@ -887,7 +887,7 @@ final class DefaultVaultHandle implements VaultHandle {
                     targetTransferred = true;
                     return rotated;
                 } finally {
-                    wipe(wrapped);
+                    Wipe.wipe(wrapped);
                 }
             }
         }
@@ -938,8 +938,8 @@ final class DefaultVaultHandle implements VaultHandle {
                                     crypto.encrypt(nextKey, plaintext, aad, clock.instant()),
                                     record.revision()));
                 } finally {
-                    wipe(aad);
-                    wipe(plaintext);
+                    Wipe.wipe(aad);
+                    Wipe.wipe(plaintext);
                 }
             }
             return records;
@@ -966,7 +966,7 @@ final class DefaultVaultHandle implements VaultHandle {
                 updateDigest(digest, encryptedVaultKey);
                 return Base64.getUrlEncoder().withoutPadding().encodeToString(digest.digest());
             } finally {
-                wipe(encryptedVaultKey);
+                Wipe.wipe(encryptedVaultKey);
             }
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is unavailable", e);
@@ -979,11 +979,5 @@ final class DefaultVaultHandle implements VaultHandle {
         digest.update((byte) (value.length >>> 8));
         digest.update((byte) value.length);
         digest.update(value);
-    }
-
-    private void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
-        }
     }
 }

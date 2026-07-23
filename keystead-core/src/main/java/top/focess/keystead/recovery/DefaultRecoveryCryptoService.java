@@ -18,6 +18,7 @@ import org.jspecify.annotations.Nullable;
 import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.DeviceKeyPair;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.VaultId;
 import top.focess.keystead.service.DeviceVaultKeyPackage;
 import top.focess.keystead.service.VaultHandle;
@@ -102,10 +103,10 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
             if (!transferred) {
                 kit.close();
             }
-            wipe(secret);
-            wipe(credential);
-            wipe(publicKeyBytes);
-            wipe(encryptedPrivateKey);
+            Wipe.wipe(secret);
+            Wipe.wipe(credential);
+            Wipe.wipe(publicKeyBytes);
+            Wipe.wipe(encryptedPrivateKey);
         }
     }
 
@@ -159,11 +160,11 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
                         wrapped.keyAlgorithm(),
                         ciphertext);
             } finally {
-                wipe(ciphertext);
+                Wipe.wipe(ciphertext);
             }
         } finally {
-            wipe(publicKey);
-            wipe(context);
+            Wipe.wipe(publicKey);
+            Wipe.wipe(context);
         }
     }
 
@@ -228,10 +229,10 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
                 }
             }
         } finally {
-            wipe(privateKey);
-            wipe(ciphertext);
-            wipe(version2Context);
-            wipe(legacyContext);
+            Wipe.wipe(privateKey);
+            Wipe.wipe(ciphertext);
+            Wipe.wipe(version2Context);
+            Wipe.wipe(legacyContext);
         }
     }
 
@@ -278,12 +279,12 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
         } catch (GeneralSecurityException error) {
             throw new CryptoException("Could not encrypt recovery private key", error);
         } finally {
-            wipe(key);
-            wipe(nonce);
-            wipe(aad);
-            wipe(ciphertext);
+            Wipe.wipe(key);
+            Wipe.wipe(nonce);
+            Wipe.wipe(aad);
+            Wipe.wipe(ciphertext);
             if (!completed) {
-                wipe(output);
+                Wipe.wipe(output);
             }
         }
     }
@@ -337,14 +338,14 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
         } catch (GeneralSecurityException error) {
             throw new CryptoException("Could not decrypt recovery private key", error);
         } finally {
-            wipe(inputCopy);
-            wipe(magic);
-            wipe(nonce);
-            wipe(ciphertext);
-            wipe(key);
-            wipe(aad);
+            Wipe.wipe(inputCopy);
+            Wipe.wipe(magic);
+            Wipe.wipe(nonce);
+            Wipe.wipe(ciphertext);
+            Wipe.wipe(key);
+            Wipe.wipe(aad);
             if (!completed) {
-                wipe(plaintext);
+                Wipe.wipe(plaintext);
             }
         }
     }
@@ -370,14 +371,14 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
             completed = true;
             return output;
         } finally {
-            wipe(secret);
-            wipe(salt);
-            wipe(pseudoRandomKey);
-            wipe(input);
-            wipe(expandInput);
-            wipe(expanded);
+            Wipe.wipe(secret);
+            Wipe.wipe(salt);
+            Wipe.wipe(pseudoRandomKey);
+            Wipe.wipe(input);
+            Wipe.wipe(expandInput);
+            Wipe.wipe(expanded);
             if (!completed) {
-                wipe(output);
+                Wipe.wipe(output);
             }
         }
     }
@@ -398,7 +399,7 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
         } catch (NoSuchAlgorithmException error) {
             throw new CryptoException("Could not derive recovery key", error);
         } finally {
-            wipe(value);
+            Wipe.wipe(value);
         }
     }
 
@@ -416,11 +417,5 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
                 + kit.enrollmentId()
                 + "|generation:"
                 + kit.generation();
-    }
-
-    private void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
-        }
     }
 }

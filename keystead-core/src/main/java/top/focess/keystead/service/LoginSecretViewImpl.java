@@ -1,6 +1,5 @@
 package top.focess.keystead.service;
 
-import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -8,6 +7,7 @@ import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretDestroyedException;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.SecretMetadata;
 
 final class LoginSecretViewImpl implements LoginSecretView, AutoCloseable {
@@ -62,9 +62,9 @@ final class LoginSecretViewImpl implements LoginSecretView, AutoCloseable {
     @Override
     public void close() {
         if (!closed) {
-            wipe(username);
-            wipe(password);
-            wipe(notes);
+            Wipe.wipe(username);
+            Wipe.wipe(password);
+            Wipe.wipe(notes);
             closed = true;
         }
     }
@@ -86,11 +86,5 @@ final class LoginSecretViewImpl implements LoginSecretView, AutoCloseable {
 
     private byte @Nullable [] copyOrNull(byte @Nullable [] value) {
         return value == null ? null : value.clone();
-    }
-
-    private void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
-        }
     }
 }

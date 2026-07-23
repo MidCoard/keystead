@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.memory.Wipe;
 
 /** Versioned encodings for recovery vault-key wrapping contexts. */
 final class RecoveryContextCodec {
@@ -68,12 +69,12 @@ final class RecoveryContextCodec {
             completed = true;
             return output;
         } finally {
-            wipe(encodedUsername);
-            wipe(encodedVaultId);
-            wipe(encodedEnrollmentId);
-            wipe(encodedKeyId);
+            Wipe.wipe(encodedUsername);
+            Wipe.wipe(encodedVaultId);
+            Wipe.wipe(encodedEnrollmentId);
+            Wipe.wipe(encodedKeyId);
             if (!completed) {
-                wipe(output);
+                Wipe.wipe(output);
             }
         }
     }
@@ -124,13 +125,13 @@ final class RecoveryContextCodec {
             completed = true;
             return output;
         } finally {
-            wipe(encodedUsername);
-            wipe(encodedVaultId);
-            wipe(encodedEnrollmentId);
-            wipe(encodedGeneration);
-            wipe(encodedKeyId);
+            Wipe.wipe(encodedUsername);
+            Wipe.wipe(encodedVaultId);
+            Wipe.wipe(encodedEnrollmentId);
+            Wipe.wipe(encodedGeneration);
+            Wipe.wipe(encodedKeyId);
             if (!completed) {
-                wipe(output);
+                Wipe.wipe(output);
             }
         }
     }
@@ -167,19 +168,13 @@ final class RecoveryContextCodec {
             throw new IllegalArgumentException(
                     "Recovery context text field is not valid UTF-8", error);
         } finally {
-            wipe(workspace);
+            Wipe.wipe(workspace);
         }
     }
 
     private static void requirePositiveGeneration(long generation) {
         if (generation <= 0) {
             throw new IllegalArgumentException("Recovery generation must be positive");
-        }
-    }
-
-    private static void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
         }
     }
 }
