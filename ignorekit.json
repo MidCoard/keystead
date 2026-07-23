@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "name": "keystead",
+  "preset": "java-gradle",
+  "provider": {
+    "name": "local"
+  },
+  "components": [
+    "local/ai-codegraph",
+    "local/assistant-artifacts"
+  ],
+  "exclude": [],
+  "custom": [
+    "docs"
+  ],
+  "addons": {}
+}
