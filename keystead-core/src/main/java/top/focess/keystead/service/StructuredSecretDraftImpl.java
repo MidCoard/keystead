@@ -1,6 +1,5 @@
 package top.focess.keystead.service;
 
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -9,6 +8,7 @@ import java.util.Set;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.SecretClassification;
 
 final class StructuredSecretDraftImpl implements StructuredSecretDraft, AutoCloseable {
@@ -99,7 +99,7 @@ final class StructuredSecretDraftImpl implements StructuredSecretDraft, AutoClos
     @Override
     public void close() {
         if (!closed) {
-            fields.values().forEach(StructuredSecretDraftImpl::wipe);
+            fields.values().forEach(Wipe::wipe);
             fields.clear();
             closed = true;
         }
@@ -114,18 +114,12 @@ final class StructuredSecretDraftImpl implements StructuredSecretDraft, AutoClos
 
     private void replaceField(@NonNull String name, byte @NonNull [] value) {
         byte @Nullable [] previous = fields.put(name, value);
-        wipe(previous);
+        Wipe.wipe(previous);
     }
 
     private void requireOpen() {
         if (closed) {
             throw new IllegalStateException("Structured secret draft is closed");
-        }
-    }
-
-    private static void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
         }
     }
 }

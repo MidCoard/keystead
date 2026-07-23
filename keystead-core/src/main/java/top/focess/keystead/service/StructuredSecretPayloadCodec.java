@@ -2,10 +2,10 @@ package top.focess.keystead.service;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.jspecify.annotations.NonNull;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.SecretMetadata;
 
 final class StructuredSecretPayloadCodec {
@@ -31,7 +31,7 @@ final class StructuredSecretPayloadCodec {
             }
             return buffer.array();
         } finally {
-            fields.values().forEach(StructuredSecretPayloadCodec::wipe);
+            fields.values().forEach(Wipe::wipe);
         }
     }
 
@@ -53,15 +53,15 @@ final class StructuredSecretPayloadCodec {
                 byte[] nameBytes = readBytes(buffer);
                 byte[] value = readBytes(buffer);
                 String name = new String(nameBytes, StandardCharsets.UTF_8);
-                wipe(nameBytes);
+                Wipe.wipe(nameBytes);
                 if (name.isBlank()) {
-                    wipe(value);
+                    Wipe.wipe(value);
                     throw new ValidationException(
                             "Structured secret payload contains blank field name");
                 }
                 byte[] previous = fields.put(name, value);
                 if (previous != null) {
-                    wipe(previous);
+                    Wipe.wipe(previous);
                     throw new ValidationException(
                             "Structured secret payload contains duplicate field name");
                 }
@@ -71,7 +71,7 @@ final class StructuredSecretPayloadCodec {
             }
             return new StructuredSecretViewImpl(metadata, fields);
         } finally {
-            fields.values().forEach(StructuredSecretPayloadCodec::wipe);
+            fields.values().forEach(Wipe::wipe);
         }
     }
 
@@ -103,9 +103,5 @@ final class StructuredSecretPayloadCodec {
             throw new ValidationException("Structured secret payload is truncated");
         }
         return buffer.getInt();
-    }
-
-    private static void wipe(byte @NonNull [] value) {
-        Arrays.fill(value, (byte) 0);
     }
 }

@@ -1,12 +1,12 @@
 package top.focess.keystead.service;
 
-import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretDestroyedException;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.SecretMetadata;
 
 final class SecureNoteViewImpl implements SecureNoteView, AutoCloseable {
@@ -39,7 +39,7 @@ final class SecureNoteViewImpl implements SecureNoteView, AutoCloseable {
     @Override
     public void close() {
         if (!closed) {
-            wipe(body);
+            Wipe.wipe(body);
             closed = true;
         }
     }
@@ -47,12 +47,6 @@ final class SecureNoteViewImpl implements SecureNoteView, AutoCloseable {
     private void requireOpen() {
         if (closed) {
             throw new SecretDestroyedException();
-        }
-    }
-
-    private void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
         }
     }
 }

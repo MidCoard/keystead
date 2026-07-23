@@ -1,9 +1,9 @@
 package top.focess.keystead.service;
 
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.SecretMetadata;
 
 final class SecureNotePayloadCodec {
@@ -21,7 +21,7 @@ final class SecureNotePayloadCodec {
             putBytes(buffer, body);
             return buffer.array();
         } finally {
-            wipe(body);
+            Wipe.wipe(body);
         }
     }
 
@@ -39,7 +39,7 @@ final class SecureNotePayloadCodec {
             }
             return new SecureNoteViewImpl(metadata, body);
         } finally {
-            wipe(body);
+            Wipe.wipe(body);
         }
     }
 
@@ -73,11 +73,5 @@ final class SecureNotePayloadCodec {
             throw new ValidationException("Secure note payload is truncated");
         }
         return buffer.getInt();
-    }
-
-    private static void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
-        }
     }
 }

@@ -1,6 +1,5 @@
 package top.focess.keystead.service;
 
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -9,6 +8,7 @@ import java.util.Set;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.SecretClassification;
 
 final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
@@ -93,7 +93,7 @@ final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
     @Override
     public void close() {
         if (!closed) {
-            wipe(body);
+            Wipe.wipe(body);
             closed = true;
         }
     }
@@ -106,19 +106,13 @@ final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
     }
 
     private void replaceBody(byte @NonNull [] value) {
-        wipe(body);
+        Wipe.wipe(body);
         body = value;
     }
 
     private void requireOpen() {
         if (closed) {
             throw new IllegalStateException("Secure note draft is closed");
-        }
-    }
-
-    private void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
         }
     }
 }

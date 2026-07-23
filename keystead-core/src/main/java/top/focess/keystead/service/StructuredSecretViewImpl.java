@@ -1,7 +1,6 @@
 package top.focess.keystead.service;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +10,7 @@ import java.util.function.Consumer;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretBuffer;
+import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretTypeSchema;
 
@@ -70,7 +70,7 @@ final class StructuredSecretViewImpl implements StructuredSecretView, AutoClosea
     @Override
     public void close() {
         if (!closed) {
-            fields.values().forEach(StructuredSecretViewImpl::wipe);
+            fields.values().forEach(Wipe::wipe);
             fields.clear();
             closed = true;
         }
@@ -87,11 +87,5 @@ final class StructuredSecretViewImpl implements StructuredSecretView, AutoClosea
         Objects.requireNonNull(fields, "fields")
                 .forEach((key, value) -> copy.put(key, value.clone()));
         return copy;
-    }
-
-    private static void wipe(byte @Nullable [] value) {
-        if (value != null) {
-            Arrays.fill(value, (byte) 0);
-        }
     }
 }
