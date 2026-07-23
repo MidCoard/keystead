@@ -53,8 +53,9 @@ Before tagging a release or publishing artifacts, every item below must pass:
 ## Scope
 
 This policy applies to the public `keystead` core repository. The
-`keystead-server` and `keystead-client` repositories are private and follow the
-same pre-release checklist; their release artifacts are for internal use.
+`keystead-server` and `keystead-client` repositories are also public and follow
+the same private-disclosure path and pre-release checklist; each ships its own
+`SECURITY.md`.
 
 ## License
 
