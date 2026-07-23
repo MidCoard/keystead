@@ -1,16 +1,13 @@
 package top.focess.keystead.crypto;
 
-import com.google.crypto.tink.CleartextKeysetHandle;
 import com.google.crypto.tink.HybridDecrypt;
 import com.google.crypto.tink.HybridEncrypt;
-import com.google.crypto.tink.JsonKeysetReader;
-import com.google.crypto.tink.JsonKeysetWriter;
+import com.google.crypto.tink.InsecureSecretKeyAccess;
 import com.google.crypto.tink.KeysetHandle;
+import com.google.crypto.tink.RegistryConfiguration;
+import com.google.crypto.tink.TinkJsonProtoKeysetFormat;
 import com.google.crypto.tink.hybrid.HybridConfig;
-import com.google.crypto.tink.hybrid.HybridKeyTemplates;
-import java.io.ByteArrayOutputStream;
-import java.io.FilterOutputStream;
-import java.io.IOException;
+import com.google.crypto.tink.hybrid.PredefinedHybridParameters;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
@@ -24,7 +21,6 @@ import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.memory.Wipe;
-import top.focess.keystead.memory.WipeableByteArrayOutputStream;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.KeyId;
 
@@ -154,7 +150,7 @@ public final class DefaultCryptoService {
             registerHybridPrimitives();
             KeysetHandle privateHandle =
                     KeysetHandle.generateNew(
-                            HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM);
+                            PredefinedHybridParameters.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM);
             KeysetHandle publicHandle = privateHandle.getPublicKeysetHandle();
             byte[] publicKey = writePublicKeyset(publicHandle);
             byte[] privateKey = writePrivateKeyset(privateHandle);
@@ -420,10 +416,12 @@ public final class DefaultCryptoService {
         try {
             registerHybridPrimitives();
             KeysetHandle publicHandle =
-                    KeysetHandle.readNoSecret(JsonKeysetReader.withBytes(devicePublicKey));
-            HybridEncrypt encrypt = publicHandle.getPrimitive(HybridEncrypt.class);
+                    TinkJsonProtoKeysetFormat.parseKeysetWithoutSecret(
+                            new String(devicePublicKey, StandardCharsets.UTF_8));
+            HybridEncrypt encrypt =
+                    publicHandle.getPrimitive(RegistryConfiguration.get(), HybridEncrypt.class);
             return withKeyBytes(vaultKey, keyBytes -> encryptForDevice(encrypt, keyBytes, context));
-        } catch (GeneralSecurityException | IOException e) {
+        } catch (GeneralSecurityException e) {
             throw new CryptoException("Could not wrap vault key for device", e);
         }
     }
@@ -450,11 +448,14 @@ public final class DefaultCryptoService {
         try {
             registerHybridPrimitives();
             KeysetHandle privateHandle =
-                    CleartextKeysetHandle.read(JsonKeysetReader.withBytes(devicePrivateKey));
-            HybridDecrypt decrypt = privateHandle.getPrimitive(HybridDecrypt.class);
+                    TinkJsonProtoKeysetFormat.parseKeyset(
+                            new String(devicePrivateKey, StandardCharsets.UTF_8),
+                            InsecureSecretKeyAccess.get());
+            HybridDecrypt decrypt =
+                    privateHandle.getPrimitive(RegistryConfiguration.get(), HybridDecrypt.class);
             opened = decrypt.decrypt(encryptedVaultKey, context);
             return new VaultKey(keyId, opened, memoryProvider);
-        } catch (GeneralSecurityException | IOException e) {
+        } catch (GeneralSecurityException e) {
             throw new CryptoException("Could not unwrap device vault key package", e);
         } finally {
             if (opened != null) {
@@ -558,28 +559,24 @@ public final class DefaultCryptoService {
     }
 
     private static byte @NonNull [] writePublicKeyset(@NonNull KeysetHandle handle) {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
         try {
-            handle.writeNoSecret(JsonKeysetWriter.withOutputStream(output));
-            return output.toByteArray();
-        } catch (GeneralSecurityException | IOException e) {
+            return TinkJsonProtoKeysetFormat.serializeKeysetWithoutSecret(handle)
+                    .getBytes(StandardCharsets.UTF_8);
+        } catch (GeneralSecurityException e) {
             throw new CryptoException("Could not serialize public device key", e);
         }
     }
 
     private static byte @NonNull [] writePrivateKeyset(@NonNull KeysetHandle handle) {
-        try (WipeableByteArrayOutputStream output = new WipeableByteArrayOutputStream()) {
-            FilterOutputStream nonClosingOutput =
-                    new FilterOutputStream(output) {
-                        @Override
-                        public void close() throws IOException {
-                            flush();
-                        }
-                    };
-            CleartextKeysetHandle.write(
-                    handle, JsonKeysetWriter.withOutputStream(nonClosingOutput));
-            return output.toByteArray();
-        } catch (IOException e) {
+        try {
+            // Tink's JSON serializer returns an immutable String, so the private keyset cannot be
+            // wiped from the heap until garbage collection. The returned bytes are still zeroed by
+            // the caller (see generateDeviceKeyPair), and the private key is also held in native
+            // memory by DeviceKeyPair, so this is a transient intermediate rather than a stored
+            // copy.
+            return TinkJsonProtoKeysetFormat.serializeKeyset(handle, InsecureSecretKeyAccess.get())
+                    .getBytes(StandardCharsets.UTF_8);
+        } catch (GeneralSecurityException e) {
             throw new CryptoException("Could not serialize private device key", e);
         }
     }
