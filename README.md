@@ -1,5 +1,7 @@
 # Keystead Core
 
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+
 Keystead Core is a Java 25 library for building encrypted password and secret
 vaults. It owns the parts of Keystead that must remain independent of a user
 interface or synchronization server: key derivation, authenticated encryption,
@@ -187,15 +189,14 @@ a debugger, an injected agent, a privileged process reader, copying garbage
 collection, JIT or native temporaries, or a copy owned by a cryptographic or
 memory provider.
 
-Recovery-kit material follows the same ownership model. New code should use
-`RecoveryKitCodec.encodeSecret(RecoveryKit)` and
-`RecoveryKitCodec.decode(SecretBuffer)` so the complete encoded kit remains in
-mutable, closeable storage. The compatibility `String` encoder and decoder are
-deprecated because an immutable secret `String` remains visible in JVM heap
-dumps and cannot be wiped deterministically.
-The deprecated `DeviceKeyPair.privateKey()` accessor is retained for source
-compatibility and returns a caller-wiped heap array; new code should prefer
-`copyPrivateKey(Consumer<byte[]>)`.
+Recovery-kit material follows the same ownership model. `RecoveryKitCodec`
+encodes a kit with `encodeSecret(RecoveryKit)` and decodes with
+`decode(SecretBuffer)`, so the complete encoded kit lives only in mutable,
+closeable storage; there is no `String`-returning codec, because an immutable
+secret `String` remains visible in JVM heap dumps and cannot be wiped
+deterministically. `DeviceKeyPair` exposes its private key only through
+`copyPrivateKey(Consumer<byte[]>)`, which hands bytes to a callback without
+retaining a copy; there is no accessor that returns the private key as an array.
 
 Core enforces resource ceilings at untrusted file, envelope, package, sync, and
 KDF boundaries:
@@ -354,14 +355,16 @@ try (VaultHandle vault =
     vault.withLogin(id, view ->
             view.withPassword(chars -> usePasswordBriefly(chars)));
 } finally {
-    Arrays.fill(masterPassword, '\0');
-    Arrays.fill(loginPassword, '\0');
+    Wipe.wipe(masterPassword);
+    Wipe.wipe(loginPassword);
 }
 ```
 
-The application owns the input password array and must wipe it. Secret views
-provide copied data only inside callbacks; callers should avoid converting it
-to immutable `String` values.
+The application owns the input password arrays and must wipe them. `Wipe`
+(`top.focess.keystead.memory.Wipe`, the same utility the library uses
+internally) zeroes a `byte[]` or `char[]` in place and is null-safe. Secret
+views provide copied data only inside callbacks; callers should avoid
+converting it to immutable `String` values.
 
 ## Repository structure
 
@@ -475,3 +478,13 @@ change.
 Changes that alter algorithms, authenticated data, vault headers, revisions,
 backup formats, or device packages require migration and compatibility tests;
 they are protocol changes, not local refactors.
+
+## License
+
+Keystead Core is licensed under the [Apache License, Version 2.0](LICENSE).
+Copyright 2026 MidCoard.
+
+Unless you state otherwise, any contribution intentionally submitted for
+inclusion in Keystead Core by you, as defined in the Apache-2.0 license, shall
+be licensed under the same terms, without any additional conditions or
+clauses.

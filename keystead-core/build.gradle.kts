@@ -113,6 +113,19 @@ publishing {
                     connection.set("scm:git:https://github.com/MidCoard/keystead.git")
                     developerConnection.set("scm:git:https://github.com/MidCoard/keystead.git")
                 }
+                licenses {
+                    license {
+                        name.set("Apache License, Version 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                    }
+                }
+                developers {
+                    developer {
+                        name.set("MidCoard")
+                        organization.set("MidCoard")
+                        organizationUrl.set("https://github.com/MidCoard")
+                    }
+                }
             }
         }
     }

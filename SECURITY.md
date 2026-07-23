@@ -55,3 +55,9 @@ Before tagging a release or publishing artifacts, every item below must pass:
 This policy applies to the public `keystead` core repository. The
 `keystead-server` and `keystead-client` repositories are private and follow the
 same pre-release checklist; their release artifacts are for internal use.
+
+## License
+
+Keystead Core is licensed under the Apache License, Version 2.0. Security fixes
+and vulnerability reports accepted by the project are contributed and released
+under the same license. See [LICENSE](LICENSE) for the full terms.
