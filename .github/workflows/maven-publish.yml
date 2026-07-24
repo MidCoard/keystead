@@ -23,8 +23,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Publish to Maven Central
-        working-directory: keystead-core
-        run: ./gradlew publishAndReleaseToMavenCentral --no-daemon
+        run: ./gradlew :keystead-core:publishAndReleaseToMavenCentral --no-daemon
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.CENTRAL_PASSWORD }}
