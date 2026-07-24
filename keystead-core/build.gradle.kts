@@ -1,6 +1,6 @@
 plugins {
     `java-library`
-    `maven-publish`
+    id("com.vanniktech.maven.publish") version "0.37.0"
     id("com.diffplug.spotless") version "8.8.0"
 }
 
@@ -10,8 +10,10 @@ java {
         vendor = JvmVendorSpec.ADOPTIUM
     }
     modularity.inferModulePath = true
-    withSourcesJar()
-    withJavadocJar()
+    // Sources and javadoc JARs are produced by the com.vanniktech.maven.publish
+    // plugin (which creates its own plainJavadocJar/sourcesJar tasks). Declaring
+    // withSourcesJar()/withJavadocJar() here would create a duplicate javadoc-JAR
+    // task that conflicts with the plugin's, so they are omitted.
 }
 
 val classpathTest = sourceSets.create("classpathTest") {
@@ -98,34 +100,34 @@ tasks.check {
     dependsOn("classpathTest")
 }
 
-publishing {
-    publications {
-        create<MavenPublication>("core") {
-            from(components["java"])
-            pom {
-                name.set("Keystead Core")
-                description.set(
-                    "Encrypted local vault library: key derivation, authenticated encryption, " +
-                        "typed secret schemas, local persistence, backup, sync, recovery, and key rotation.")
-                url.set("https://github.com/MidCoard/keystead")
-                scm {
-                    url.set("https://github.com/MidCoard/keystead")
-                    connection.set("scm:git:https://github.com/MidCoard/keystead.git")
-                    developerConnection.set("scm:git:https://github.com/MidCoard/keystead.git")
-                }
-                licenses {
-                    license {
-                        name.set("Apache License, Version 2.0")
-                        url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
-                    }
-                }
-                developers {
-                    developer {
-                        name.set("MidCoard")
-                        organization.set("MidCoard")
-                        organizationUrl.set("https://github.com/MidCoard")
-                    }
-                }
+mavenPublishing {
+    publishToMavenCentral(automaticRelease = true)
+    signAllPublications()
+    coordinates("top.focess", "keystead-core", project.version.toString())
+    pom {
+        name.set("Keystead Core")
+        description.set(
+            "Encrypted local vault library: key derivation, authenticated encryption, " +
+                "typed secret schemas, local persistence, backup, sync, recovery, and key rotation.")
+        inceptionYear.set("2026")
+        url.set("https://github.com/MidCoard/keystead")
+        scm {
+            url.set("https://github.com/MidCoard/keystead")
+            connection.set("scm:git:https://github.com/MidCoard/keystead.git")
+            developerConnection.set("scm:git:ssh://git@github.com/MidCoard/keystead.git")
+        }
+        licenses {
+            license {
+                name.set("Apache License, Version 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                distribution.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+            }
+        }
+        developers {
+            developer {
+                id.set("MidCoard")
+                name.set("MidCoard")
+                url.set("https://github.com/MidCoard")
             }
         }
     }
