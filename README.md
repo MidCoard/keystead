@@ -2,16 +2,32 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-Keystead Core is a Java 25 library for building encrypted password and secret
-vaults. It owns the parts of Keystead that must remain independent of a user
-interface or synchronization server: key derivation, authenticated encryption,
-typed secret schemas, local persistence, backup, synchronization records,
-device provisioning, and key rotation.
+Keystead Core is the Java 25 security and data-model foundation of Keystead, a
+local-first, zero-knowledge secret-vault system. Core owns the behavior that
+must remain independent of any UI or synchronization service: key derivation,
+authenticated encryption, typed secret schemas, native secret memory, local
+persistence, encrypted backup and sync formats, device provisioning, recovery,
+and key rotation.
 
-This repository is intended for application developers, security reviewers,
-and contributors. It is not the desktop application and it does not run a
-server. The separately maintained Keystead Client uses this library; Keystead
-Server stores and coordinates the opaque encrypted data produced by clients.
+This repository is written for Java integrators, security reviewers, and
+contributors. People looking for the desktop password manager should start
+with Keystead Client; self-hosters should start with Keystead Server.
+
+## The Keystead ecosystem
+
+Keystead is delivered as three independently versioned repositories:
+
+| Project | For | Responsibility |
+| --- | --- | --- |
+| **[Keystead Core](https://github.com/MidCoard/keystead)** | Java developers and contributors | Cryptography, secret models, vault persistence, encrypted interchange formats, recovery and rotation primitives, and native memory/process protection |
+| **[Keystead Client](https://github.com/MidCoard/keystead-client)** | Desktop users | Local vault UI, generators, reveal and clipboard lifecycle, OS-native device-key storage, sync, sharing, rotation, backup, and recovery workflows |
+| **[Keystead Server](https://github.com/MidCoard/keystead-server)** | Self-hosters and operators | Accounts, verified devices, opaque encrypted-row synchronization, wrapped-key distribution, collaboration, rotation/recovery coordination, and audit events |
+
+The product-level security boundary is composed from all three projects. Core
+encrypts and owns the protocol; Client is where plaintext is used and where
+Windows DPAPI, macOS Keychain, or Linux Secret Service protects device identity
+material; Server coordinates ciphertext and public lifecycle state without
+receiving a raw vault key or plaintext secret.
 
 ## Why Keystead Core exists
 
@@ -36,7 +52,8 @@ client to invent them. Its design goals are:
 
 ```mermaid
 flowchart LR
-    App["Application or Keystead Client"] --> API["VaultService / VaultHandle"]
+    User["User"] --> Client["Keystead Client or another application"]
+    Client --> API["VaultService / VaultHandle"]
     API --> Schema["Typed drafts, views, and schema validation"]
     API --> Crypto["Key derivation and authenticated encryption"]
     API --> Sync["Encrypted sync and backup codecs"]
@@ -44,7 +61,8 @@ flowchart LR
     Schema --> Store
     Sync --> Store
     Store --> File["FileVaultStore"]
-    Sync --> Server["Optional zero-knowledge server"]
+    Client --> OS["OS-native device-key storage"]
+    Sync --> Server["Optional Keystead Server"]
 ```
 
 The boundaries have different responsibilities:
@@ -413,59 +431,100 @@ Linux AArch64, and macOS AArch64. The library also supports macOS x86-64, but
 the GitHub-hosted Intel macOS runner is unavailable, so that leg is omitted.
 Spotless runs as an independent, non-skipping check.
 
-## Engineering assessment
+## Security guarantees and responsibilities
 
-### What is strong
+Keystead security is a property of the complete system, not of one repository
+in isolation. Core supplies the cryptographic and lifecycle invariants, Client
+controls plaintext and integrates desktop security facilities, and Server
+coordinates opaque encrypted state.
 
-- The core, server, and client agree on explicit encrypted-row and lifecycle
-  contracts instead of relying on loosely shaped JSON.
-- Typed secret schemas are centrally owned and tested across repository
-  boundaries.
-- Sync conflict, tombstone, device eligibility, and rotation behavior are
-  modeled as state transitions with regression coverage.
-- Secret-bearing value types are deliberately redacted and short-lived.
-- The server can remain operationally useful without receiving decryption
-  capability.
+### What Core enforces
 
-### System boundaries
+- A master password derives a wrapping key; record encryption uses a separate
+  random vault key.
+- Algorithms and their canonical parameters are explicit, versioned, and
+  checked through fail-closed registries.
+- Record identity, metadata, revision, and vault context are authenticated with
+  the ciphertext.
+- Secret-bearing Core values have explicit ownership, redacted diagnostics,
+  use-after-close checks, and deterministic wipe-on-close behavior.
+- Native locked memory is the system default. Failure to allocate, lock, or
+  establish the required native protection raises an exception instead of
+  silently downgrading to ordinary heap storage.
+- Sync revisions, tombstones, backup formats, device packages, recovery
+  packages, and rotation state have bounded, validated representations.
+- `FileVaultStore` uses atomic replacements and a recovery journal so an
+  interrupted multi-file key rotation can be completed or rolled back.
 
-**Browser and mobile integration.** Keystead currently has a JVM desktop
-client. There is no browser extension, browser autofill bridge, Android client,
-or iOS client. The core can support another client implementation, but those
-applications and their platform-specific plaintext boundaries have not been
-built.
+### OS-native protection across Keystead
 
-**Passkeys and biometric unlock.** Keystead does not currently register or
-authenticate WebAuthn credentials, store passkeys, or use a platform
-authenticator. It also does not unlock vault material through Windows Hello,
-Touch ID, or a Linux biometric service. Adding biometric unlock requires an
-OS-protected key design that releases wrapping material only after local user
-verification; it cannot safely be implemented as a cosmetic alternative to
-the master-password field.
+Keystead already uses operating-system security facilities at two different
+boundaries:
 
-**Recovery remains possession based.** Keystead now supports an offline
-recovery kit and approval from an existing verified device. Both paths keep
-vault-key recovery on clients. The server cannot manufacture recovery if the
-user loses the kit, every eligible device, every usable password-wrapped
-header, and every backup; permanent loss is the intended consequence of that
-zero-knowledge boundary.
+| Layer | Implemented protection |
+| --- | --- |
+| Core | Java 25 FFM backends for locked native memory; Linux dump exclusion; Linux/macOS core-dump controls; inspection and redacted reports |
+| Client | Windows DPAPI, macOS Keychain, and Linux Secret Service for the device wrapping and proof private keys |
 
-**OS protection belongs to the client layer.** Keystead Client can place device
-identity material behind Windows DPAPI, macOS Keychain, or Linux Secret
-Service, with explicit passphrase-file and memory-only alternatives. Core does
-not call operating-system credential APIs and does not treat OS-user protection
-as biometric verification.
+This split is intentional. Memory protection belongs next to the secret-memory
+abstraction in Core. Credential-store integration belongs in Client because it
+depends on application identity, UI-visible fallback choices, migration, and
+the signed-in desktop user.
 
-**Collaboration protects future versions.** Membership, per-device packaging,
-and prepared rotation form a complete lifecycle: invitation, acceptance,
-package coverage, role enforcement, removal, mandatory rotation, resumption,
-and commit. Removing a member cannot erase data already decrypted or copied;
-rotation prevents that member from receiving future vault-key generations.
+`ProcessHardening.applyStrict()` is also intentionally explicit. It changes
+the entire host JVM, can irreversibly lower the hard core-file limit for an
+unprivileged process, and therefore must be called by an application or an
+expendable child JVM at the correct lifecycle point. Core provides the
+implementation and reports application-required controls; it does not mutate a
+host process merely because the library was loaded.
 
-Keystead should currently be evaluated as a serious, test-heavy engineering
-foundation and an experimental password-manager system. Production adoption
-requires an explicit review of these boundaries and the deployment threat
-model.
+### Integrator and deployment responsibilities
+
+Applications using Core must:
+
+- grant Java native access to the named module or unnamed classpath module;
+- decide whether failure-closed native memory is mandatory or whether an
+  explicit `SecretMemoryProvider.heap()` downgrade is acceptable;
+- run `ProcessHardening.inspect()` during deployment validation and invoke
+  strict hardening only in a process whose lifecycle permits it;
+- configure Linux memlock limits or capabilities when locked pages are
+  required;
+- keep plaintext inside short-lived mutable buffers and callbacks, avoid
+  immutable `String` copies where practical, and wipe caller-owned arrays;
+- choose how device identity material is protected. Keystead Client provides
+  the product's DPAPI, Keychain, Secret Service, passphrase-file, and
+  memory-only implementations.
+
+### What these controls do not promise
+
+Locked pages, dump exclusion, wiping, and process dump controls reduce
+accidental persistence and post-crash disclosure. They cannot prevent a
+debugger, injected agent, same-process code, privileged process reader, or
+malware that already controls the live application from observing plaintext
+while the vault is unlocked.
+
+OS-user-protected credential storage means protection by the signed-in user's
+platform facility. It is not biometric-gated release through Windows Hello,
+Touch ID, or another platform authenticator. Another process running with the
+same user authority may be inside that facility's trust boundary.
+
+Zero knowledge applies to secret contents, not all metadata. A Keystead Server
+operator can observe accounts, devices, vault IDs, membership, timestamps,
+revisions, activity, and ciphertext sizes. Likewise, local record metadata
+used for listing and synchronization is not presented as secret payload
+encryption.
+
+Recovery and collaboration preserve the same boundary. Offline recovery kits
+and verified-device approval keep vault-key operations on clients, but the
+server cannot reconstruct a vault after every kit, eligible device, usable
+header, and backup has been lost. Removing a collaborator and rotating the key
+protects future key generations; it cannot erase information the former member
+already decrypted or copied.
+
+Keystead currently provides a JVM desktop application and self-hosted server.
+Core can support additional clients, but browser integration, mobile
+applications, passkey/WebAuthn login, and biometric-gated vault unlock are not
+implemented in the current product surface.
 
 ## Contributing
 
