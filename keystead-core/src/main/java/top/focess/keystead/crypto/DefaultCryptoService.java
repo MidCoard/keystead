@@ -17,12 +17,15 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.KeyId;
+import top.focess.keystead.model.VaultFingerprint;
 
 /**
  * Default cryptographic service: derives and wraps vault keys, encrypts and decrypts secret
@@ -45,6 +48,9 @@ public final class DefaultCryptoService {
 
     /** Default PBKDF2 iteration count. */
     public static final int DEFAULT_KDF_ITERATIONS = 120_000;
+
+    /** Label mixed into the vault fingerprint HMAC to domain-separate it from other uses. */
+    public static final @NonNull String FINGERPRINT_LABEL = "keystead-vault-fingerprint-v2";
 
     private static final int KEY_BYTES = 32;
     private static final int SALT_BYTES = 16;
@@ -499,6 +505,47 @@ public final class DefaultCryptoService {
                 Wipe.wipe(result);
             }
         }
+    }
+
+    /**
+     * Derives the non-stored vault fingerprint from a master password and KDF parameters.
+     *
+     * <p>The fingerprint is {@code HMAC-SHA-256(wrappingKey, FINGERPRINT_LABEL ‖ kdfSalt)} truncated to
+     * 128 bits, where {@code wrappingKey} is the password-derived key. It is stable across vault-key
+     * rotations (the wrapping key is unchanged when only the data-encryption key is rewrapped) and
+     * changes only when the passphrase or salt changes.
+     *
+     * @param masterPassword caller-owned master password
+     * @param kdfParameters the password KDF parameters
+     * @return the vault fingerprint
+     */
+    public @NonNull VaultFingerprint deriveFingerprint(
+            char @NonNull [] masterPassword, @NonNull KdfParameters kdfParameters) {
+        Objects.requireNonNull(masterPassword, "masterPassword");
+        Objects.requireNonNull(kdfParameters, "parameters");
+        byte @Nullable [] wrappingKey = null;
+        byte @Nullable [] full = null;
+        try {
+            wrappingKey = deriveWrappingKey(masterPassword, kdfParameters);
+            full = hmacSha256(wrappingKey, FINGERPRINT_LABEL, kdfParameters.salt());
+            byte[] truncated = Arrays.copyOf(full, VaultFingerprint.BYTES);
+            return new VaultFingerprint(truncated);
+        } catch (GeneralSecurityException e) {
+            throw new CryptoException("Could not derive vault fingerprint", e);
+        } finally {
+            Wipe.wipe(wrappingKey);
+            Wipe.wipe(full);
+        }
+    }
+
+    private static byte @NonNull [] hmacSha256(
+            byte @NonNull [] key, @NonNull String label, byte @NonNull [] salt)
+            throws GeneralSecurityException {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        mac.update(label.getBytes(StandardCharsets.UTF_8));
+        mac.update(salt);
+        return mac.doFinal();
     }
 
     private byte @NonNull [] wrappingAad(@NonNull KeyId keyId) {
