@@ -6,14 +6,19 @@ import static top.focess.keystead.model.SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_B
 import org.junit.jupiter.api.Test;
 import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
 import top.focess.keystead.model.KeyId;
+import top.focess.keystead.model.VaultFingerprint;
 
 class DeviceVaultKeyPackageTest {
+
+    private static final VaultFingerprint FINGERPRINT =
+            new VaultFingerprint(new byte[VaultFingerprint.BYTES]);
 
     @Test
     void copiesAndRedactsEncryptedKeyMaterial() {
         byte[] encrypted = {1, 2, 3};
         DeviceVaultKeyPackage keyPackage =
                 new DeviceVaultKeyPackage(
+                        FINGERPRINT,
                         new KeyId("vault-key-2"),
                         CryptoAlgorithmRegistry.DEVICE_TINK_DEVICE_KEY_PACKAGE,
                         encrypted);
@@ -27,11 +32,14 @@ class DeviceVaultKeyPackageTest {
     void rejectsEmptyOrUnsupportedPackages() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new DeviceVaultKeyPackage(new KeyId("vault-key"), "RAW_RSA", new byte[] {1}));
+                () ->
+                        new DeviceVaultKeyPackage(
+                                FINGERPRINT, new KeyId("vault-key"), "RAW_RSA", new byte[] {1}));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new DeviceVaultKeyPackage(
+                                FINGERPRINT,
                                 new KeyId("vault-key"),
                                 CryptoAlgorithmRegistry.DEVICE_TINK_DEVICE_KEY_PACKAGE,
                                 new byte[0]));
@@ -41,6 +49,7 @@ class DeviceVaultKeyPackageTest {
     void enforcesWrappedKeyPackageLimit() {
         DeviceVaultKeyPackage exact =
                 new DeviceVaultKeyPackage(
+                        FINGERPRINT,
                         new KeyId("vault-key"),
                         CryptoAlgorithmRegistry.DEVICE_TINK_DEVICE_KEY_PACKAGE,
                         new byte[MAX_WRAPPED_KEY_PACKAGE_BYTES]);
@@ -50,6 +59,7 @@ class DeviceVaultKeyPackageTest {
                 IllegalArgumentException.class,
                 () ->
                         new DeviceVaultKeyPackage(
+                                FINGERPRINT,
                                 new KeyId("vault-key"),
                                 CryptoAlgorithmRegistry.DEVICE_TINK_DEVICE_KEY_PACKAGE,
                                 new byte[MAX_WRAPPED_KEY_PACKAGE_BYTES + 1]));

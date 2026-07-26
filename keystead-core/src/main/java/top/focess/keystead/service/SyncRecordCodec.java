@@ -55,11 +55,11 @@ final class SyncRecordCodec {
     }
 
     static byte @NonNull [] profileAad(
-            @NonNull String vaultId, @NonNull String secretId, long revision) {
-        Objects.requireNonNull(vaultId, "vaultId");
+            @NonNull String fingerprint, @NonNull String secretId, long revision) {
+        Objects.requireNonNull(fingerprint, "fingerprint");
         Objects.requireNonNull(secretId, "secretId");
-        return "keystead-sync-profile-v1|%s|%s|%d"
-                .formatted(vaultId, secretId, revision)
+        return "keystead-sync-profile-v2|%s|%s|%d"
+                .formatted(fingerprint, secretId, revision)
                 .getBytes(StandardCharsets.UTF_8);
     }
 

@@ -1,147 +1,138 @@
 package top.focess.keystead.service;
 
+import java.nio.file.Path;
 import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
 import top.focess.keystead.model.KeyId;
-import top.focess.keystead.model.VaultId;
+import top.focess.keystead.model.VaultFingerprint;
 
 /**
- * Entry point for creating, opening, provisioning, and rotating vaults.
+ * Entry point for creating, opening, provisioning, and rotating v2 single-file vaults.
  *
- * <p>A vault is a set of encrypted secret records persisted by a {@link
- * top.focess.keystead.store.VaultStore}. The service derives and wraps a random vault key from a
- * master password, or unwraps one from a device-wrapped package, and returns a live {@link
+ * <p>A vault is one opaque file persisted by a {@link top.focess.keystead.store.OneFileVaultStore}.
+ * The service derives and wraps a random data-encryption key (DEK) from a passphrase under an
+ * Argon2id passphrase slot, or unwraps one from a device-wrapped package, and returns a live {@link
  * VaultHandle} that holds the unlocked key only for the lifetime of the handle. Closing the handle
- * destroys its key material.
+ * destroys its key material and releases the file locks.
  *
- * <p>The caller owns every {@code char[]} and {@code byte[]} passed to this service. Master
- * passwords, device private keys, and context buffers must be wiped by the caller once the call
- * returns; the service copies what it needs and wipes its own transient copies, but it cannot
- * reach arrays it does not own.
+ * <p>A vault is identified locally by its file path and, for routing, by its passphrase-derived
+ * {@link top.focess.keystead.model.VaultFingerprint}; there is no vault id. The fingerprint is
+ * stable across DEK rotations (the passphrase wrapping key is unchanged when only the DEK is
+ * rewrapped) and changes only when the passphrase or salt changes.
+ *
+ * <p>The caller owns every {@code char[]} and {@code byte[]} passed to this service. Passphrases,
+ * device private keys, and context buffers must be wiped by the caller once the call returns; the
+ * service copies what it needs and wipes its own transient copies, but it cannot reach arrays it
+ * does not own.
  */
 public interface VaultService {
 
     /**
-     * Creates a new password-protected vault and returns a handle holding its unlocked key.
+     * Creates a new passphrase-protected vault file and returns a handle holding its unlocked key.
      *
-     * <p>The {@code masterPassword} derives a wrapping key with the configured KDF parameters; the
-     * derived key wraps a freshly generated random vault key and is not used directly as the
-     * record-encryption key. The vault header is persisted before the handle is returned.
+     * <p>The {@code passphrase} derives an Argon2id wrapping key from a fresh salt; the derived key
+     * wraps a freshly generated random DEK and is not used directly as the record-encryption key. The
+     * passphrase-derived fingerprint, the DEK id, and the passphrase key slot are persisted in the
+     * plaintext header before the handle is returned.
      *
-     * @param request the vault id and creation parameters
-     * @param masterPassword caller-owned master password; wiped by the caller, not by this service
+     * @param request the vault file path and creation parameters
+     * @param passphrase caller-owned passphrase; wiped by the caller, not by this service
      * @return a live handle owning the new vault key
-     * @throws ValidationException if the vault already exists or the request is invalid
+     * @throws ValidationException if the vault file already exists or the request is invalid
      */
     @NonNull VaultHandle createVault(
-            @NonNull CreateVaultRequest request, char @NonNull [] masterPassword);
+            @NonNull CreateVaultRequest request, char @NonNull [] passphrase);
 
     /**
-     * Opens an existing password-protected vault and returns a handle holding its unlocked key.
+     * Opens an existing passphrase-protected vault file and returns a handle holding its unlocked key.
      *
-     * @param vaultId the vault to open
-     * @param masterPassword caller-owned master password; wiped by the caller
+     * @param file the vault file to open
+     * @param passphrase caller-owned passphrase; wiped by the caller
      * @return a live handle owning the unwrapped vault key
-     * @throws ValidationException if the vault does not exist or is not protected by a master
-     *     password header
-     * @throws top.focess.keystead.crypto.CryptoException if the password is wrong or the header is
+     * @throws ValidationException if the vault file does not exist or has no passphrase key slot
+     * @throws top.focess.keystead.crypto.CryptoException if the passphrase is wrong or the file is
      *     corrupt
      */
-    @NonNull VaultHandle openVault(@NonNull VaultId vaultId, char @NonNull [] masterPassword);
+    @NonNull VaultHandle openVault(@NonNull Path file, char @NonNull [] passphrase);
 
     /**
-     * Rotates the vault key and re-encrypts every current record under the new key.
+     * Rotates the data-encryption key and re-encrypts every current record under the new key.
      *
-     * <p>The new key is wrapped with the same KDF parameters and master password, and the header,
-     * re-encrypted records, and tombstones are committed as one atomic store mutation. On failure
-     * the previous key and records are left untouched.
+     * <p>The new DEK is wrapped under the same passphrase and the same Argon2id parameters (so the
+     * fingerprint is unchanged), and the new header, re-encrypted records, and preserved tombstones
+     * are committed as one atomic store mutation. Device and recovery slots are dropped: a passphrase
+     * rotation can only re-wrap the passphrase slot. On failure the previous key and records are left
+     * untouched.
      *
-     * @param vaultId the vault whose key should be rotated
-     * @param masterPassword caller-owned master password; wiped by the caller
+     * @param file the vault file whose key should be rotated
+     * @param passphrase caller-owned passphrase; wiped by the caller
      * @return a live handle owning the new vault key
-     * @throws ValidationException if the vault does not exist
-     * @throws top.focess.keystead.crypto.CryptoException if the password is wrong
+     * @throws ValidationException if the vault file does not exist or has no passphrase slot
+     * @throws top.focess.keystead.crypto.CryptoException if the passphrase is wrong
      */
-    @NonNull VaultHandle rotateVaultKey(@NonNull VaultId vaultId, char @NonNull [] masterPassword);
+    @NonNull VaultHandle rotateVaultKey(@NonNull Path file, char @NonNull [] passphrase);
 
     /**
-     * Provisions a vault on this device from a device-wrapped vault-key package.
+     * Provisions a new vault file on this device from a device-wrapped vault-key package.
      *
-     * <p>Used when a vault was created on another device and its key was wrapped for this device's
-     * public key. The vault header is written from the package; no master password is involved.
+     * <p>Used when a vault's DEK was wrapped for this device's public key on another device. The
+     * package's fingerprint is written into the provisioned header; no passphrase is involved. The
+     * provisioned vault starts empty and is filled by syncing records from the server (the records
+     * are encrypted under the same shared DEK and bound to the same fingerprint).
      *
-     * @param vaultId the vault to provision
-     * @param encryptedVaultKey the device-wrapped vault key produced by {@link
-     *     VaultHandle#wrapVaultKeyForDevice}
+     * @param file the vault file to create; must not already exist as a vault
+     * @param keyPackage the device-wrapped vault key package produced by {@link
+     *     VaultHandle#wrapVaultKeyPackageForDevice}
      * @param devicePrivateKey caller-owned device private key; wiped by the caller
      * @param context caller-owned binding context used when the key was wrapped; wiped by the caller
      * @return a live handle owning the unwrapped vault key
      * @throws ValidationException if the package cannot be unwrapped for this device
      */
     @NonNull VaultHandle provisionVault(
-            @NonNull VaultId vaultId,
-            byte @NonNull [] encryptedVaultKey,
-            byte @NonNull [] devicePrivateKey,
-            byte @NonNull [] context);
-
-    /**
-     * Provisions a vault from a typed {@link DeviceVaultKeyPackage} carrying the wrapped key and its
-     * algorithm. See the byte-array overload of this method.
-     *
-     * @param vaultId the vault to provision
-     * @param keyPackage the device-wrapped vault key package
-     * @param devicePrivateKey caller-owned device private key; wiped by the caller
-     * @param context caller-owned binding context used when the key was wrapped; wiped by the caller
-     * @return a live handle owning the unwrapped vault key
-     * @throws ValidationException if the package cannot be unwrapped for this device
-     */
-    @NonNull VaultHandle provisionVault(
-            @NonNull VaultId vaultId,
+            @NonNull Path file,
             @NonNull DeviceVaultKeyPackage keyPackage,
             byte @NonNull [] devicePrivateKey,
             byte @NonNull [] context);
 
     /**
-     * Provisions a vault from explicit package metadata. The caller retains ownership of every
-     * supplied array.
+     * Provisions a new vault file on this device from a recovery-wrapped vault-key package.
      *
-     * @param vaultId the vault to provision
-     * @param vaultKeyId the public identifier of the wrapped vault key
-     * @param keyAlgorithm the device key algorithm used to wrap the vault key
-     * @param encryptedVaultKey the wrapped vault key bytes
-     * @param devicePrivateKey caller-owned device private key; wiped by the caller
+     * <p>Used when a vault's DEK was wrapped for a recovery public key and the user is recovering
+     * access. The recovery private key unwraps the DEK (the recovery key pair uses the same hybrid
+     * encryption as a device key pair), and a single {@link
+     * top.focess.keystead.model.SlotType#RECOVERY RECOVERY} slot is written into the provisioned
+     * header; no passphrase is involved. The provisioned vault starts empty and is filled by syncing
+     * records from the server.
+     *
+     * @param file the vault file to create; must not already exist as a vault
+     * @param fingerprint the vault fingerprint carried by the recovery package
+     * @param vaultKeyId the id of the wrapped vault key
+     * @param encryptedVaultKey the recovery-wrapped vault key bytes
+     * @param recoveryPrivateKey caller-owned recovery private key; wiped by the caller
      * @param context caller-owned binding context used when the key was wrapped; wiped by the caller
      * @return a live handle owning the unwrapped vault key
-     * @throws ValidationException if the package cannot be unwrapped for this device
+     * @throws ValidationException if the package cannot be unwrapped for this recovery key
      */
-    default @NonNull VaultHandle provisionVault(
-            @NonNull VaultId vaultId,
+    @NonNull VaultHandle provisionVaultWithRecoveryKey(
+            @NonNull Path file,
+            @NonNull VaultFingerprint fingerprint,
             @NonNull KeyId vaultKeyId,
-            @NonNull String keyAlgorithm,
             byte @NonNull [] encryptedVaultKey,
-            byte @NonNull [] devicePrivateKey,
-            byte @NonNull [] context) {
-        @Nullable DeviceVaultKeyPackage keyPackage = null;
-        try {
-            keyPackage = new DeviceVaultKeyPackage(vaultKeyId, keyAlgorithm, encryptedVaultKey);
-            return provisionVault(vaultId, keyPackage, devicePrivateKey, context);
-        } finally {
-            if (keyPackage != null) {
-                keyPackage.destroy();
-            }
-        }
-    }
+            byte @NonNull [] recoveryPrivateKey,
+            byte @NonNull [] context);
 
     /**
-     * Opens a device-provisioned vault with its device private key, without a master password.
+     * Opens a device-provisioned vault file with its device private key, without a passphrase.
      *
-     * @param vaultId the vault to open
+     * <p>The header's {@link top.focess.keystead.model.SlotType#DEVICE DEVICE} slots are tried in
+     * order until one unwraps under the supplied private key and binding context.
+     *
+     * @param file the vault file to open
      * @param devicePrivateKey caller-owned device private key; wiped by the caller
      * @param context caller-owned binding context used when the key was wrapped; wiped by the caller
      * @return a live handle owning the unwrapped vault key
-     * @throws ValidationException if the vault does not exist or is not protected by a device key
-     *     package
+     * @throws ValidationException if the vault file does not exist or no device slot unwraps for this
+     *     device key
      */
     @NonNull VaultHandle openVaultWithDeviceKey(
-            @NonNull VaultId vaultId, byte @NonNull [] devicePrivateKey, byte @NonNull [] context);
+            @NonNull Path file, byte @NonNull [] devicePrivateKey, byte @NonNull [] context);
 }

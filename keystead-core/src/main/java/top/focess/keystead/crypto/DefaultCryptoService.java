@@ -49,6 +49,18 @@ public final class DefaultCryptoService {
     /** Default PBKDF2 iteration count. */
     public static final int DEFAULT_KDF_ITERATIONS = 120_000;
 
+    /** Default Argon2id time cost (iterations). */
+    public static final int DEFAULT_ARGON2ID_ITERATIONS = 2;
+
+    /** Default Argon2id memory cost, in KiB (19 MiB, per current OWASP guidance). */
+    public static final int DEFAULT_ARGON2ID_MEMORY_KIB = 19_456;
+
+    /** Default Argon2id parallelism (lanes). */
+    public static final int DEFAULT_ARGON2ID_PARALLELISM = 1;
+
+    /** Approved Argon2id KDF algorithm used as the v2 vault passphrase KDF. */
+    public static final @NonNull String ARGON2ID_ALGORITHM = CryptoAlgorithmRegistry.KDF_ARGON2ID;
+
     /** Label mixed into the vault fingerprint HMAC to domain-separate it from other uses. */
     public static final @NonNull String FINGERPRINT_LABEL = "keystead-vault-fingerprint-v2";
 
@@ -144,6 +156,20 @@ public final class DefaultCryptoService {
         byte[] salt = new byte[SALT_BYTES];
         random.nextBytes(salt);
         return salt;
+    }
+
+    /**
+     * Builds the default v2 Argon2id passphrase KDF parameters for a fresh salt.
+     *
+     * @param salt the KDF salt
+     * @return the default Argon2id parameters
+     */
+    public @NonNull KdfParameters defaultArgon2idParameters(byte @NonNull [] salt) {
+        return KdfParameters.argon2id(
+                salt,
+                DEFAULT_ARGON2ID_ITERATIONS,
+                DEFAULT_ARGON2ID_MEMORY_KIB,
+                DEFAULT_ARGON2ID_PARALLELISM);
     }
 
     /**
@@ -508,12 +534,13 @@ public final class DefaultCryptoService {
     }
 
     /**
-     * Derives the non-stored vault fingerprint from a master password and KDF parameters.
+     * Derives the vault fingerprint from a master password and KDF parameters.
      *
      * <p>The fingerprint is {@code HMAC-SHA-256(wrappingKey, FINGERPRINT_LABEL ‖ kdfSalt)} truncated to
-     * 128 bits, where {@code wrappingKey} is the password-derived key. It is stable across vault-key
-     * rotations (the wrapping key is unchanged when only the data-encryption key is rewrapped) and
-     * changes only when the passphrase or salt changes.
+     * 128 bits, where {@code wrappingKey} is the password-derived key. It is a non-secret routing
+     * identity, stored in the v2 vault header so passphrase-less device/recovery opens can recover it.
+     * It is stable across vault-key rotations (the wrapping key is unchanged when only the
+     * data-encryption key is rewrapped) and changes only when the passphrase or salt changes.
      *
      * @param masterPassword caller-owned master password
      * @param kdfParameters the password KDF parameters
@@ -588,7 +615,8 @@ public final class DefaultCryptoService {
     private static @NonNull Collection<PasswordKeyDerivation> defaultPasswordKeyDerivations() {
         return java.util.List.of(
                 new Pbkdf2KeyDerivation(CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256),
-                new Pbkdf2KeyDerivation(CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA512));
+                new Pbkdf2KeyDerivation(CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA512),
+                new Argon2idKeyDerivation());
     }
 
     private static @NonNull Map<String, PasswordKeyDerivation> passwordKeyDerivations(

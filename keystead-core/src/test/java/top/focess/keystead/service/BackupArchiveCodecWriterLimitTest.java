@@ -15,16 +15,19 @@ import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.junit.jupiter.api.Test;
+import top.focess.keystead.crypto.KdfParameters;
 import top.focess.keystead.model.DeletedSecretRecord;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.EncryptedSecretRecord;
 import top.focess.keystead.model.KeyId;
+import top.focess.keystead.model.KeySlot;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretRecordAad;
 import top.focess.keystead.model.SecretType;
+import top.focess.keystead.model.SlotType;
+import top.focess.keystead.model.VaultFingerprint;
 import top.focess.keystead.model.VaultHeader;
-import top.focess.keystead.model.VaultId;
 
 class BackupArchiveCodecWriterLimitTest {
 
@@ -34,7 +37,8 @@ class BackupArchiveCodecWriterLimitTest {
     private static final Instant CREATED_AT = Instant.parse("2026-07-02T00:00:00Z");
     private static final Instant UPDATED_AT = Instant.parse("2026-07-02T00:01:00Z");
     private static final Instant ENCRYPTED_AT = Instant.parse("2026-07-02T00:02:00Z");
-    private static final VaultId VAULT_ID = new VaultId(new UUID(0L, 1L));
+    private static final VaultFingerprint FINGERPRINT =
+            VaultFingerprint.fromHexString("00112233445566778899aabbccddeeff");
 
     @Test
     void writerRoundTripsRecordAtExactSerializedEntryLimit() throws Exception {
@@ -83,23 +87,17 @@ class BackupArchiveCodecWriterLimitTest {
         BackupReadResult read = BackupArchiveCodec.read(new ByteArrayInputStream(encoded));
 
         assertEquals(MAX_ENTRY_BYTES, zipEntrySize(encoded, "vault.properties"));
-        assertArrayEquals(header.wrappedVaultKey(), read.archive().vaultHeader().wrappedVaultKey());
+        assertArrayEquals(
+                header.firstPassphraseSlot().orElseThrow().wrappedVaultKey(),
+                read.archive().vaultHeader().firstPassphraseSlot().orElseThrow().wrappedVaultKey());
     }
 
     @Test
     void writerRejectsHeaderOneSerializedByteOverLimitBeforePublishingOutput() throws Exception {
         VaultHeader exact = headerAtSerializedSize(MAX_ENTRY_BYTES);
+        KeySlot exactSlot = exact.firstPassphraseSlot().orElseThrow();
         VaultHeader oversized =
-                new VaultHeader(
-                        VAULT_ID,
-                        1,
-                        exact.kdfAlgorithm() + "X",
-                        exact.kdfSalt(),
-                        exact.kdfIterations(),
-                        exact.vaultKeyId(),
-                        exact.wrappedVaultKey(),
-                        CREATED_AT,
-                        UPDATED_AT);
+                header(exactSlot.wrappedVaultKey(), exactSlot.kdfParameters().algorithm() + "X");
         ByteArrayOutputStream output = new ByteArrayOutputStream();
 
         ValidationException failure =
@@ -112,7 +110,14 @@ class BackupArchiveCodecWriterLimitTest {
         assertEquals("Backup entry exceeds size limit", failure.getMessage());
         assertEquals(0, output.size());
         assertFalse(failure.getMessage().contains("vault.properties"));
-        assertFalse(failure.getMessage().contains(oversized.kdfAlgorithm()));
+        assertFalse(
+                failure.getMessage()
+                        .contains(
+                                oversized
+                                        .firstPassphraseSlot()
+                                        .orElseThrow()
+                                        .kdfParameters()
+                                        .algorithm()));
     }
 
     @Test
@@ -224,7 +229,12 @@ class BackupArchiveCodecWriterLimitTest {
             List<EncryptedSecretRecord> records,
             List<DeletedSecretRecord> tombstones) {
         return new BackupArchive(
-                new BackupManifest(1, VAULT_ID, records.size(), tombstones.size(), CREATED_AT),
+                new BackupManifest(
+                        VaultBackupService.FORMAT_VERSION,
+                        FINGERPRINT,
+                        records.size(),
+                        tombstones.size(),
+                        CREATED_AT),
                 header,
                 records,
                 tombstones);
@@ -236,13 +246,15 @@ class BackupArchiveCodecWriterLimitTest {
 
     private static VaultHeader header(byte[] wrappedVaultKey, String kdfAlgorithm) {
         return new VaultHeader(
-                VAULT_ID,
                 1,
-                kdfAlgorithm,
-                new byte[] {1, 2, 3},
-                120_000,
+                FINGERPRINT,
                 new KeyId("vault-key"),
-                wrappedVaultKey,
+                List.of(
+                        new KeySlot(
+                                SlotType.PASSPHRASE,
+                                new KeyId("passphrase"),
+                                KdfParameters.pbkdf2(kdfAlgorithm, new byte[] {1, 2, 3}, 120_000),
+                                wrappedVaultKey)),
                 CREATED_AT,
                 UPDATED_AT);
     }
@@ -264,10 +276,10 @@ class BackupArchiveCodecWriterLimitTest {
                         algorithm,
                         new KeyId("vault-key"),
                         new byte[] {1, 2, 3},
-                        SecretRecordAad.encode(VAULT_ID, metadata, 1L),
+                        SecretRecordAad.encode(FINGERPRINT, metadata, 1L),
                         new byte[ciphertextBytes],
                         ENCRYPTED_AT);
-        return new EncryptedSecretRecord(VAULT_ID, metadata, envelope, 1L);
+        return new EncryptedSecretRecord(metadata, envelope, 1L);
     }
 
     private static EncryptedSecretRecord withAlgorithm(
@@ -282,8 +294,7 @@ class BackupArchiveCodecWriterLimitTest {
                         payload.aad(),
                         payload.ciphertext(),
                         payload.encryptedAt());
-        return new EncryptedSecretRecord(
-                record.vaultId(), record.metadata(), replacement, record.revision());
+        return new EncryptedSecretRecord(record.metadata(), replacement, record.revision());
     }
 
     private static List<DeletedSecretRecord> tombstones(int count) {
@@ -291,11 +302,7 @@ class BackupArchiveCodecWriterLimitTest {
         for (int index = 0; index < count; index++) {
             tombstones.add(
                     new DeletedSecretRecord(
-                            VAULT_ID,
-                            secretId(index + 2L),
-                            SecretType.LOGIN_PASSWORD,
-                            1L,
-                            ENCRYPTED_AT));
+                            secretId(index + 2L), SecretType.LOGIN_PASSWORD, 1L, ENCRYPTED_AT));
         }
         return tombstones;
     }

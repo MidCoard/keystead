@@ -32,15 +32,16 @@ import top.focess.keystead.model.DeletedSecretRecord;
 import top.focess.keystead.model.EncryptedEnvelope;
 import top.focess.keystead.model.EncryptedSecretRecord;
 import top.focess.keystead.model.KeyId;
+import top.focess.keystead.model.KeySlot;
 import top.focess.keystead.model.SecretClassification;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretProfile;
-import top.focess.keystead.model.SecretRecordAad;
 import top.focess.keystead.model.SecretType;
 import top.focess.keystead.model.SecurityLimits;
+import top.focess.keystead.model.SlotType;
+import top.focess.keystead.model.VaultFingerprint;
 import top.focess.keystead.model.VaultHeader;
-import top.focess.keystead.model.VaultId;
 import top.focess.keystead.store.SortedProperties;
 
 final class BackupArchiveCodec {
@@ -51,7 +52,6 @@ final class BackupArchiveCodec {
     private static final String DELETED_PREFIX = "deleted/";
     private static final String PROPERTIES_SUFFIX = ".properties";
     private static final String ENTRY_DIGEST_PREFIX = "entry.sha256.";
-    private static final String KDF_PARAMETER_PREFIX = "kdf.parameter.";
     private static final int MAX_ENCODED_KDF_SALT_CHARACTERS =
             ((SecurityLimits.MAX_KDF_SALT_BYTES + 2) / 3) * 4;
     private static final int MAX_ENTRY_BYTES = 1_048_576;
@@ -231,7 +231,7 @@ final class BackupArchiveCodec {
                 && tombstones.size() + unsupportedTombstones == manifest.tombstoneCount()) {
             return new BackupManifest(
                     manifest.formatVersion(),
-                    manifest.vaultId(),
+                    manifest.fingerprint(),
                     records.size(),
                     tombstones.size(),
                     manifest.createdAt());
@@ -296,7 +296,7 @@ final class BackupArchiveCodec {
             @NonNull BackupManifest manifest, @NonNull List<BackupZipEntry> entries) {
         Properties properties = new Properties();
         properties.setProperty("formatVersion", Integer.toString(manifest.formatVersion()));
-        properties.setProperty("vaultId", manifest.vaultId().value().toString());
+        properties.setProperty("fingerprint", manifest.fingerprint().toHexString());
         properties.setProperty("recordCount", Integer.toString(manifest.recordCount()));
         properties.setProperty("tombstoneCount", Integer.toString(manifest.tombstoneCount()));
         properties.setProperty("createdAt", manifest.createdAt().toString());
@@ -309,7 +309,7 @@ final class BackupArchiveCodec {
     private static @NonNull BackupManifest readManifest(@NonNull Properties properties) {
         return new BackupManifest(
                 parseInt(properties, "formatVersion"),
-                new VaultId(UUID.fromString(required(properties, "vaultId"))),
+                VaultFingerprint.fromHexString(required(properties, "fingerprint")),
                 parseInt(properties, "recordCount"),
                 parseInt(properties, "tombstoneCount"),
                 Instant.parse(required(properties, "createdAt")));
@@ -352,45 +352,99 @@ final class BackupArchiveCodec {
 
     private static @NonNull Properties vaultProperties(@NonNull VaultHeader header) {
         Properties properties = new SortedProperties();
-        properties.setProperty("vaultId", header.vaultId().value().toString());
         properties.setProperty("formatVersion", Integer.toString(header.formatVersion()));
-        properties.setProperty("kdfAlgorithm", header.kdfAlgorithm());
-        properties.setProperty("kdfSalt", b64(header.kdfSalt()));
-        properties.setProperty("kdfIterations", Integer.toString(header.kdfIterations()));
-        header.kdfParameters().parameters().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .forEach(
-                        entry ->
-                                properties.setProperty(
-                                        KDF_PARAMETER_PREFIX + entry.getKey(),
-                                        Integer.toString(entry.getValue())));
+        properties.setProperty("fingerprint", header.fingerprint().toHexString());
         properties.setProperty("vaultKeyId", header.vaultKeyId().value());
-        properties.setProperty("wrappedVaultKey", b64(header.wrappedVaultKey()));
+        List<KeySlot> slots = header.slots();
+        properties.setProperty("slotCount", Integer.toString(slots.size()));
+        for (int index = 0; index < slots.size(); index++) {
+            writeSlot(properties, index, slots.get(index));
+        }
         properties.setProperty("createdAt", header.createdAt().toString());
         properties.setProperty("updatedAt", header.updatedAt().toString());
         return properties;
     }
 
+    private static void writeSlot(
+            @NonNull Properties properties, int index, @NonNull KeySlot slot) {
+        String prefix = "slot." + index + '.';
+        properties.setProperty(prefix + "type", slot.slotType().name());
+        properties.setProperty(prefix + "slotKeyId", slot.slotKeyId().value());
+        properties.setProperty(prefix + "wrappedVaultKey", b64(slot.wrappedVaultKey()));
+        if (slot.kdfParameters() != null) {
+            writeKdfParameters(properties, prefix, slot.kdfParameters());
+        }
+    }
+
+    private static void writeKdfParameters(
+            @NonNull Properties properties, @NonNull String prefix, @NonNull KdfParameters kdf) {
+        properties.setProperty(prefix + "kdfAlgorithm", kdf.algorithm());
+        properties.setProperty(prefix + "kdfSalt", b64(kdf.salt()));
+        kdf.parameters().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(
+                        entry ->
+                                properties.setProperty(
+                                        prefix + "kdf.parameter." + entry.getKey(),
+                                        Integer.toString(entry.getValue())));
+    }
+
     private static @NonNull VaultHeader readVault(
             @NonNull Properties properties, @NonNull Base64ValueDecoder base64Decoder) {
+        int formatVersion = parseInt(properties, "formatVersion");
+        VaultFingerprint fingerprint =
+                VaultFingerprint.fromHexString(required(properties, "fingerprint"));
+        KeyId vaultKeyId = new KeyId(required(properties, "vaultKeyId"));
+        int slotCount = parseInt(properties, "slotCount");
+        if (slotCount <= 0 || slotCount > VaultHeader.MAX_SLOTS) {
+            throw new ValidationException("Backup vault header has an invalid slot count");
+        }
+        List<KeySlot> slots = new ArrayList<>(slotCount);
+        for (int index = 0; index < slotCount; index++) {
+            slots.add(readSlot(properties, index, base64Decoder));
+        }
         return new VaultHeader(
-                new VaultId(UUID.fromString(required(properties, "vaultId"))),
-                parseInt(properties, "formatVersion"),
-                readKdfParameters(properties),
-                new KeyId(required(properties, "vaultKeyId")),
-                boundedBytes(
-                        properties,
-                        "wrappedVaultKey",
-                        SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES,
-                        "Backup wrapped key package",
-                        base64Decoder),
+                formatVersion,
+                fingerprint,
+                vaultKeyId,
+                slots,
                 Instant.parse(required(properties, "createdAt")),
                 Instant.parse(required(properties, "updatedAt")));
     }
 
-    private static @NonNull KdfParameters readKdfParameters(@NonNull Properties properties) {
-        String algorithm = required(properties, "kdfAlgorithm");
-        String encodedSalt = required(properties, "kdfSalt");
+    private static @NonNull KeySlot readSlot(
+            @NonNull Properties properties, int index, @NonNull Base64ValueDecoder base64Decoder) {
+        String prefix = "slot." + index + '.';
+        SlotType type = SlotType.valueOf(required(properties, prefix + "type"));
+        KeyId slotKeyId = new KeyId(required(properties, prefix + "slotKeyId"));
+        byte[] wrapped =
+                boundedBytes(
+                        properties,
+                        prefix + "wrappedVaultKey",
+                        SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES,
+                        "Backup wrapped key",
+                        base64Decoder);
+        @Nullable KdfParameters kdf = null;
+        if (type == SlotType.PASSPHRASE) {
+            kdf =
+                    readKdfParameters(
+                            properties,
+                            prefix + "kdfAlgorithm",
+                            prefix + "kdfSalt",
+                            prefix + "kdf.parameter.",
+                            "Backup passphrase slot");
+        }
+        return new KeySlot(type, slotKeyId, kdf, wrapped);
+    }
+
+    private static @NonNull KdfParameters readKdfParameters(
+            @NonNull Properties properties,
+            @NonNull String algorithmKey,
+            @NonNull String saltKey,
+            @NonNull String parameterPrefix,
+            @NonNull String label) {
+        String algorithm = required(properties, algorithmKey);
+        String encodedSalt = required(properties, saltKey);
         if (encodedSalt.length() > MAX_ENCODED_KDF_SALT_CHARACTERS) {
             throw new IllegalArgumentException("KDF salt exceeds the size limit");
         }
@@ -405,7 +459,7 @@ final class BackupArchiveCodec {
             java.util.Enumeration<Object> names = properties.keys();
             while (names.hasMoreElements()) {
                 String name = (String) names.nextElement();
-                if (!name.startsWith(KDF_PARAMETER_PREFIX)) {
+                if (!name.startsWith(parameterPrefix)) {
                     continue;
                 }
                 canonicalCount++;
@@ -413,14 +467,15 @@ final class BackupArchiveCodec {
                     throw new IllegalArgumentException(
                             "KDF parameter count exceeds the size limit");
                 }
-                requireKdfParameterName(name);
+                requireKdfParameterName(name, parameterPrefix);
                 canonical.put(
-                        name.substring(KDF_PARAMETER_PREFIX.length()),
+                        name.substring(parameterPrefix.length()),
                         Integer.parseInt(required(properties, name)));
             }
-            return canonical.isEmpty()
-                    ? KdfParameters.pbkdf2(algorithm, salt, parseInt(properties, "kdfIterations"))
-                    : new KdfParameters(algorithm, salt, canonical);
+            if (canonical.isEmpty()) {
+                throw new IllegalArgumentException(label + " KDF parameters are missing");
+            }
+            return new KdfParameters(algorithm, salt, canonical);
         } finally {
             if (salt != null) {
                 Wipe.wipe(salt);
@@ -428,13 +483,14 @@ final class BackupArchiveCodec {
         }
     }
 
-    private static void requireKdfParameterName(@NonNull String propertyName) {
-        int parameterLength = propertyName.length() - KDF_PARAMETER_PREFIX.length();
+    private static void requireKdfParameterName(
+            @NonNull String propertyName, @NonNull String prefix) {
+        int parameterLength = propertyName.length() - prefix.length();
         if (parameterLength <= 0
                 || parameterLength > SecurityLimits.MAX_KDF_PARAMETER_NAME_CHARACTERS) {
             throw new IllegalArgumentException("KDF parameter name has an invalid length");
         }
-        for (int index = KDF_PARAMETER_PREFIX.length(); index < propertyName.length(); index++) {
+        for (int index = prefix.length(); index < propertyName.length(); index++) {
             char character = propertyName.charAt(index);
             if (character < 0x21 || character > 0x7e) {
                 throw new IllegalArgumentException(
@@ -446,7 +502,6 @@ final class BackupArchiveCodec {
     private static @NonNull Properties recordProperties(@NonNull EncryptedSecretRecord record) {
         Properties properties = new Properties();
         SecretMetadata metadata = record.metadata();
-        properties.setProperty("vaultId", record.vaultId().value().toString());
         properties.setProperty("metadata.id", metadata.id().value().toString());
         properties.setProperty("metadata.type", metadata.type().name());
         properties.setProperty("metadata.title", b64(metadata.title()));
@@ -467,6 +522,7 @@ final class BackupArchiveCodec {
         properties.setProperty("envelope.algorithm", envelope.algorithm());
         properties.setProperty("envelope.keyId", envelope.keyId().value());
         properties.setProperty("envelope.nonce", b64(envelope.nonce()));
+        properties.setProperty("envelope.aad", b64(envelope.aad()));
         properties.setProperty("envelope.ciphertext", b64(envelope.ciphertext()));
         properties.setProperty("envelope.encryptedAt", envelope.encryptedAt().toString());
         return properties;
@@ -474,7 +530,6 @@ final class BackupArchiveCodec {
 
     private static @NonNull EncryptedSecretRecord readRecord(
             @NonNull Properties properties, @NonNull Base64ValueDecoder base64Decoder) {
-        VaultId vaultId = new VaultId(UUID.fromString(required(properties, "vaultId")));
         SecretMetadata metadata =
                 new SecretMetadata(
                         new SecretId(UUID.fromString(required(properties, "metadata.id"))),
@@ -494,7 +549,12 @@ final class BackupArchiveCodec {
                         required(properties, "envelope.algorithm"),
                         new KeyId(required(properties, "envelope.keyId")),
                         bytes(properties, "envelope.nonce", base64Decoder),
-                        envelopeAad(properties, vaultId, metadata, recordRevision, base64Decoder),
+                        boundedBytes(
+                                properties,
+                                "envelope.aad",
+                                SecurityLimits.MAX_ENVELOPE_AAD_BYTES,
+                                "Backup envelope AAD",
+                                base64Decoder),
                         boundedBytes(
                                 properties,
                                 "envelope.ciphertext",
@@ -502,30 +562,11 @@ final class BackupArchiveCodec {
                                 "Backup envelope ciphertext",
                                 base64Decoder),
                         Instant.parse(required(properties, "envelope.encryptedAt")));
-        return new EncryptedSecretRecord(vaultId, metadata, envelope, recordRevision);
-    }
-
-    private static byte @NonNull [] envelopeAad(
-            @NonNull Properties properties,
-            @NonNull VaultId vaultId,
-            @NonNull SecretMetadata metadata,
-            long recordRevision,
-            @NonNull Base64ValueDecoder base64Decoder) {
-        @Nullable String encoded = properties.getProperty("envelope.aad");
-        if (encoded != null) {
-            return boundedBytes(
-                    "envelope.aad",
-                    encoded,
-                    SecurityLimits.MAX_ENVELOPE_AAD_BYTES,
-                    "Backup envelope AAD",
-                    base64Decoder);
-        }
-        return SecretRecordAad.encode(vaultId, metadata, recordRevision);
+        return new EncryptedSecretRecord(metadata, envelope, recordRevision);
     }
 
     private static @NonNull Properties deletedProperties(@NonNull DeletedSecretRecord record) {
         Properties properties = new Properties();
-        properties.setProperty("vaultId", record.vaultId().value().toString());
         properties.setProperty("secretId", record.secretId().value().toString());
         properties.setProperty("secretType", record.secretType().name());
         properties.setProperty("revision", Long.toString(record.revision()));
@@ -535,7 +576,6 @@ final class BackupArchiveCodec {
 
     private static @NonNull DeletedSecretRecord readDeleted(@NonNull Properties properties) {
         return new DeletedSecretRecord(
-                new VaultId(UUID.fromString(required(properties, "vaultId"))),
                 new SecretId(UUID.fromString(required(properties, "secretId"))),
                 SecretType.valueOf(required(properties, "secretType")),
                 parseLong(properties, "revision"),

@@ -18,6 +18,7 @@ class CryptoAlgorithmRegistryTest {
     void approvedKdfAlgorithmsAreExplicit() {
         assertTrue(CryptoAlgorithmRegistry.isApprovedKdf("PBKDF2WithHmacSHA256"));
         assertTrue(CryptoAlgorithmRegistry.isApprovedKdf("PBKDF2WithHmacSHA512"));
+        assertTrue(CryptoAlgorithmRegistry.isApprovedKdf("ARGON2ID"));
         assertFalse(CryptoAlgorithmRegistry.isApprovedKdf("MD5"));
     }
 
@@ -36,7 +37,7 @@ class CryptoAlgorithmRegistryTest {
                 List.of("AES-256-GCM", "CHACHA20-POLY1305"),
                 CryptoAlgorithmRegistry.approvedAeadAlgorithms());
         assertEquals(
-                List.of("PBKDF2WithHmacSHA256", "PBKDF2WithHmacSHA512"),
+                List.of("PBKDF2WithHmacSHA256", "PBKDF2WithHmacSHA512", "ARGON2ID"),
                 CryptoAlgorithmRegistry.approvedKdfAlgorithms());
         assertEquals(
                 List.of("TINK_ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM", "TINK_DEVICE_KEY_PACKAGE"),

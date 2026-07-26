@@ -7,7 +7,7 @@ import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretType;
-import top.focess.keystead.model.VaultId;
+import top.focess.keystead.model.VaultFingerprint;
 
 /**
  * A live, unlocked view of a vault for performing typed secret operations.
@@ -29,10 +29,14 @@ import top.focess.keystead.model.VaultId;
  */
 public interface VaultHandle extends AutoCloseable {
 
-    /** Returns the id of the vault this handle is bound to.
+    /** Returns the passphrase-derived fingerprint of the vault this handle is bound to.
      *
-     * @return the vault id */
-    @NonNull VaultId vaultId();
+     * <p>The fingerprint is a non-stored routing identifier derived from the passphrase and KDF salt;
+     * it is stable across vault-key rotations and may be disclosed to a sync server as an opaque
+     * routing token.
+     *
+     * @return the vault fingerprint */
+    @NonNull VaultFingerprint vaultFingerprint();
 
     /** Returns the id of the currently active vault key.
      *

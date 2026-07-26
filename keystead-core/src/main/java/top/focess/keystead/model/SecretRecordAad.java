@@ -7,21 +7,24 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Encodes additional authenticated data (AAD) for a secret record, binding the ciphertext to the
- * vault id, metadata, and revision.
+ * vault fingerprint, metadata, and revision. The fingerprint replaces the v0.2 vault id and is
+ * stable across data-encryption-key rotations (it is derived from the passphrase wrapping key).
  */
 public final class SecretRecordAad {
 
     /** Encodes the AAD bytes for the given vault, metadata, and revision.
      *
-     * @param vaultId the vault id
+     * @param fingerprint the vault fingerprint
      * @param metadata the non-secret metadata
      * @param revision the record revision
      * @return the encoded AAD bytes */
     public static byte @NonNull [] encode(
-            @NonNull VaultId vaultId, @NonNull SecretMetadata metadata, long revision) {
+            @NonNull VaultFingerprint fingerprint,
+            @NonNull SecretMetadata metadata,
+            long revision) {
         StringBuilder value = new StringBuilder();
-        append(value, "keystead-secret-record-v2");
-        append(value, vaultId.value().toString());
+        append(value, "keystead-secret-record-v3");
+        append(value, fingerprint.toHexString());
         append(value, metadata.id().value().toString());
         append(value, metadata.type().name());
         append(value, metadata.title());

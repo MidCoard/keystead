@@ -2,6 +2,7 @@ package top.focess.keystead.recovery;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -19,7 +20,7 @@ import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.DeviceKeyPair;
 import top.focess.keystead.memory.Wipe;
-import top.focess.keystead.model.VaultId;
+import top.focess.keystead.model.VaultFingerprint;
 import top.focess.keystead.service.DeviceVaultKeyPackage;
 import top.focess.keystead.service.VaultHandle;
 import top.focess.keystead.service.VaultService;
@@ -130,20 +131,16 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
     public @NonNull RecoveryVaultKeyPackage wrapVaultKey(
             @NonNull VaultHandle vault,
             @NonNull RecoveryPublicKey recoveryKey,
-            @NonNull String username,
-            @NonNull String vaultId) {
+            @NonNull String username) {
         Objects.requireNonNull(vault, "vault");
         Objects.requireNonNull(recoveryKey, "recoveryKey");
         Objects.requireNonNull(username, "username");
-        Objects.requireNonNull(vaultId, "vaultId");
-        if (!vault.vaultId().value().toString().equals(vaultId)) {
-            throw new IllegalArgumentException("Recovery package vault does not match");
-        }
+        String fingerprint = vault.vaultFingerprint().toHexString();
         byte[] publicKey = recoveryKey.publicKey();
         byte[] context =
                 RecoveryContextCodec.version2(
                         username,
-                        vaultId,
+                        fingerprint,
                         recoveryKey.enrollmentId(),
                         recoveryKey.generation(),
                         vault.vaultKeyId().value());
@@ -153,7 +150,7 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
             try {
                 return new RecoveryVaultKeyPackage(
                         username,
-                        vaultId,
+                        fingerprint,
                         wrapped.vaultKeyId(),
                         recoveryKey.enrollmentId(),
                         recoveryKey.generation(),
@@ -171,68 +168,39 @@ public final class DefaultRecoveryCryptoService implements RecoveryCryptoService
     @Override
     public @NonNull VaultHandle openVault(
             @NonNull VaultService vaultService,
-            @NonNull VaultId vaultId,
+            @NonNull Path file,
             @NonNull RecoveryVaultKeyPackage keyPackage,
             @NonNull RecoveryKit kit,
             byte @NonNull [] encryptedPrivateKey) {
         Objects.requireNonNull(vaultService, "vaultService");
-        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(file, "file");
         Objects.requireNonNull(keyPackage, "keyPackage");
         Objects.requireNonNull(kit, "kit");
         Objects.requireNonNull(encryptedPrivateKey, "encryptedPrivateKey");
-        if (!vaultId.value().toString().equals(keyPackage.vaultId())
-                || !kit.enrollmentId().equals(keyPackage.enrollmentId())
+        if (!kit.enrollmentId().equals(keyPackage.enrollmentId())
                 || kit.generation() != keyPackage.generation()) {
             throw new CryptoException("Recovery material does not match");
         }
         byte @Nullable [] privateKey = null;
         byte @Nullable [] ciphertext = null;
-        byte @Nullable [] version2Context = null;
-        byte @Nullable [] legacyContext = null;
+        byte @Nullable [] context = null;
         try {
             privateKey = decryptPrivateKey(kit, encryptedPrivateKey);
             ciphertext = keyPackage.encryptedVaultKey();
-            version2Context =
+            context =
                     RecoveryContextCodec.version2(
                             keyPackage.username(),
-                            keyPackage.vaultId(),
+                            keyPackage.fingerprint(),
                             keyPackage.enrollmentId(),
                             keyPackage.generation(),
                             keyPackage.vaultKeyId().value());
-            try {
-                return vaultService.provisionVault(
-                        vaultId,
-                        keyPackage.vaultKeyId(),
-                        keyPackage.keyAlgorithm(),
-                        ciphertext,
-                        privateKey,
-                        version2Context);
-            } catch (CryptoException version2Failure) {
-                legacyContext =
-                        RecoveryContextCodec.legacyVersion1(
-                                keyPackage.username(),
-                                keyPackage.vaultId(),
-                                keyPackage.enrollmentId(),
-                                keyPackage.generation(),
-                                keyPackage.vaultKeyId().value());
-                try {
-                    return vaultService.provisionVault(
-                            vaultId,
-                            keyPackage.vaultKeyId(),
-                            keyPackage.keyAlgorithm(),
-                            ciphertext,
-                            privateKey,
-                            legacyContext);
-                } catch (CryptoException legacyFailure) {
-                    throw new CryptoException(
-                            "Could not open recovery vault package", legacyFailure);
-                }
-            }
+            VaultFingerprint fingerprint = VaultFingerprint.fromHexString(keyPackage.fingerprint());
+            return vaultService.provisionVaultWithRecoveryKey(
+                    file, fingerprint, keyPackage.vaultKeyId(), ciphertext, privateKey, context);
         } finally {
             Wipe.wipe(privateKey);
             Wipe.wipe(ciphertext);
-            Wipe.wipe(version2Context);
-            Wipe.wipe(legacyContext);
+            Wipe.wipe(context);
         }
     }
 

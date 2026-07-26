@@ -11,7 +11,6 @@ import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.DeletedSecretRecord;
 import top.focess.keystead.model.EncryptedSecretRecord;
 import top.focess.keystead.model.VaultHeader;
-import top.focess.keystead.model.VaultId;
 import top.focess.keystead.store.VaultStore;
 
 /**
@@ -25,7 +24,7 @@ import top.focess.keystead.store.VaultStore;
 public final class VaultBackupService {
 
     /** The backup archive format version produced and accepted by this service. */
-    public static final int FORMAT_VERSION = 1;
+    public static final int FORMAT_VERSION = 2;
 
     private final Clock clock;
 
@@ -46,26 +45,21 @@ public final class VaultBackupService {
     /**
      * Builds an in-memory backup archive of every record and tombstone in the vault.
      *
-     * @param store the store holding the vault
-     * @param vaultId the vault to back up
+     * @param store the open vault store holding the vault
      * @return the populated archive
-     * @throws ValidationException if the vault does not exist
+     * @throws ValidationException if the store does not hold an open vault
      */
-    public @NonNull BackupArchive export(@NonNull VaultStore store, @NonNull VaultId vaultId) {
+    public @NonNull BackupArchive export(@NonNull VaultStore store) {
         Objects.requireNonNull(store, "store");
-        Objects.requireNonNull(vaultId, "vaultId");
         VaultHeader header =
-                store.loadVaultHeader(vaultId)
-                        .orElseThrow(
-                                () ->
-                                        new ValidationException(
-                                                "Vault not found for backup: " + vaultId));
-        List<EncryptedSecretRecord> records = store.listSecretRecords(vaultId);
-        List<DeletedSecretRecord> tombstones = store.listDeletedSecretRecords(vaultId);
+                store.loadVaultHeader()
+                        .orElseThrow(() -> new ValidationException("Vault not found for backup"));
+        List<EncryptedSecretRecord> records = store.listSecretRecords();
+        List<DeletedSecretRecord> tombstones = store.listDeletedSecretRecords();
         BackupManifest manifest =
                 new BackupManifest(
                         FORMAT_VERSION,
-                        vaultId,
+                        header.fingerprint(),
                         records.size(),
                         tombstones.size(),
                         clock.instant());
@@ -105,18 +99,24 @@ public final class VaultBackupService {
             @NonNull VaultStore target, @NonNull BackupArchive archive, int unsupported) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(archive, "archive");
-        Optional<VaultHeader> existingHeader = target.loadVaultHeader(archive.manifest().vaultId());
-        if (existingHeader.isPresent() && !existingHeader.get().equals(archive.vaultHeader())) {
+        VaultHeader archiveHeader = archive.vaultHeader();
+        VaultHeader existingHeader =
+                target.loadVaultHeader()
+                        .orElseThrow(
+                                () ->
+                                        new ValidationException(
+                                                "Backup restore requires an open target vault"));
+        if (!existingHeader.fingerprint().equals(archiveHeader.fingerprint())
+                || !existingHeader.vaultKeyId().equals(archiveHeader.vaultKeyId())) {
             throw new ValidationException(
-                    "Backup restore would overwrite a different local vault header");
+                    "Backup archive belongs to a different vault or vault key");
         }
-        target.saveVaultHeader(archive.vaultHeader());
         int imported = 0;
         int skipped = 0;
         List<BackupConflict> conflicts = new ArrayList<>();
         for (EncryptedSecretRecord record : archive.records()) {
             Optional<EncryptedSecretRecord> existing =
-                    target.loadSecretRecord(record.vaultId(), record.metadata().id());
+                    target.loadSecretRecord(record.metadata().id());
             if (existing.isPresent() && existing.get().revision() >= record.revision()) {
                 skipped++;
                 conflicts.add(
@@ -127,7 +127,7 @@ public final class VaultBackupService {
                 continue;
             }
             Optional<DeletedSecretRecord> deleted =
-                    target.loadDeletedSecretRecord(record.vaultId(), record.metadata().id());
+                    target.loadDeletedSecretRecord(record.metadata().id());
             if (deleted.isPresent() && deleted.get().revision() >= record.revision()) {
                 skipped++;
                 conflicts.add(
@@ -143,7 +143,7 @@ public final class VaultBackupService {
         int tombstones = 0;
         for (DeletedSecretRecord tombstone : archive.tombstones()) {
             Optional<EncryptedSecretRecord> existing =
-                    target.loadSecretRecord(tombstone.vaultId(), tombstone.secretId());
+                    target.loadSecretRecord(tombstone.secretId());
             if (existing.isPresent() && existing.get().revision() >= tombstone.revision()) {
                 skipped++;
                 conflicts.add(
@@ -154,7 +154,7 @@ public final class VaultBackupService {
                 continue;
             }
             Optional<DeletedSecretRecord> deleted =
-                    target.loadDeletedSecretRecord(tombstone.vaultId(), tombstone.secretId());
+                    target.loadDeletedSecretRecord(tombstone.secretId());
             if (deleted.isPresent() && deleted.get().revision() >= tombstone.revision()) {
                 skipped++;
                 conflicts.add(

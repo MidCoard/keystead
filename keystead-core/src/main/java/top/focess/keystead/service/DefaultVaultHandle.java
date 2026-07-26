@@ -20,35 +20,31 @@ import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.VaultKey;
 import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.*;
+import top.focess.keystead.store.OneFileVaultStore;
 import top.focess.keystead.store.VaultKeyRotation;
-import top.focess.keystead.store.VaultStore;
 
 final class DefaultVaultHandle implements VaultHandle {
 
-    private final VaultId vaultId;
-    private final VaultKey vaultKey;
-    private final VaultStore store;
+    private final OneFileVaultStore store;
     private final DefaultCryptoService crypto;
+    private final VaultKey vaultKey;
+    private final VaultFingerprint fingerprint;
     private final Clock clock;
     private boolean closed;
     private boolean rotationPrepared;
 
-    DefaultVaultHandle(
-            @NonNull VaultId vaultId,
-            @NonNull VaultKey vaultKey,
-            @NonNull VaultStore store,
-            @NonNull DefaultCryptoService crypto,
-            @NonNull Clock clock) {
-        this.vaultId = Objects.requireNonNull(vaultId, "vaultId");
-        this.vaultKey = Objects.requireNonNull(vaultKey, "vaultKey");
+    DefaultVaultHandle(@NonNull OneFileVaultStore store) {
         this.store = Objects.requireNonNull(store, "store");
-        this.crypto = Objects.requireNonNull(crypto, "crypto");
-        this.clock = Objects.requireNonNull(clock, "clock");
+        this.crypto = store.crypto();
+        this.vaultKey = store.vaultKey();
+        this.fingerprint = store.vaultFingerprint();
+        this.clock = store.clock();
     }
 
     @Override
-    public @NonNull VaultId vaultId() {
-        return vaultId;
+    public synchronized @NonNull VaultFingerprint vaultFingerprint() {
+        requireOpen();
+        return fingerprint;
     }
 
     @Override
@@ -74,7 +70,6 @@ final class DefaultVaultHandle implements VaultHandle {
             byte[] encodedPayload = LoginPayloadCodec.encode(draft);
             payload = encodedPayload;
             store.commitMutation(
-                    vaultId,
                     revision -> {
                         SecretMetadata metadata =
                                 new SecretMetadata(
@@ -93,8 +88,7 @@ final class DefaultVaultHandle implements VaultHandle {
                             EncryptedEnvelope envelope =
                                     crypto.encrypt(vaultKey, encodedPayload, aad, now);
                             store.saveSecretRecord(
-                                    new EncryptedSecretRecord(
-                                            vaultId, metadata, envelope, revision));
+                                    new EncryptedSecretRecord(metadata, envelope, revision));
                         } finally {
                             Wipe.wipe(aad);
                         }
@@ -115,7 +109,7 @@ final class DefaultVaultHandle implements VaultHandle {
         requireMutable();
 
         EncryptedSecretRecord existing =
-                store.loadSecretRecord(vaultId, secretId)
+                store.loadSecretRecord(secretId)
                         .orElseThrow(() -> new ValidationException("Login secret does not exist"));
         if (existing.metadata().type() != SecretType.LOGIN_PASSWORD) {
             throw new ValidationException("Secret is not a login password");
@@ -131,7 +125,6 @@ final class DefaultVaultHandle implements VaultHandle {
             byte[] encodedPayload = LoginPayloadCodec.encode(draft);
             payload = encodedPayload;
             store.commitMutation(
-                    vaultId,
                     revision -> {
                         SecretMetadata metadata =
                                 new SecretMetadata(
@@ -150,8 +143,7 @@ final class DefaultVaultHandle implements VaultHandle {
                             EncryptedEnvelope envelope =
                                     crypto.encrypt(vaultKey, encodedPayload, aad, now);
                             store.saveSecretRecord(
-                                    new EncryptedSecretRecord(
-                                            vaultId, metadata, envelope, revision));
+                                    new EncryptedSecretRecord(metadata, envelope, revision));
                         } finally {
                             Wipe.wipe(aad);
                         }
@@ -170,7 +162,7 @@ final class DefaultVaultHandle implements VaultHandle {
         requireOpen();
 
         EncryptedSecretRecord record =
-                store.loadSecretRecord(vaultId, secretId)
+                store.loadSecretRecord(secretId)
                         .orElseThrow(() -> new ValidationException("Login secret does not exist"));
         if (record.metadata().type() != SecretType.LOGIN_PASSWORD) {
             throw new ValidationException("Secret is not a login password");
@@ -210,7 +202,6 @@ final class DefaultVaultHandle implements VaultHandle {
             byte[] encodedPayload = SecureNotePayloadCodec.encode(draft);
             payload = encodedPayload;
             store.commitMutation(
-                    vaultId,
                     revision -> {
                         SecretMetadata metadata =
                                 new SecretMetadata(
@@ -229,8 +220,7 @@ final class DefaultVaultHandle implements VaultHandle {
                             EncryptedEnvelope envelope =
                                     crypto.encrypt(vaultKey, encodedPayload, aad, now);
                             store.saveSecretRecord(
-                                    new EncryptedSecretRecord(
-                                            vaultId, metadata, envelope, revision));
+                                    new EncryptedSecretRecord(metadata, envelope, revision));
                         } finally {
                             Wipe.wipe(aad);
                         }
@@ -250,7 +240,7 @@ final class DefaultVaultHandle implements VaultHandle {
         requireOpen();
 
         EncryptedSecretRecord record =
-                store.loadSecretRecord(vaultId, secretId)
+                store.loadSecretRecord(secretId)
                         .orElseThrow(() -> new ValidationException("Secure note does not exist"));
         if (record.metadata().type() != SecretType.SECURE_NOTE) {
             throw new ValidationException("Secret is not a secure note");
@@ -294,7 +284,6 @@ final class DefaultVaultHandle implements VaultHandle {
             byte[] encodedPayload = StructuredSecretPayloadCodec.encode(draft);
             payload = encodedPayload;
             store.commitMutation(
-                    vaultId,
                     revision -> {
                         SecretMetadata metadata =
                                 new SecretMetadata(
@@ -313,8 +302,7 @@ final class DefaultVaultHandle implements VaultHandle {
                             EncryptedEnvelope envelope =
                                     crypto.encrypt(vaultKey, encodedPayload, aad, now);
                             store.saveSecretRecord(
-                                    new EncryptedSecretRecord(
-                                            vaultId, metadata, envelope, revision));
+                                    new EncryptedSecretRecord(metadata, envelope, revision));
                         } finally {
                             Wipe.wipe(aad);
                         }
@@ -335,7 +323,7 @@ final class DefaultVaultHandle implements VaultHandle {
         requireMutable();
 
         EncryptedSecretRecord existing =
-                store.loadSecretRecord(vaultId, secretId)
+                store.loadSecretRecord(secretId)
                         .orElseThrow(
                                 () -> new ValidationException("Structured secret does not exist"));
         SecretType type = existing.metadata().type();
@@ -353,7 +341,6 @@ final class DefaultVaultHandle implements VaultHandle {
             byte[] encodedPayload = StructuredSecretPayloadCodec.encode(draft);
             payload = encodedPayload;
             store.commitMutation(
-                    vaultId,
                     revision -> {
                         SecretMetadata metadata =
                                 new SecretMetadata(
@@ -372,8 +359,7 @@ final class DefaultVaultHandle implements VaultHandle {
                             EncryptedEnvelope envelope =
                                     crypto.encrypt(vaultKey, encodedPayload, aad, now);
                             store.saveSecretRecord(
-                                    new EncryptedSecretRecord(
-                                            vaultId, metadata, envelope, revision));
+                                    new EncryptedSecretRecord(metadata, envelope, revision));
                         } finally {
                             Wipe.wipe(aad);
                         }
@@ -392,7 +378,7 @@ final class DefaultVaultHandle implements VaultHandle {
         requireOpen();
 
         EncryptedSecretRecord record =
-                store.loadSecretRecord(vaultId, secretId)
+                store.loadSecretRecord(secretId)
                         .orElseThrow(
                                 () -> new ValidationException("Structured secret does not exist"));
         requireStructuredType(record.metadata().type());
@@ -419,19 +405,17 @@ final class DefaultVaultHandle implements VaultHandle {
         requireOpen();
         requireMutable();
         store.commitMutation(
-                vaultId,
                 revision -> {
                     @Nullable EncryptedSecretRecord existing =
-                            store.loadSecretRecord(vaultId, secretId).orElse(null);
+                            store.loadSecretRecord(secretId).orElse(null);
                     if (existing != null) {
                         store.saveDeletedSecretRecord(
                                 new DeletedSecretRecord(
-                                        vaultId,
                                         secretId,
                                         existing.metadata().type(),
                                         revision,
                                         clock.instant()));
-                        store.deleteSecretRecord(vaultId, secretId);
+                        store.deleteSecretRecord(secretId);
                     }
                 });
     }
@@ -439,7 +423,7 @@ final class DefaultVaultHandle implements VaultHandle {
     @Override
     public synchronized @NonNull List<SecretMetadata> listSecrets() {
         requireOpen();
-        return store.listMetadata(vaultId);
+        return store.listMetadata();
     }
 
     @Override
@@ -448,16 +432,20 @@ final class DefaultVaultHandle implements VaultHandle {
         if (sinceRevision < 0) {
             throw new ValidationException("Since revision must not be negative");
         }
-        return store.listSecretRecords(vaultId).stream()
+        String fingerprintText = fingerprint.toHexString();
+        return store.listSecretRecords().stream()
                 .filter(record -> record.revision() > sinceRevision)
-                .map(this::exportRecord)
+                .map(record -> exportRecord(fingerprintText, record))
                 .collect(
                         java.util.stream.Collectors.collectingAndThen(
                                 java.util.stream.Collectors.toCollection(java.util.ArrayList::new),
                                 records -> {
-                                    store.listDeletedSecretRecords(vaultId).stream()
+                                    store.listDeletedSecretRecords().stream()
                                             .filter(record -> record.revision() > sinceRevision)
-                                            .map(this::exportDeletedRecord)
+                                            .map(
+                                                    record ->
+                                                            exportDeletedRecord(
+                                                                    fingerprintText, record))
                                             .forEach(records::add);
                                     records.sort(
                                             java.util.Comparator.comparingLong(
@@ -511,6 +499,7 @@ final class DefaultVaultHandle implements VaultHandle {
         Objects.requireNonNull(context, "context");
         requireOpen();
         return new DeviceVaultKeyPackage(
+                fingerprint,
                 vaultKey.keyId(),
                 DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
                 crypto.wrapVaultKeyForDevice(vaultKey, devicePublicKey, context));
@@ -519,7 +508,8 @@ final class DefaultVaultHandle implements VaultHandle {
     @Override
     public synchronized @NonNull PreparedVaultKeyRotation prepareVaultKeyRotation() {
         requireOpen();
-        KeyId targetKeyId = new KeyId("vault-key-" + vaultId.value() + "-" + UUID.randomUUID());
+        requireMutable();
+        KeyId targetKeyId = new KeyId("vault-" + UUID.randomUUID());
         VaultKey targetKey = crypto.generateVaultKey(targetKeyId);
         return beginPreparedRotation(targetKey, null);
     }
@@ -533,6 +523,10 @@ final class DefaultVaultHandle implements VaultHandle {
         Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
         Objects.requireNonNull(context, "context");
         requireOpen();
+        requireMutable();
+        if (!fingerprint.equals(stagedPackage.fingerprint())) {
+            throw new ValidationException("Staged package belongs to a different vault");
+        }
         if (vaultKey.keyId().equals(stagedPackage.vaultKeyId())) {
             throw new ValidationException("Staged package must contain a new vault key");
         }
@@ -563,27 +557,27 @@ final class DefaultVaultHandle implements VaultHandle {
     @Override
     public synchronized void close() {
         if (!closed) {
-            vaultKey.close();
             closed = true;
+            store.close();
         }
     }
 
     private byte @NonNull [] aad(@NonNull SecretMetadata metadata, long revision) {
-        return SecretRecordAad.encode(vaultId, metadata, revision);
+        return SecretRecordAad.encode(fingerprint, metadata, revision);
     }
 
-    private @NonNull EncryptedSyncRecord exportRecord(@NonNull EncryptedSecretRecord record) {
+    private @NonNull EncryptedSyncRecord exportRecord(
+            @NonNull String fingerprintText, @NonNull EncryptedSecretRecord record) {
         SecretMetadata metadata = record.metadata();
-        String vaultIdText = record.vaultId().value().toString();
         String secretIdText = metadata.id().value().toString();
         byte[] profileBytes = SyncRecordCodec.profileBytes(metadata);
         byte[] profileAad =
-                SyncRecordCodec.profileAad(vaultIdText, secretIdText, record.revision());
+                SyncRecordCodec.profileAad(fingerprintText, secretIdText, record.revision());
         try {
             EncryptedEnvelope encryptedProfile =
                     crypto.encrypt(vaultKey, profileBytes, profileAad, clock.instant());
             return new EncryptedSyncRecord(
-                    vaultIdText,
+                    fingerprintText,
                     secretIdText,
                     record.revision(),
                     metadata.type().name(),
@@ -596,9 +590,10 @@ final class DefaultVaultHandle implements VaultHandle {
         }
     }
 
-    private @NonNull EncryptedSyncRecord exportDeletedRecord(@NonNull DeletedSecretRecord record) {
+    private @NonNull EncryptedSyncRecord exportDeletedRecord(
+            @NonNull String fingerprintText, @NonNull DeletedSecretRecord record) {
         return new EncryptedSyncRecord(
-                record.vaultId().value().toString(),
+                fingerprintText,
                 record.secretId().value().toString(),
                 record.revision(),
                 record.secretType().name(),
@@ -611,10 +606,9 @@ final class DefaultVaultHandle implements VaultHandle {
         Objects.requireNonNull(record, "record");
         requireSyncRecordPreflight(record);
         SecretId secretId = new SecretId(UUID.fromString(record.secretId()));
-        @Nullable EncryptedSecretRecord existing =
-                store.loadSecretRecord(vaultId, secretId).orElse(null);
+        @Nullable EncryptedSecretRecord existing = store.loadSecretRecord(secretId).orElse(null);
         @Nullable DeletedSecretRecord deleted =
-                store.loadDeletedSecretRecord(vaultId, secretId).orElse(null);
+                store.loadDeletedSecretRecord(secretId).orElse(null);
         if (deleted != null && deleted.revision() >= record.revision()) {
             return skippedOrConflict(record, deleted.revision(), true);
         }
@@ -624,17 +618,17 @@ final class DefaultVaultHandle implements VaultHandle {
         if (record.deleted()) {
             store.saveDeletedSecretRecord(
                     new DeletedSecretRecord(
-                            vaultId,
                             secretId,
                             SecretType.valueOf(record.secretType()),
                             record.revision(),
                             clock.instant()));
-            store.deleteSecretRecord(vaultId, secretId);
+            store.deleteSecretRecord(secretId);
             return ImportOutcome.importedOutcome();
         }
 
         byte[] profileAad =
-                SyncRecordCodec.profileAad(record.vaultId(), record.secretId(), record.revision());
+                SyncRecordCodec.profileAad(
+                        record.fingerprint(), record.secretId(), record.revision());
         byte @Nullable [] profileBytes = null;
         byte @Nullable [] payloadAad = null;
         try {
@@ -646,8 +640,7 @@ final class DefaultVaultHandle implements VaultHandle {
             EncryptedEnvelope payloadEnvelope =
                     SyncRecordCodec.envelopeWithAad(record.envelope(), payloadAad);
             store.saveSecretRecord(
-                    new EncryptedSecretRecord(
-                            vaultId, metadata, payloadEnvelope, record.revision()));
+                    new EncryptedSecretRecord(metadata, payloadEnvelope, record.revision()));
             return ImportOutcome.importedOutcome();
         } finally {
             Wipe.wipe(profileAad);
@@ -686,7 +679,8 @@ final class DefaultVaultHandle implements VaultHandle {
 
     private void requireActiveSyncRecordDecodable(@NonNull EncryptedSyncRecord record) {
         byte[] profileAad =
-                SyncRecordCodec.profileAad(record.vaultId(), record.secretId(), record.revision());
+                SyncRecordCodec.profileAad(
+                        record.fingerprint(), record.secretId(), record.revision());
         byte @Nullable [] profileBytes = null;
         byte @Nullable [] payloadAad = null;
         byte @Nullable [] payloadBytes = null;
@@ -710,7 +704,7 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     private void requireSyncRecordVault(@NonNull EncryptedSyncRecord record) {
-        if (!vaultId.value().toString().equals(record.vaultId())) {
+        if (!fingerprint.toHexString().equals(record.fingerprint())) {
             throw new ValidationException("Sync record belongs to a different vault");
         }
     }
@@ -720,7 +714,7 @@ final class DefaultVaultHandle implements VaultHandle {
         if (localDeleted != record.deleted()) {
             return ImportOutcome.conflict(
                     new SyncImportConflict(
-                            record.vaultId(),
+                            record.fingerprint(),
                             record.secretId(),
                             localRevision,
                             record.revision(),
@@ -784,9 +778,10 @@ final class DefaultVaultHandle implements VaultHandle {
         rotationPrepared = false;
     }
 
+    /** Marks this handle closed without closing the store, transferring store ownership to a new
+     * handle produced by a committed rotation. */
     private synchronized void completePreparedRotation() {
         requireOpen();
-        vaultKey.close();
         closed = true;
         rotationPrepared = false;
     }
@@ -805,9 +800,7 @@ final class DefaultVaultHandle implements VaultHandle {
         private DefaultPreparedVaultKeyRotation(
                 @NonNull VaultKey targetKey, @Nullable DeviceVaultKeyPackage stagedPackage) {
             this.targetKey = targetKey;
-            this.previousHeader =
-                    store.loadVaultHeader(vaultId)
-                            .orElseThrow(() -> new ValidationException("Vault does not exist"));
+            this.previousHeader = store.header();
             if (!previousHeader.vaultKeyId().equals(sourceKeyId)) {
                 throw new ValidationException("Vault key changed before rotation preparation");
             }
@@ -818,8 +811,8 @@ final class DefaultVaultHandle implements VaultHandle {
         }
 
         @Override
-        public @NonNull VaultId vaultId() {
-            return vaultId;
+        public @NonNull VaultFingerprint vaultFingerprint() {
+            return fingerprint;
         }
 
         @Override
@@ -841,6 +834,7 @@ final class DefaultVaultHandle implements VaultHandle {
                 requirePreparedOpen();
                 DeviceVaultKeyPackage keyPackage =
                         new DeviceVaultKeyPackage(
+                                fingerprint,
                                 targetKey.keyId(),
                                 DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
                                 crypto.wrapVaultKeyForDevice(targetKey, publicKey, context));
@@ -867,22 +861,15 @@ final class DefaultVaultHandle implements VaultHandle {
                 byte[] wrapped = localPackage.encryptedVaultKey();
                 try {
                     Instant now = clock.instant();
+                    KeySlot deviceSlot =
+                            new KeySlot(SlotType.DEVICE, localPackage.vaultKeyId(), null, wrapped);
+                    VaultHeader newHeader =
+                            previousHeader.withVaultKey(
+                                    targetKey.keyId(), List.of(deviceSlot), now);
                     store.commitVaultKeyRotation(
-                            new VaultKeyRotation(
-                                    new VaultHeader(
-                                            vaultId,
-                                            previousHeader.formatVersion(),
-                                            localPackage.keyAlgorithm(),
-                                            new byte[0],
-                                            1,
-                                            targetKey.keyId(),
-                                            wrapped,
-                                            previousHeader.createdAt(),
-                                            now),
-                                    rotatedRecords));
+                            new VaultKeyRotation(newHeader, rotatedRecords, targetKey));
                     completePreparedRotation();
-                    DefaultVaultHandle rotated =
-                            new DefaultVaultHandle(vaultId, targetKey, store, crypto, clock);
+                    DefaultVaultHandle rotated = new DefaultVaultHandle(store);
                     committed = true;
                     targetTransferred = true;
                     return rotated;
@@ -914,9 +901,9 @@ final class DefaultVaultHandle implements VaultHandle {
 
         @Override
         public synchronized @NonNull String toString() {
-            return "PreparedVaultKeyRotation[vaultId=%s, sourceVaultKeyId=%s, targetVaultKeyId=%s, packages=%d, committed=%s, closed=%s]"
+            return "PreparedVaultKeyRotation[fingerprint=%s, sourceVaultKeyId=%s, targetVaultKeyId=%s, packages=%d, committed=%s, closed=%s]"
                     .formatted(
-                            vaultId,
+                            fingerprint,
                             sourceKeyId,
                             targetKey.keyId(),
                             acceptedPackageFingerprints.size(),
@@ -926,14 +913,14 @@ final class DefaultVaultHandle implements VaultHandle {
 
         private @NonNull List<EncryptedSecretRecord> rotateRecords(@NonNull VaultKey nextKey) {
             List<EncryptedSecretRecord> records = new ArrayList<>();
-            for (EncryptedSecretRecord record : store.listSecretRecords(vaultId)) {
-                byte[] aad = SecretRecordAad.encode(vaultId, record.metadata(), record.revision());
+            for (EncryptedSecretRecord record : store.listSecretRecords()) {
+                byte[] aad =
+                        SecretRecordAad.encode(fingerprint, record.metadata(), record.revision());
                 byte @Nullable [] plaintext = null;
                 try {
                     plaintext = crypto.decrypt(vaultKey, record.payload(), aad);
                     records.add(
                             new EncryptedSecretRecord(
-                                    vaultId,
                                     record.metadata(),
                                     crypto.encrypt(nextKey, plaintext, aad, clock.instant()),
                                     record.revision()));
@@ -959,6 +946,7 @@ final class DefaultVaultHandle implements VaultHandle {
     private @NonNull String packageFingerprint(@NonNull DeviceVaultKeyPackage keyPackage) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateDigest(digest, keyPackage.fingerprint().value());
             updateDigest(digest, keyPackage.vaultKeyId().value().getBytes(StandardCharsets.UTF_8));
             updateDigest(digest, keyPackage.keyAlgorithm().getBytes(StandardCharsets.UTF_8));
             byte[] encryptedVaultKey = keyPackage.encryptedVaultKey();

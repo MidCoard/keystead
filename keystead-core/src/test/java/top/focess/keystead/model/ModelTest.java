@@ -7,16 +7,17 @@ import static top.focess.keystead.model.SecurityLimits.MAX_KDF_SALT_BYTES;
 import static top.focess.keystead.model.SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import top.focess.keystead.crypto.KdfParameters;
 
 class ModelTest {
 
     @Test
     void identifiersRejectNullValues() {
-        assertThrows(NullPointerException.class, () -> new VaultId(null));
         assertThrows(NullPointerException.class, () -> new SecretId(null));
         assertThrows(NullPointerException.class, () -> new KeyId(null));
     }
@@ -112,9 +113,7 @@ class ModelTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        new EncryptedSecretRecord(
-                                new VaultId(UUID.randomUUID()), metadata, envelope, 5L));
+                () -> new EncryptedSecretRecord(metadata, envelope, 5L));
     }
 
     @Test
@@ -123,7 +122,6 @@ class ModelTest {
                 IllegalArgumentException.class,
                 () ->
                         new DeletedSecretRecord(
-                                new VaultId(UUID.randomUUID()),
                                 new SecretId(UUID.randomUUID()),
                                 SecretType.API_TOKEN,
                                 0L,
@@ -335,18 +333,16 @@ class ModelTest {
     void vaultHeaderRedactsWrappedVaultKey() {
         VaultHeader header =
                 new VaultHeader(
-                        new VaultId(UUID.randomUUID()),
                         1,
-                        "PBKDF2WithHmacSHA256",
-                        new byte[] {1, 2},
-                        120_000,
+                        fingerprint(),
                         new KeyId("vault-key"),
-                        new byte[] {3, 4},
+                        List.of(passphraseSlot(new byte[] {1, 2}, new byte[] {3, 4})),
                         Instant.parse("2026-07-02T00:00:00Z"),
                         Instant.parse("2026-07-02T00:01:00Z"));
+        KeySlot slot = header.firstPassphraseSlot().orElseThrow();
 
-        assertTrue(header.toString().contains("wrappedVaultKey=[REDACTED"));
-        assertFalse(header.toString().contains("3, 4"));
+        assertTrue(slot.toString().contains("wrappedVaultKey=[REDACTED"));
+        assertFalse(slot.toString().contains("3, 4"));
     }
 
     @Test
@@ -355,13 +351,10 @@ class ModelTest {
                 IllegalArgumentException.class,
                 () ->
                         new VaultHeader(
-                                new VaultId(UUID.randomUUID()),
                                 1,
-                                "PBKDF2WithHmacSHA256",
-                                new byte[] {1, 2},
-                                120_000,
+                                fingerprint(),
                                 new KeyId("vault-key"),
-                                new byte[] {3, 4},
+                                List.of(passphraseSlot(new byte[] {1, 2}, new byte[] {3, 4})),
                                 Instant.parse("2026-07-02T00:01:00Z"),
                                 Instant.parse("2026-07-02T00:00:00Z")));
     }
@@ -370,18 +363,19 @@ class ModelTest {
     void vaultHeaderAcceptsExactSaltAndWrappedKeyLimits() {
         VaultHeader header =
                 new VaultHeader(
-                        new VaultId(UUID.randomUUID()),
                         1,
-                        "PBKDF2WithHmacSHA256",
-                        new byte[MAX_KDF_SALT_BYTES],
-                        120_000,
+                        fingerprint(),
                         new KeyId("vault-key"),
-                        new byte[MAX_WRAPPED_KEY_PACKAGE_BYTES],
+                        List.of(
+                                passphraseSlot(
+                                        new byte[MAX_KDF_SALT_BYTES],
+                                        new byte[MAX_WRAPPED_KEY_PACKAGE_BYTES])),
                         Instant.parse("2026-07-02T00:00:00Z"),
                         Instant.parse("2026-07-02T00:01:00Z"));
+        KeySlot slot = header.firstPassphraseSlot().orElseThrow();
 
-        assertEquals(MAX_KDF_SALT_BYTES, header.kdfSalt().length);
-        assertEquals(MAX_WRAPPED_KEY_PACKAGE_BYTES, header.wrappedVaultKey().length);
+        assertEquals(MAX_KDF_SALT_BYTES, slot.kdfParameters().salt().length);
+        assertEquals(MAX_WRAPPED_KEY_PACKAGE_BYTES, slot.wrappedVaultKey().length);
     }
 
     @Test
@@ -390,26 +384,25 @@ class ModelTest {
                 IllegalArgumentException.class,
                 () ->
                         new VaultHeader(
-                                new VaultId(UUID.randomUUID()),
                                 1,
-                                "PBKDF2WithHmacSHA256",
-                                new byte[MAX_KDF_SALT_BYTES + 1],
-                                120_000,
+                                fingerprint(),
                                 new KeyId("vault-key"),
-                                new byte[1],
+                                List.of(
+                                        passphraseSlot(
+                                                new byte[MAX_KDF_SALT_BYTES + 1], new byte[1])),
                                 Instant.parse("2026-07-02T00:00:00Z"),
                                 Instant.parse("2026-07-02T00:01:00Z")));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new VaultHeader(
-                                new VaultId(UUID.randomUUID()),
                                 1,
-                                "PBKDF2WithHmacSHA256",
-                                new byte[1],
-                                120_000,
+                                fingerprint(),
                                 new KeyId("vault-key"),
-                                new byte[MAX_WRAPPED_KEY_PACKAGE_BYTES + 1],
+                                List.of(
+                                        passphraseSlot(
+                                                new byte[1],
+                                                new byte[MAX_WRAPPED_KEY_PACKAGE_BYTES + 1])),
                                 Instant.parse("2026-07-02T00:00:00Z"),
                                 Instant.parse("2026-07-02T00:01:00Z")));
     }
@@ -435,14 +428,23 @@ class ModelTest {
                 IllegalArgumentException.class,
                 () ->
                         new VaultHeader(
-                                new VaultId(UUID.randomUUID()),
                                 0,
-                                "PBKDF2WithHmacSHA256",
-                                new byte[] {1, 2},
-                                120_000,
+                                fingerprint(),
                                 new KeyId("vault-key"),
-                                new byte[] {3, 4},
+                                List.of(passphraseSlot(new byte[] {1, 2}, new byte[] {3, 4})),
                                 Instant.parse("2026-07-02T00:00:00Z"),
                                 Instant.parse("2026-07-02T00:01:00Z")));
+    }
+
+    private static VaultFingerprint fingerprint() {
+        return new VaultFingerprint(new byte[VaultFingerprint.BYTES]);
+    }
+
+    private static KeySlot passphraseSlot(byte[] salt, byte[] wrappedVaultKey) {
+        return new KeySlot(
+                SlotType.PASSPHRASE,
+                new KeyId("passphrase"),
+                KdfParameters.argon2id(salt, 2, 19_456, 1),
+                wrappedVaultKey);
     }
 }

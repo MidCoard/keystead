@@ -7,9 +7,10 @@ import top.focess.keystead.model.SecurityLimits;
 
 /**
  * An encrypted secret record exchanged with a sync server. Active records carry an encrypted profile
- * and envelope; deleted records carry neither.
+ * and envelope; deleted records carry neither. Routing is keyed by the vault fingerprint rather than
+ * the v0.2 vault id.
  *
- * @param vaultId the vault id
+ * @param fingerprint the vault fingerprint (hex)
  * @param secretId the secret id
  * @param revision the monotonic record revision
  * @param secretType the secret type name
@@ -18,7 +19,7 @@ import top.focess.keystead.model.SecurityLimits;
  * @param deleted whether this record is a tombstone
  */
 public record EncryptedSyncRecord(
-        @NonNull String vaultId,
+        @NonNull String fingerprint,
         @NonNull String secretId,
         long revision,
         @NonNull String secretType,
@@ -28,7 +29,7 @@ public record EncryptedSyncRecord(
 
     /** Validates the record components. */
     public EncryptedSyncRecord {
-        requireNotBlank(vaultId, "vaultId");
+        requireNotBlank(fingerprint, "fingerprint");
         requireNotBlank(secretId, "secretId");
         requireNotBlank(secretType, "secretType");
         Objects.requireNonNull(encryptedProfile, "encryptedProfile");

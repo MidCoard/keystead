@@ -17,40 +17,45 @@ final class RecoveryContextCodec {
     private static final byte[] VERSION_2_MAGIC = {'K', 'R', 'C', '2'};
     private static final int MAX_TEXT_FIELD_BYTES = 64 * 1024;
 
-    private static final byte[] LEGACY_PREFIX =
-            "keystead-recovery-vault-package-v1|user:".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] LEGACY_VAULT = "|vault:".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] LEGACY_ENROLLMENT =
-            "|enrollment:".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] LEGACY_GENERATION =
-            "|generation:".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] LEGACY_KEY = "|key:".getBytes(StandardCharsets.US_ASCII);
-
     private RecoveryContextCodec() {}
 
+    /**
+     * Encodes the v2 recovery wrapping context, binding the wrapped vault key to the account, vault
+     * fingerprint, enrollment, generation, and target key id.
+     *
+     * <p>The vault fingerprint (a non-secret, passphrase-derived routing identity, carried as a hex
+     * string) replaces the v0.2 vault id as the vault-identity field.
+     *
+     * @param username the account username
+     * @param fingerprint the vault fingerprint as a hex string
+     * @param enrollmentId the recovery enrollment identifier
+     * @param generation the enrollment generation; must be positive
+     * @param keyId the id of the wrapped vault key
+     * @return the encoded context bytes
+     */
     static byte @NonNull [] version2(
             @NonNull String username,
-            @NonNull String vaultId,
+            @NonNull String fingerprint,
             @NonNull String enrollmentId,
             long generation,
             @NonNull String keyId) {
         requirePositiveGeneration(generation);
         byte @Nullable [] encodedUsername = null;
-        byte @Nullable [] encodedVaultId = null;
+        byte @Nullable [] encodedFingerprint = null;
         byte @Nullable [] encodedEnrollmentId = null;
         byte @Nullable [] encodedKeyId = null;
         byte @Nullable [] output = null;
         boolean completed = false;
         try {
             encodedUsername = encodeText(username);
-            encodedVaultId = encodeText(vaultId);
+            encodedFingerprint = encodeText(fingerprint);
             encodedEnrollmentId = encodeText(enrollmentId);
             encodedKeyId = encodeText(keyId);
             int outputLength =
                     VERSION_2_MAGIC.length
                             + Integer.BYTES * 4
                             + encodedUsername.length
-                            + encodedVaultId.length
+                            + encodedFingerprint.length
                             + encodedEnrollmentId.length
                             + Long.BYTES
                             + encodedKeyId.length;
@@ -59,8 +64,8 @@ final class RecoveryContextCodec {
                     .put(VERSION_2_MAGIC)
                     .putInt(encodedUsername.length)
                     .put(encodedUsername)
-                    .putInt(encodedVaultId.length)
-                    .put(encodedVaultId)
+                    .putInt(encodedFingerprint.length)
+                    .put(encodedFingerprint)
                     .putInt(encodedEnrollmentId.length)
                     .put(encodedEnrollmentId)
                     .putLong(generation)
@@ -70,65 +75,8 @@ final class RecoveryContextCodec {
             return output;
         } finally {
             Wipe.wipe(encodedUsername);
-            Wipe.wipe(encodedVaultId);
+            Wipe.wipe(encodedFingerprint);
             Wipe.wipe(encodedEnrollmentId);
-            Wipe.wipe(encodedKeyId);
-            if (!completed) {
-                Wipe.wipe(output);
-            }
-        }
-    }
-
-    static byte @NonNull [] legacyVersion1(
-            @NonNull String username,
-            @NonNull String vaultId,
-            @NonNull String enrollmentId,
-            long generation,
-            @NonNull String keyId) {
-        requirePositiveGeneration(generation);
-        byte @Nullable [] encodedUsername = null;
-        byte @Nullable [] encodedVaultId = null;
-        byte @Nullable [] encodedEnrollmentId = null;
-        byte @Nullable [] encodedGeneration = null;
-        byte @Nullable [] encodedKeyId = null;
-        byte @Nullable [] output = null;
-        boolean completed = false;
-        try {
-            encodedUsername = encodeText(username);
-            encodedVaultId = encodeText(vaultId);
-            encodedEnrollmentId = encodeText(enrollmentId);
-            encodedGeneration = Long.toString(generation).getBytes(StandardCharsets.US_ASCII);
-            encodedKeyId = encodeText(keyId);
-            int outputLength =
-                    LEGACY_PREFIX.length
-                            + encodedUsername.length
-                            + LEGACY_VAULT.length
-                            + encodedVaultId.length
-                            + LEGACY_ENROLLMENT.length
-                            + encodedEnrollmentId.length
-                            + LEGACY_GENERATION.length
-                            + encodedGeneration.length
-                            + LEGACY_KEY.length
-                            + encodedKeyId.length;
-            output = new byte[outputLength];
-            ByteBuffer.wrap(output)
-                    .put(LEGACY_PREFIX)
-                    .put(encodedUsername)
-                    .put(LEGACY_VAULT)
-                    .put(encodedVaultId)
-                    .put(LEGACY_ENROLLMENT)
-                    .put(encodedEnrollmentId)
-                    .put(LEGACY_GENERATION)
-                    .put(encodedGeneration)
-                    .put(LEGACY_KEY)
-                    .put(encodedKeyId);
-            completed = true;
-            return output;
-        } finally {
-            Wipe.wipe(encodedUsername);
-            Wipe.wipe(encodedVaultId);
-            Wipe.wipe(encodedEnrollmentId);
-            Wipe.wipe(encodedGeneration);
             Wipe.wipe(encodedKeyId);
             if (!completed) {
                 Wipe.wipe(output);

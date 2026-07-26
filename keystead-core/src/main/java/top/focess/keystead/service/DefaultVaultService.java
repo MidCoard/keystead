@@ -1,27 +1,41 @@
 package top.focess.keystead.service;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
+import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.crypto.DefaultCryptoService;
+import top.focess.keystead.crypto.KdfParameters;
 import top.focess.keystead.crypto.VaultKey;
 import top.focess.keystead.memory.Wipe;
+import top.focess.keystead.model.EncryptedSecretRecord;
 import top.focess.keystead.model.KeyId;
+import top.focess.keystead.model.KeySlot;
 import top.focess.keystead.model.SecretRecordAad;
-import top.focess.keystead.model.SecurityLimits;
+import top.focess.keystead.model.SlotType;
+import top.focess.keystead.model.VaultFingerprint;
 import top.focess.keystead.model.VaultHeader;
-import top.focess.keystead.model.VaultId;
+import top.focess.keystead.store.OneFileVaultStore;
+import top.focess.keystead.store.VaultFileFormat;
 import top.focess.keystead.store.VaultKeyRotation;
-import top.focess.keystead.store.VaultStore;
 
 /**
- * Default {@link VaultService} implementation that derives and wraps vault keys and delegates
- * persistence to a {@link top.focess.keystead.store.VaultStore}.
+ * Default {@link VaultService} implementation backed by {@link OneFileVaultStore} factories.
+ *
+ * <p>Each create/open/provision call produces a fresh, single-file store bound to one vault file.
+ * The service holds only the cryptographic service, the clock, and the handle factory; it owns no
+ * long-lived store. Vault-key rotation re-wraps the passphrase slot under the same Argon2id
+ * parameters so the fingerprint is unchanged.
  */
 public final class DefaultVaultService implements VaultService {
 
@@ -29,48 +43,29 @@ public final class DefaultVaultService implements VaultService {
     public static final @NonNull String DEVICE_KEY_PACKAGE_ALGORITHM =
             CryptoAlgorithmRegistry.DEVICE_TINK_DEVICE_KEY_PACKAGE;
 
-    private final VaultStore store;
     private final DefaultCryptoService crypto;
     private final Clock clock;
     private final VaultHandleFactory handleFactory;
 
-    /**
-     * Creates a service with a default crypto service and system clock.
-     *
-     * @param store the vault store
-     */
-    public DefaultVaultService(@NonNull VaultStore store) {
-        this(store, Clock.systemUTC());
+    /** Creates a service with a default crypto service and system clock. */
+    public DefaultVaultService() {
+        this(new DefaultCryptoService(), Clock.systemUTC());
     }
 
     /**
-     * Creates a service with a default crypto service and the supplied clock.
+     * Creates a service with the supplied crypto service and clock.
      *
-     * @param store the vault store
+     * @param crypto the cryptographic service
      * @param clock the clock for timestamps
      */
-    public DefaultVaultService(@NonNull VaultStore store, @NonNull Clock clock) {
-        this(store, new DefaultCryptoService(), clock);
-    }
-
-    /**
-     * Creates a service with the supplied store, crypto service, and clock.
-     *
-     * @param store the vault store
-     * @param crypto the crypto service
-     * @param clock the clock for timestamps
-     */
-    public DefaultVaultService(
-            @NonNull VaultStore store, @NonNull DefaultCryptoService crypto, @NonNull Clock clock) {
-        this(store, crypto, clock, DefaultVaultHandle::new);
+    public DefaultVaultService(@NonNull DefaultCryptoService crypto, @NonNull Clock clock) {
+        this(crypto, clock, DefaultVaultHandle::new);
     }
 
     DefaultVaultService(
-            @NonNull VaultStore store,
             @NonNull DefaultCryptoService crypto,
             @NonNull Clock clock,
             @NonNull VaultHandleFactory handleFactory) {
-        this.store = Objects.requireNonNull(store, "store");
         this.crypto = Objects.requireNonNull(crypto, "crypto");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.handleFactory = Objects.requireNonNull(handleFactory, "handleFactory");
@@ -78,299 +73,254 @@ public final class DefaultVaultService implements VaultService {
 
     @Override
     public @NonNull VaultHandle createVault(
-            @NonNull CreateVaultRequest request, char @NonNull [] masterPassword) {
+            @NonNull CreateVaultRequest request, char @NonNull [] passphrase) {
         Objects.requireNonNull(request, "request");
-        Objects.requireNonNull(masterPassword, "masterPassword");
-
-        VaultId vaultId = request.vaultId();
-        KeyId keyId = new KeyId("vault-key-" + vaultId.value());
-        VaultKey vaultKey = crypto.generateVaultKey(keyId);
-        byte @Nullable [] salt = null;
-        byte @Nullable [] wrappedVaultKey = null;
-        boolean transferred = false;
+        Objects.requireNonNull(passphrase, "passphrase");
+        OneFileVaultStore store =
+                OneFileVaultStore.create(crypto, request.file(), passphrase, clock);
+        boolean storeTransferred = false;
         try {
-            salt = crypto.randomSalt();
-            wrappedVaultKey =
-                    crypto.wrapVaultKey(
-                            vaultKey,
-                            masterPassword,
-                            salt,
-                            DefaultCryptoService.DEFAULT_KDF_ITERATIONS);
-            Instant now = clock.instant();
-            store.saveVaultHeader(
-                    new VaultHeader(
-                            vaultId,
-                            1,
-                            DefaultCryptoService.KDF_ALGORITHM,
-                            salt,
-                            DefaultCryptoService.DEFAULT_KDF_ITERATIONS,
-                            keyId,
-                            wrappedVaultKey,
-                            now,
-                            now));
-            VaultHandle handle =
-                    Objects.requireNonNull(
-                            handleFactory.create(vaultId, vaultKey, store, crypto, clock),
-                            "vault handle");
-            transferred = true;
+            VaultHandle handle = handleFactory.create(store);
+            storeTransferred = true;
             return handle;
         } finally {
-            if (!transferred) {
-                vaultKey.close();
-            }
-            Wipe.wipe(salt);
-            Wipe.wipe(wrappedVaultKey);
-        }
-    }
-
-    @Override
-    public @NonNull VaultHandle openVault(
-            @NonNull VaultId vaultId, char @NonNull [] masterPassword) {
-        Objects.requireNonNull(vaultId, "vaultId");
-        Objects.requireNonNull(masterPassword, "masterPassword");
-
-        VaultHeader header =
-                store.loadVaultHeader(vaultId)
-                        .orElseThrow(() -> new ValidationException("Vault does not exist"));
-        if (!crypto.supportsPasswordKdf(header.kdfAlgorithm())) {
-            throw new ValidationException("Vault is not protected by a master password header");
-        }
-        VaultKey vaultKey =
-                crypto.unwrapVaultKey(
-                        header.vaultKeyId(),
-                        header.wrappedVaultKey(),
-                        masterPassword,
-                        header.kdfParameters());
-        boolean transferred = false;
-        try {
-            VaultHandle handle =
-                    Objects.requireNonNull(
-                            handleFactory.create(vaultId, vaultKey, store, crypto, clock),
-                            "vault handle");
-            transferred = true;
-            return handle;
-        } finally {
-            if (!transferred) {
-                vaultKey.close();
+            if (!storeTransferred) {
+                store.close();
             }
         }
     }
 
     @Override
-    public @NonNull VaultHandle rotateVaultKey(
-            @NonNull VaultId vaultId, char @NonNull [] masterPassword) {
-        Objects.requireNonNull(vaultId, "vaultId");
-        Objects.requireNonNull(masterPassword, "masterPassword");
-        VaultHeader previous =
-                store.loadVaultHeader(vaultId)
-                        .orElseThrow(() -> new ValidationException("Vault does not exist"));
-        if (!crypto.supportsPasswordKdf(previous.kdfAlgorithm())) {
-            throw new ValidationException("Vault is not protected by a master password header");
+    public @NonNull VaultHandle openVault(@NonNull Path file, char @NonNull [] passphrase) {
+        Objects.requireNonNull(file, "file");
+        Objects.requireNonNull(passphrase, "passphrase");
+        OneFileVaultStore store = OneFileVaultStore.open(crypto, file, passphrase, clock);
+        boolean storeTransferred = false;
+        try {
+            VaultHandle handle = handleFactory.create(store);
+            storeTransferred = true;
+            return handle;
+        } finally {
+            if (!storeTransferred) {
+                store.close();
+            }
         }
-        VaultKey oldKey =
-                crypto.unwrapVaultKey(
-                        previous.vaultKeyId(),
-                        previous.wrappedVaultKey(),
-                        masterPassword,
-                        previous.kdfParameters());
-        @Nullable VaultKey nextKey = null;
+    }
+
+    @Override
+    public @NonNull VaultHandle rotateVaultKey(@NonNull Path file, char @NonNull [] passphrase) {
+        Objects.requireNonNull(file, "file");
+        Objects.requireNonNull(passphrase, "passphrase");
+        OneFileVaultStore store = OneFileVaultStore.open(crypto, file, passphrase, clock);
+        boolean storeTransferred = false;
+        @Nullable VaultKey nextDek = null;
         byte @Nullable [] wrapped = null;
-        boolean transferred = false;
         try {
-            KeyId nextKeyId =
-                    new KeyId("vault-key-" + vaultId.value() + "-" + java.util.UUID.randomUUID());
-            nextKey = crypto.generateVaultKey(nextKeyId);
-            List<top.focess.keystead.model.EncryptedSecretRecord> rotated = new ArrayList<>();
-            for (top.focess.keystead.model.EncryptedSecretRecord record :
-                    store.listSecretRecords(vaultId)) {
-                byte[] aad = SecretRecordAad.encode(vaultId, record.metadata(), record.revision());
-                byte[] plaintext = null;
+            VaultHeader previousHeader = store.header();
+            KeySlot passSlot =
+                    previousHeader
+                            .firstPassphraseSlot()
+                            .orElseThrow(
+                                    () ->
+                                            new ValidationException(
+                                                    "Vault has no passphrase key slot"));
+            KdfParameters kdf = passSlot.kdfParameters();
+            VaultFingerprint fingerprint = store.vaultFingerprint();
+            nextDek = crypto.generateVaultKey(new KeyId("vault-" + UUID.randomUUID()));
+            List<EncryptedSecretRecord> rotated = new ArrayList<>();
+            for (EncryptedSecretRecord record : store.listSecretRecords()) {
+                byte[] aad =
+                        SecretRecordAad.encode(fingerprint, record.metadata(), record.revision());
+                byte @Nullable [] plaintext = null;
                 try {
-                    plaintext = crypto.decrypt(oldKey, record.payload(), aad);
+                    plaintext = crypto.decrypt(store.vaultKey(), record.payload(), aad);
                     rotated.add(
-                            new top.focess.keystead.model.EncryptedSecretRecord(
-                                    vaultId,
+                            new EncryptedSecretRecord(
                                     record.metadata(),
-                                    crypto.encrypt(nextKey, plaintext, aad, clock.instant()),
+                                    crypto.encrypt(nextDek, plaintext, aad, clock.instant()),
                                     record.revision()));
                 } finally {
                     Wipe.wipe(aad);
                     Wipe.wipe(plaintext);
                 }
             }
-            wrapped = crypto.wrapVaultKey(nextKey, masterPassword, previous.kdfParameters());
+            wrapped = crypto.wrapVaultKey(nextDek, passphrase, kdf);
             Instant now = clock.instant();
-            store.commitVaultKeyRotation(
-                    new VaultKeyRotation(
-                            new VaultHeader(
-                                    vaultId,
-                                    previous.formatVersion(),
-                                    previous.kdfParameters(),
-                                    nextKeyId,
-                                    wrapped,
-                                    previous.createdAt(),
-                                    now),
-                            rotated));
-            oldKey.close();
-            VaultHandle handle =
-                    Objects.requireNonNull(
-                            handleFactory.create(vaultId, nextKey, store, crypto, clock),
-                            "vault handle");
-            transferred = true;
+            KeySlot newPassSlot =
+                    new KeySlot(SlotType.PASSPHRASE, new KeyId("passphrase"), kdf, wrapped);
+            VaultHeader newHeader =
+                    previousHeader.withVaultKey(nextDek.keyId(), List.of(newPassSlot), now);
+            store.commitVaultKeyRotation(new VaultKeyRotation(newHeader, rotated, nextDek));
+            nextDek = null;
+            VaultHandle handle = handleFactory.create(store);
+            storeTransferred = true;
             return handle;
         } finally {
-            if (!transferred && nextKey != null) {
-                nextKey.close();
+            if (!storeTransferred) {
+                store.close();
             }
-            oldKey.close();
+            if (nextDek != null) {
+                nextDek.close();
+            }
             Wipe.wipe(wrapped);
         }
     }
 
     @Override
     public @NonNull VaultHandle provisionVault(
-            @NonNull VaultId vaultId,
-            byte @NonNull [] encryptedVaultKey,
-            byte @NonNull [] devicePrivateKey,
-            byte @NonNull [] context) {
-        Objects.requireNonNull(vaultId, "vaultId");
-        Objects.requireNonNull(encryptedVaultKey, "encryptedVaultKey");
-        Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
-        Objects.requireNonNull(context, "context");
-
-        return provisionVault(
-                vaultId,
-                defaultVaultKeyId(vaultId),
-                DEVICE_KEY_PACKAGE_ALGORITHM,
-                encryptedVaultKey,
-                devicePrivateKey,
-                context);
-    }
-
-    @Override
-    public @NonNull VaultHandle provisionVault(
-            @NonNull VaultId vaultId,
+            @NonNull Path file,
             @NonNull DeviceVaultKeyPackage keyPackage,
             byte @NonNull [] devicePrivateKey,
             byte @NonNull [] context) {
-        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(file, "file");
         Objects.requireNonNull(keyPackage, "keyPackage");
         Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
         Objects.requireNonNull(context, "context");
-        byte @Nullable [] encryptedVaultKey = null;
+        byte @Nullable [] wrapped = null;
         try {
-            encryptedVaultKey = keyPackage.encryptedVaultKey();
+            wrapped = keyPackage.encryptedVaultKey();
             return provisionVault(
-                    vaultId,
+                    file,
+                    keyPackage.fingerprint(),
                     keyPackage.vaultKeyId(),
-                    keyPackage.keyAlgorithm(),
-                    encryptedVaultKey,
+                    wrapped,
                     devicePrivateKey,
-                    context);
+                    context,
+                    SlotType.DEVICE);
         } finally {
-            Wipe.wipe(encryptedVaultKey);
+            Wipe.wipe(wrapped);
         }
     }
 
     @Override
-    public @NonNull VaultHandle provisionVault(
-            @NonNull VaultId vaultId,
+    public @NonNull VaultHandle provisionVaultWithRecoveryKey(
+            @NonNull Path file,
+            @NonNull VaultFingerprint fingerprint,
             @NonNull KeyId vaultKeyId,
-            @NonNull String keyAlgorithm,
             byte @NonNull [] encryptedVaultKey,
-            byte @NonNull [] devicePrivateKey,
+            byte @NonNull [] recoveryPrivateKey,
             byte @NonNull [] context) {
-        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(file, "file");
+        Objects.requireNonNull(fingerprint, "fingerprint");
         Objects.requireNonNull(vaultKeyId, "vaultKeyId");
-        Objects.requireNonNull(keyAlgorithm, "keyAlgorithm");
         Objects.requireNonNull(encryptedVaultKey, "encryptedVaultKey");
-        Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
+        Objects.requireNonNull(recoveryPrivateKey, "recoveryPrivateKey");
         Objects.requireNonNull(context, "context");
-        if (!CryptoAlgorithmRegistry.isApprovedDeviceKeyPackage(keyAlgorithm)) {
-            throw new IllegalArgumentException("Device key package algorithm is unsupported");
-        }
-        if (encryptedVaultKey.length == 0) {
-            throw new IllegalArgumentException("Encrypted vault key must not be empty");
-        }
-        if (encryptedVaultKey.length > SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES) {
-            throw new IllegalArgumentException("Encrypted vault key exceeds the size limit");
-        }
-        @Nullable VaultKey vaultKey = null;
-        boolean transferred = false;
+        return provisionVault(
+                file,
+                fingerprint,
+                vaultKeyId,
+                encryptedVaultKey,
+                recoveryPrivateKey,
+                context,
+                SlotType.RECOVERY);
+    }
+
+    private @NonNull VaultHandle provisionVault(
+            @NonNull Path file,
+            @NonNull VaultFingerprint fingerprint,
+            @NonNull KeyId vaultKeyId,
+            byte @NonNull [] encryptedVaultKey,
+            byte @NonNull [] privateKey,
+            byte @NonNull [] context,
+            @NonNull SlotType slotType) {
+        @Nullable VaultKey dek = null;
+        boolean storeTransferred = false;
         try {
-            vaultKey =
+            dek =
                     crypto.unwrapVaultKeyFromDevicePackage(
-                            vaultKeyId, encryptedVaultKey, devicePrivateKey, context);
+                            vaultKeyId, encryptedVaultKey, privateKey, context);
             Instant now = clock.instant();
-            Instant createdAt =
-                    store.loadVaultHeader(vaultId).map(VaultHeader::createdAt).orElse(now);
-            store.saveVaultHeader(
+            KeySlot slot =
+                    new KeySlot(
+                            slotType,
+                            new KeyId(slotType.name().toLowerCase() + "-" + UUID.randomUUID()),
+                            null,
+                            encryptedVaultKey);
+            VaultHeader header =
                     new VaultHeader(
-                            vaultId,
-                            1,
-                            keyAlgorithm,
-                            new byte[0],
-                            1,
-                            vaultKeyId,
-                            encryptedVaultKey,
-                            createdAt,
-                            now));
-            VaultHandle handle =
-                    Objects.requireNonNull(
-                            handleFactory.create(vaultId, vaultKey, store, crypto, clock),
-                            "vault handle");
-            transferred = true;
+                            VaultFileFormat.FORMAT_VERSION,
+                            fingerprint,
+                            dek.keyId(),
+                            List.of(slot),
+                            now,
+                            now);
+            OneFileVaultStore store =
+                    OneFileVaultStore.createWithVaultKey(crypto, file, dek, header, clock);
+            dek = null;
+            VaultHandle handle = handleFactory.create(store);
+            storeTransferred = true;
             return handle;
         } finally {
-            if (!transferred && vaultKey != null) {
-                vaultKey.close();
+            if (!storeTransferred && dek != null) {
+                dek.close();
             }
         }
     }
 
     @Override
     public @NonNull VaultHandle openVaultWithDeviceKey(
-            @NonNull VaultId vaultId, byte @NonNull [] devicePrivateKey, byte @NonNull [] context) {
-        Objects.requireNonNull(vaultId, "vaultId");
+            @NonNull Path file, byte @NonNull [] devicePrivateKey, byte @NonNull [] context) {
+        Objects.requireNonNull(file, "file");
         Objects.requireNonNull(devicePrivateKey, "devicePrivateKey");
         Objects.requireNonNull(context, "context");
-
-        VaultHeader header =
-                store.loadVaultHeader(vaultId)
-                        .orElseThrow(() -> new ValidationException("Vault does not exist"));
-        if (!DEVICE_KEY_PACKAGE_ALGORITHM.equals(header.kdfAlgorithm())) {
-            throw new ValidationException("Vault is not protected by a device key package");
+        VaultHeader header = VaultFileFormat.readHeader(readVaultFile(file));
+        @Nullable VaultKey dek = null;
+        for (KeySlot slot : header.slots()) {
+            if (slot.slotType() != SlotType.DEVICE) {
+                continue;
+            }
+            byte @Nullable [] wrapped = null;
+            try {
+                wrapped = slot.wrappedVaultKey();
+                try {
+                    dek =
+                            crypto.unwrapVaultKeyFromDevicePackage(
+                                    header.vaultKeyId(), wrapped, devicePrivateKey, context);
+                    break;
+                } catch (CryptoException ignored) {
+                    // This device slot does not unwrap under the supplied key; try the next.
+                }
+            } finally {
+                Wipe.wipe(wrapped);
+            }
         }
-        VaultKey vaultKey =
-                crypto.unwrapVaultKeyFromDevicePackage(
-                        header.vaultKeyId(), header.wrappedVaultKey(), devicePrivateKey, context);
-        boolean transferred = false;
+        if (dek == null) {
+            throw new ValidationException("Vault is not protected by this device key");
+        }
+        boolean storeTransferred = false;
+        @Nullable OneFileVaultStore store = null;
         try {
-            VaultHandle handle =
-                    Objects.requireNonNull(
-                            handleFactory.create(vaultId, vaultKey, store, crypto, clock),
-                            "vault handle");
-            transferred = true;
+            store = OneFileVaultStore.openWithVaultKey(crypto, file, dek, clock);
+            dek = null;
+            VaultHandle handle = handleFactory.create(store);
+            storeTransferred = true;
             return handle;
         } finally {
-            if (!transferred) {
-                vaultKey.close();
+            if (!storeTransferred) {
+                if (store != null) {
+                    store.close();
+                } else if (dek != null) {
+                    dek.close();
+                }
             }
         }
     }
 
-    private @NonNull KeyId defaultVaultKeyId(@NonNull VaultId vaultId) {
-        return new KeyId("vault-key-" + vaultId.value());
+    private byte @NonNull [] readVaultFile(@NonNull Path file) {
+        try {
+            return Files.readAllBytes(file);
+        } catch (NoSuchFileException e) {
+            throw new ValidationException("Vault file does not exist: " + file);
+        } catch (IOException e) {
+            throw new top.focess.keystead.store.StoreException(
+                    "Could not read vault file: " + file, e);
+        }
     }
 
     @FunctionalInterface
     interface VaultHandleFactory {
 
-        @NonNull VaultHandle create(
-                @NonNull VaultId vaultId,
-                @NonNull VaultKey vaultKey,
-                @NonNull VaultStore store,
-                @NonNull DefaultCryptoService crypto,
-                @NonNull Clock clock);
+        @NonNull VaultHandle create(@NonNull OneFileVaultStore store);
     }
 }

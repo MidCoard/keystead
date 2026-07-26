@@ -2,7 +2,7 @@ package top.focess.keystead.service;
 
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.KeyId;
-import top.focess.keystead.model.VaultId;
+import top.focess.keystead.model.VaultFingerprint;
 
 /**
  * A target vault key and its re-encrypted records before the local journal is committed.
@@ -15,10 +15,10 @@ import top.focess.keystead.model.VaultId;
  */
 public interface PreparedVaultKeyRotation extends AutoCloseable {
 
-    /** Returns the vault this rotation targets.
+    /** Returns the fingerprint of the vault this rotation targets.
      *
-     * @return the vault this rotation targets */
-    @NonNull VaultId vaultId();
+     * @return the fingerprint of the vault this rotation targets */
+    @NonNull VaultFingerprint vaultFingerprint();
 
     /** Returns the id of the key currently protecting the vault.
      *

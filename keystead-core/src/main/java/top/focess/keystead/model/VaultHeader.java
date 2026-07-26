@@ -1,224 +1,100 @@
 package top.focess.keystead.model;
 
 import java.time.Instant;
-import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
-import top.focess.keystead.crypto.KdfParameters;
 
 /**
- * Non-secret header for a vault: identifiers, KDF parameters, wrapped key, and timestamps. The
- * byte-array state is defensively copied on construction and on access.
+ * Plaintext v2 vault header: format version, passphrase-derived fingerprint, vault key id, the
+ * multi-slot key list, and timestamps.
+ *
+ * <p>A v2 vault carries no stored vault identifier; identity is the file path locally and the
+ * passphrase-derived {@link VaultFingerprint} for routing and AAD binding. The same
+ * data-encryption key is wrapped under one or more {@link KeySlot slots}; any single slot unlocks
+ * the vault. The fingerprint is stable across data-encryption-key rotations (the passphrase
+ * wrapping key is unchanged when only the DEK is rewrapped) and changes only when the passphrase or
+ * salt changes.
  */
-public final class VaultHeader {
+public record VaultHeader(
+        int formatVersion,
+        @NonNull VaultFingerprint fingerprint,
+        @NonNull KeyId vaultKeyId,
+        @NonNull List<@NonNull KeySlot> slots,
+        @NonNull Instant createdAt,
+        @NonNull Instant updatedAt) {
 
-    private final VaultId vaultId;
-    private final int formatVersion;
-    private final KdfParameters kdfParameters;
-    private final KeyId vaultKeyId;
-    private final byte[] wrappedVaultKey;
-    private final Instant createdAt;
-    private final Instant updatedAt;
+    /** Maximum number of key slots in a single vault header. */
+    public static final int MAX_SLOTS = 64;
 
-    /**
-     * Creates a header from explicit PBKDF2 parameters.
-     *
-     * @param vaultId the vault's stable identifier
-     * @param formatVersion the vault format version; must be positive
-     * @param kdfAlgorithm the key-derivation function algorithm name
-     * @param kdfSalt the KDF salt
-     * @param kdfIterations the KDF iteration count; must be positive
-     * @param vaultKeyId the identifier of the vault key generation
-     * @param wrappedVaultKey the vault key wrapped by the KDF-derived key
-     * @param createdAt when the vault was created
-     * @param updatedAt when the vault was last updated; must not be before {@code createdAt}
-     */
-    public VaultHeader(
-            @NonNull VaultId vaultId,
-            int formatVersion,
-            @NonNull String kdfAlgorithm,
-            byte @NonNull [] kdfSalt,
-            int kdfIterations,
-            @NonNull KeyId vaultKeyId,
-            byte @NonNull [] wrappedVaultKey,
-            @NonNull Instant createdAt,
-            @NonNull Instant updatedAt) {
-        this(
-                vaultId,
-                formatVersion,
-                KdfParameters.pbkdf2(kdfAlgorithm, kdfSalt, kdfIterations),
-                vaultKeyId,
-                wrappedVaultKey,
-                createdAt,
-                updatedAt);
-    }
-
-    /**
-     * Creates a header from structured KDF parameters.
-     *
-     * @param vaultId the vault's stable identifier
-     * @param formatVersion the vault format version; must be positive
-     * @param kdfParameters the key-derivation parameters
-     * @param vaultKeyId the identifier of the vault key generation
-     * @param wrappedVaultKey the vault key wrapped by the KDF-derived key
-     * @param createdAt when the vault was created
-     * @param updatedAt when the vault was last updated; must not be before {@code createdAt}
-     */
-    public VaultHeader(
-            @NonNull VaultId vaultId,
-            int formatVersion,
-            @NonNull KdfParameters kdfParameters,
-            @NonNull KeyId vaultKeyId,
-            byte @NonNull [] wrappedVaultKey,
-            @NonNull Instant createdAt,
-            @NonNull Instant updatedAt) {
-        this.vaultId = Objects.requireNonNull(vaultId, "vaultId");
-        this.kdfParameters = Objects.requireNonNull(kdfParameters, "kdfParameters");
-        this.vaultKeyId = Objects.requireNonNull(vaultKeyId, "vaultKeyId");
-        Objects.requireNonNull(wrappedVaultKey, "wrappedVaultKey");
-        this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
-        this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
+    /** Validates the record components. */
+    public VaultHeader {
+        Objects.requireNonNull(fingerprint, "fingerprint");
+        Objects.requireNonNull(vaultKeyId, "vaultKeyId");
+        Objects.requireNonNull(slots, "slots");
+        Objects.requireNonNull(createdAt, "createdAt");
+        Objects.requireNonNull(updatedAt, "updatedAt");
+        if (formatVersion <= 0) {
+            throw new IllegalArgumentException("Format version must be positive");
+        }
+        if (slots.isEmpty()) {
+            throw new IllegalArgumentException("A vault header must have at least one key slot");
+        }
+        if (slots.size() > MAX_SLOTS) {
+            throw new IllegalArgumentException("A vault header has too many key slots");
+        }
         if (updatedAt.isBefore(createdAt)) {
             throw new IllegalArgumentException(
                     "Vault updated time must not be before created time");
         }
-        if (formatVersion <= 0) {
-            throw new IllegalArgumentException("Format version must be positive");
+        slots = List.copyOf(slots);
+    }
+
+    /** Returns a defensive copy of the key slots.
+     *
+     * @return a defensive copy of the key slots */
+    @Override
+    public @NonNull List<@NonNull KeySlot> slots() {
+        return List.copyOf(slots);
+    }
+
+    /** Returns a copy of this header with the updated-at timestamp replaced.
+     *
+     * @param updatedAt the new updated-at timestamp; must not be before {@code createdAt}
+     * @return a copy of this header with the updated-at timestamp replaced */
+    public @NonNull VaultHeader withUpdatedAt(@NonNull Instant updatedAt) {
+        return new VaultHeader(formatVersion, fingerprint, vaultKeyId, slots, createdAt, updatedAt);
+    }
+
+    /** Returns a copy of this header with the vault key id and slots replaced, for a key rotation.
+     *
+     * @param vaultKeyId the new vault key id
+     * @param slots the new key slots
+     * @param updatedAt the new updated-at timestamp
+     * @return a copy of this header with the vault key id and slots replaced */
+    public @NonNull VaultHeader withVaultKey(
+            @NonNull KeyId vaultKeyId,
+            @NonNull List<@NonNull KeySlot> slots,
+            @NonNull Instant updatedAt) {
+        return new VaultHeader(formatVersion, fingerprint, vaultKeyId, slots, createdAt, updatedAt);
+    }
+
+    /** Returns the first passphrase slot, or empty if the header has none.
+     *
+     * @return the first passphrase slot, or empty if the header has none */
+    public java.util.@NonNull Optional<KeySlot> firstPassphraseSlot() {
+        for (KeySlot slot : slots) {
+            if (slot.slotType() == SlotType.PASSPHRASE) {
+                return java.util.Optional.of(slot);
+            }
         }
-        if (wrappedVaultKey.length > SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES) {
-            throw new IllegalArgumentException("Wrapped vault key exceeds the size limit");
-        }
-        this.formatVersion = formatVersion;
-        this.wrappedVaultKey = Arrays.copyOf(wrappedVaultKey, wrappedVaultKey.length);
-    }
-
-    /**
-     * Returns the vault's stable identifier.
-     *
-     * @return the vault's stable identifier
-     */
-    public @NonNull VaultId vaultId() {
-        return vaultId;
-    }
-
-    /**
-     * Returns the vault format version.
-     *
-     * @return the vault format version
-     */
-    public int formatVersion() {
-        return formatVersion;
-    }
-
-    /**
-     * Returns the structured key-derivation parameters.
-     *
-     * @return the key-derivation parameters
-     */
-    public @NonNull KdfParameters kdfParameters() {
-        return kdfParameters;
-    }
-
-    /**
-     * Returns the key-derivation function algorithm name.
-     *
-     * @return the key-derivation function algorithm name
-     */
-    public @NonNull String kdfAlgorithm() {
-        return kdfParameters.algorithm();
-    }
-
-    /**
-     * Returns a defensive copy of the KDF salt.
-     *
-     * @return a defensive copy of the KDF salt
-     */
-    public byte @NonNull [] kdfSalt() {
-        return kdfParameters.salt();
-    }
-
-    /**
-     * Returns the KDF iteration count.
-     *
-     * @return the KDF iteration count
-     */
-    public int kdfIterations() {
-        return kdfParameters.required(KdfParameters.ITERATIONS);
-    }
-
-    /**
-     * Returns the identifier of the vault key generation.
-     *
-     * @return the identifier of the vault key generation
-     */
-    public @NonNull KeyId vaultKeyId() {
-        return vaultKeyId;
-    }
-
-    /**
-     * Returns a defensive copy of the wrapped vault key.
-     *
-     * @return a defensive copy of the wrapped vault key
-     */
-    public byte @NonNull [] wrappedVaultKey() {
-        return Arrays.copyOf(wrappedVaultKey, wrappedVaultKey.length);
-    }
-
-    /**
-     * Returns when the vault was created.
-     *
-     * @return when the vault was created
-     */
-    public @NonNull Instant createdAt() {
-        return createdAt;
-    }
-
-    /**
-     * Returns when the vault was last updated.
-     *
-     * @return when the vault was last updated
-     */
-    public @NonNull Instant updatedAt() {
-        return updatedAt;
+        return java.util.Optional.empty();
     }
 
     @Override
     public @NonNull String toString() {
-        return "VaultHeader[vaultId=%s, formatVersion=%d, kdfAlgorithm=%s, kdfSalt=[REDACTED %d bytes], kdfIterations=%d, vaultKeyId=%s, wrappedVaultKey=[REDACTED %d bytes], createdAt=%s, updatedAt=%s]"
+        return "VaultHeader[formatVersion=%d, fingerprint=%s, vaultKeyId=%s, slots=%d, createdAt=%s, updatedAt=%s]"
                 .formatted(
-                        vaultId,
-                        formatVersion,
-                        kdfAlgorithm(),
-                        kdfParameters.salt().length,
-                        kdfIterations(),
-                        vaultKeyId,
-                        wrappedVaultKey.length,
-                        createdAt,
-                        updatedAt);
-    }
-
-    @Override
-    public boolean equals(@NonNull Object object) {
-        if (this == object) {
-            return true;
-        }
-        if (!(object instanceof VaultHeader other)) {
-            return false;
-        }
-        return formatVersion == other.formatVersion
-                && vaultId.equals(other.vaultId)
-                && kdfParameters.equals(other.kdfParameters)
-                && vaultKeyId.equals(other.vaultKeyId)
-                && Arrays.equals(wrappedVaultKey, other.wrappedVaultKey)
-                && createdAt.equals(other.createdAt)
-                && updatedAt.equals(other.updatedAt);
-    }
-
-    @Override
-    public int hashCode() {
-        int result =
-                Objects.hash(
-                        vaultId, formatVersion, kdfParameters, vaultKeyId, createdAt, updatedAt);
-        return 31 * result + Arrays.hashCode(wrappedVaultKey);
+                        formatVersion, fingerprint, vaultKeyId, slots.size(), createdAt, updatedAt);
     }
 }

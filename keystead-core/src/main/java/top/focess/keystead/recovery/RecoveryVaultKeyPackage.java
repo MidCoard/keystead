@@ -11,7 +11,7 @@ import top.focess.keystead.model.KeyId;
  * copied and redacted in {@link #toString()}.
  *
  * @param username the account username
- * @param vaultId the vault the package targets
+ * @param fingerprint the passphrase-derived vault fingerprint (hex) the package targets
  * @param vaultKeyId the id of the wrapped vault key
  * @param enrollmentId the recovery enrollment identifier
  * @param generation the enrollment generation; must be positive
@@ -20,7 +20,7 @@ import top.focess.keystead.model.KeyId;
  */
 public record RecoveryVaultKeyPackage(
         @NonNull String username,
-        @NonNull String vaultId,
+        @NonNull String fingerprint,
         @NonNull KeyId vaultKeyId,
         @NonNull String enrollmentId,
         long generation,
@@ -32,7 +32,7 @@ public record RecoveryVaultKeyPackage(
     /** Validates and defensively copies the record components. */
     public RecoveryVaultKeyPackage {
         username = requireNotBlank(username, "username");
-        vaultId = requireNotBlank(vaultId, "vaultId");
+        fingerprint = requireNotBlank(fingerprint, "fingerprint");
         Objects.requireNonNull(vaultKeyId, "vaultKeyId");
         enrollmentId = RecoveryKit.requireIdentifier(enrollmentId);
         if (generation <= 0) {
@@ -59,10 +59,10 @@ public record RecoveryVaultKeyPackage(
 
     @Override
     public @NonNull String toString() {
-        return "RecoveryVaultKeyPackage[username=%s, vaultId=%s, vaultKeyId=%s, enrollmentId=%s, generation=%d, keyAlgorithm=%s, encryptedVaultKey=[REDACTED %d bytes]]"
+        return "RecoveryVaultKeyPackage[username=%s, fingerprint=%s, vaultKeyId=%s, enrollmentId=%s, generation=%d, keyAlgorithm=%s, encryptedVaultKey=[REDACTED %d bytes]]"
                 .formatted(
                         username,
-                        vaultId,
+                        fingerprint,
                         vaultKeyId,
                         enrollmentId,
                         generation,

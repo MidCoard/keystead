@@ -19,33 +19,32 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
-import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.memory.SecretBuffer;
-import top.focess.keystead.model.EncryptedEnvelope;
-import top.focess.keystead.model.EncryptedSecretRecord;
-import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretClassification;
 import top.focess.keystead.model.SecretId;
-import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretType;
-import top.focess.keystead.model.VaultId;
-import top.focess.keystead.store.FileVaultStore;
 
 class SyncExportTest {
 
     private static final Clock CLOCK =
             Clock.fixed(Instant.parse("2026-07-03T00:00:00Z"), ZoneOffset.UTC);
-    private static final VaultId VAULT_ID =
-            new VaultId(UUID.fromString("60000000-0000-0000-0000-000000000001"));
+    private static final String FINGERPRINT = "60000000000000000000000000000001";
+    private static final String FOREIGN_FINGERPRINT = "60000000000000000000000000000099";
 
     @TempDir Path tempDir;
 
+    private Path vaultFile() {
+        return tempDir.resolve("vault.kv");
+    }
+
     @Test
     void exportRejectsNegativeSyncCursorBeforeReadingRows() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             ValidationException failure =
                     assertThrows(ValidationException.class, () -> vault.exportRecordsSince(-1));
             assertEquals("Since revision must not be negative", failure.getMessage());
@@ -54,8 +53,9 @@ class SyncExportTest {
 
     @Test
     void exportsEncryptedRecordsWithoutServerVisibleProfileOrAad() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             try (SecretBuffer username = SecretBuffer.fromChars(chars("alice@example.com"));
                     SecretBuffer password = SecretBuffer.fromChars(chars("secret-password"))) {
                 vault.saveLogin(
@@ -74,7 +74,7 @@ class SyncExportTest {
 
             EncryptedSyncRecord record = vault.exportRecordsSince(0).getFirst();
 
-            assertEquals(VAULT_ID.value().toString(), record.vaultId());
+            assertEquals(vault.vaultFingerprint().toHexString(), record.fingerprint());
             assertEquals(SecretType.LOGIN_PASSWORD.name(), record.secretType());
             assertEquals(1L, record.revision());
             assertFalse(record.deleted());
@@ -87,8 +87,9 @@ class SyncExportTest {
 
     @Test
     void exportRecordsSinceFiltersByRevision() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("token"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN, draft -> draft.title("Token").field("token", value));
@@ -101,8 +102,9 @@ class SyncExportTest {
 
     @Test
     void newSecretsUseVaultWideRevisionSoSinceCursorDoesNotSkipThem() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("first"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -127,69 +129,11 @@ class SyncExportTest {
     }
 
     @Test
-    void exportRecordsSinceOrdersByRevisionThenSecretId() {
-        FileVaultStore store = new FileVaultStore(tempDir);
-        VaultService service = new DefaultVaultService(store, CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
-            SecretId firstRevisionHighId = new SecretId(new UUID(0L, 99L));
-            SecretId secondRevisionLowId = new SecretId(new UUID(0L, 2L));
-            store.saveSecretRecord(storedRecord(firstRevisionHighId, 1L));
-            store.saveSecretRecord(storedRecord(secondRevisionLowId, 2L));
-
-            List<String> exportedSecretIds =
-                    vault.exportRecordsSince(0).stream()
-                            .map(EncryptedSyncRecord::secretId)
-                            .toList();
-
-            assertEquals(
-                    List.of(
-                            firstRevisionHighId.value().toString(),
-                            secondRevisionLowId.value().toString()),
-                    exportedSecretIds);
-        }
-    }
-
-    @Test
-    void importsEncryptedRecordAndReconstructsLocalAad() {
-        FileVaultStore store = new FileVaultStore(tempDir);
-        VaultService service = new DefaultVaultService(store, CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
-            try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
-                vault.saveSecret(
-                        SecretType.API_TOKEN,
-                        draft ->
-                                draft.title("GitHub token")
-                                        .classification(
-                                                new SecretClassification(
-                                                        "development",
-                                                        "github",
-                                                        "github.com",
-                                                        "alice@example.com"))
-                                        .field("token", value));
-            }
-
-            EncryptedSyncRecord exported = vault.exportRecordsSince(0).getFirst();
-            store.deleteSecretRecord(VAULT_ID, new SecretId(UUID.fromString(exported.secretId())));
-            assertTrue(vault.listSecrets().isEmpty());
-
-            assertEquals(1, vault.importRecords(List.of(exported)));
-
-            assertEquals("GitHub token", vault.listSecrets().getFirst().title());
-            assertEquals("github.com", vault.listSecrets().getFirst().classification().software());
-            vault.withSecret(
-                    new top.focess.keystead.model.SecretId(UUID.fromString(exported.secretId())),
-                    view ->
-                            view.withField(
-                                    "token",
-                                    chars -> assertEquals("ghp_secret", new String(chars))));
-        }
-    }
-
-    @Test
     void deleteExportsDurableTombstoneAndRejectsOlderRecordResurrection() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         EncryptedSyncRecord original;
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -200,7 +144,7 @@ class SyncExportTest {
             vault.deleteSecret(new SecretId(UUID.fromString(original.secretId())));
         }
 
-        try (VaultHandle vault = service.openVault(VAULT_ID, master())) {
+        try (VaultHandle vault = service.openVault(vaultFile(), master())) {
             EncryptedSyncRecord tombstone = vault.exportRecordsSince(1).getFirst();
 
             assertEquals(original.secretId(), tombstone.secretId());
@@ -216,8 +160,9 @@ class SyncExportTest {
 
     @Test
     void importSkipsOlderServerRevision() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -232,22 +177,18 @@ class SyncExportTest {
 
     @Test
     void importRejectsMixedVaultBatchBeforeWritingAnyRows() {
-        FileVaultStore store = new FileVaultStore(tempDir);
-        VaultService service = new DefaultVaultService(store, CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
                         draft -> draft.title("GitHub token").field("token", value));
             }
             EncryptedSyncRecord valid = vault.exportRecordsSince(0).getFirst();
-            SecretId validSecretId = new SecretId(UUID.fromString(valid.secretId()));
-            store.deleteSecretRecord(VAULT_ID, validSecretId);
             EncryptedSyncRecord foreign =
                     new EncryptedSyncRecord(
-                            new VaultId(UUID.fromString("60000000-0000-0000-0000-000000000099"))
-                                    .value()
-                                    .toString(),
+                            FOREIGN_FINGERPRINT,
                             UUID.randomUUID().toString(),
                             2L,
                             SecretType.API_TOKEN.name(),
@@ -255,31 +196,30 @@ class SyncExportTest {
                             "",
                             true);
 
+            assertEquals(1, vault.listSecrets().size());
             assertThrows(
                     ValidationException.class,
                     () -> vault.importRecordsWithReport(List.of(valid, foreign)));
 
-            assertTrue(vault.listSecrets().isEmpty());
-            assertEquals(0, vault.exportRecordsSince(0).size());
+            assertEquals(1, vault.listSecrets().size());
+            assertEquals(1, vault.exportRecordsSince(0).size());
         }
     }
 
     @Test
     void importRejectsMalformedBatchBeforeWritingAnyRows() {
-        FileVaultStore store = new FileVaultStore(tempDir);
-        VaultService service = new DefaultVaultService(store, CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
                         draft -> draft.title("GitHub token").field("token", value));
             }
             EncryptedSyncRecord valid = vault.exportRecordsSince(0).getFirst();
-            SecretId validSecretId = new SecretId(UUID.fromString(valid.secretId()));
-            store.deleteSecretRecord(VAULT_ID, validSecretId);
             EncryptedSyncRecord malformed =
                     new EncryptedSyncRecord(
-                            VAULT_ID.value().toString(),
+                            vault.vaultFingerprint().toHexString(),
                             "not-a-secret-id",
                             2L,
                             SecretType.API_TOKEN.name(),
@@ -287,31 +227,30 @@ class SyncExportTest {
                             "",
                             true);
 
+            assertEquals(1, vault.listSecrets().size());
             assertThrows(
                     ValidationException.class,
                     () -> vault.importRecordsWithReport(List.of(valid, malformed)));
 
-            assertTrue(vault.listSecrets().isEmpty());
-            assertEquals(0, vault.exportRecordsSince(0).size());
+            assertEquals(1, vault.listSecrets().size());
+            assertEquals(1, vault.exportRecordsSince(0).size());
         }
     }
 
     @Test
     void importRejectsUndecodableActiveBatchBeforeWritingAnyRows() {
-        FileVaultStore store = new FileVaultStore(tempDir);
-        VaultService service = new DefaultVaultService(store, CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
                         draft -> draft.title("GitHub token").field("token", value));
             }
             EncryptedSyncRecord valid = vault.exportRecordsSince(0).getFirst();
-            SecretId validSecretId = new SecretId(UUID.fromString(valid.secretId()));
-            store.deleteSecretRecord(VAULT_ID, validSecretId);
             EncryptedSyncRecord undecodable =
                     new EncryptedSyncRecord(
-                            VAULT_ID.value().toString(),
+                            vault.vaultFingerprint().toHexString(),
                             UUID.randomUUID().toString(),
                             2L,
                             SecretType.API_TOKEN.name(),
@@ -319,20 +258,21 @@ class SyncExportTest {
                             "not-an-envelope",
                             false);
 
+            assertEquals(1, vault.listSecrets().size());
             assertThrows(
                     ValidationException.class,
                     () -> vault.importRecordsWithReport(List.of(valid, undecodable)));
 
-            assertTrue(vault.listSecrets().isEmpty());
-            assertEquals(0, vault.exportRecordsSince(0).size());
+            assertEquals(1, vault.listSecrets().size());
+            assertEquals(1, vault.exportRecordsSince(0).size());
         }
     }
 
     @Test
     void importRejectsUndecryptablePayloadBatchBeforeWritingAnyRows() {
-        FileVaultStore store = new FileVaultStore(tempDir);
-        VaultService service = new DefaultVaultService(store, CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret_one"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -346,12 +286,9 @@ class SyncExportTest {
             List<EncryptedSyncRecord> exported = vault.exportRecordsSince(0);
             EncryptedSyncRecord valid = exported.get(0);
             EncryptedSyncRecord corruptBase = exported.get(1);
-            store.deleteSecretRecord(VAULT_ID, new SecretId(UUID.fromString(valid.secretId())));
-            store.deleteSecretRecord(
-                    VAULT_ID, new SecretId(UUID.fromString(corruptBase.secretId())));
             EncryptedSyncRecord corrupt =
                     new EncryptedSyncRecord(
-                            corruptBase.vaultId(),
+                            corruptBase.fingerprint(),
                             corruptBase.secretId(),
                             corruptBase.revision(),
                             corruptBase.secretType(),
@@ -359,31 +296,30 @@ class SyncExportTest {
                             tamperedCiphertextEnvelope(corruptBase.envelope()),
                             false);
 
+            assertEquals(2, vault.listSecrets().size());
             assertThrows(
                     ValidationException.class,
                     () -> vault.importRecordsWithReport(List.of(valid, corrupt)));
 
-            assertTrue(vault.listSecrets().isEmpty());
-            assertEquals(0, vault.exportRecordsSince(0).size());
+            assertEquals(2, vault.listSecrets().size());
+            assertEquals(2, vault.exportRecordsSince(0).size());
         }
     }
 
     @Test
     void importRejectsDuplicateSecretBatchBeforeWritingAnyRows() {
-        FileVaultStore store = new FileVaultStore(tempDir);
-        VaultService service = new DefaultVaultService(store, CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
                         draft -> draft.title("GitHub token").field("token", value));
             }
             EncryptedSyncRecord valid = vault.exportRecordsSince(0).getFirst();
-            SecretId validSecretId = new SecretId(UUID.fromString(valid.secretId()));
-            store.deleteSecretRecord(VAULT_ID, validSecretId);
             EncryptedSyncRecord duplicateTombstone =
                     new EncryptedSyncRecord(
-                            VAULT_ID.value().toString(),
+                            vault.vaultFingerprint().toHexString(),
                             valid.secretId(),
                             valid.revision() + 1,
                             SecretType.API_TOKEN.name(),
@@ -391,19 +327,21 @@ class SyncExportTest {
                             "",
                             true);
 
+            assertEquals(1, vault.listSecrets().size());
             assertThrows(
                     ValidationException.class,
                     () -> vault.importRecordsWithReport(List.of(valid, duplicateTombstone)));
 
-            assertTrue(vault.listSecrets().isEmpty());
-            assertEquals(0, vault.exportRecordsSince(0).size());
+            assertEquals(1, vault.listSecrets().size());
+            assertEquals(1, vault.exportRecordsSince(0).size());
         }
     }
 
     @Test
     void importReportPreservesConflictWhenRemoteTombstoneIsOlderThanLocalUpdate() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             SecretId secretId;
             try (SecretBuffer value = SecretBuffer.fromChars(chars("first"))) {
                 secretId =
@@ -417,7 +355,7 @@ class SyncExportTest {
 
             EncryptedSyncRecord staleTombstone =
                     new EncryptedSyncRecord(
-                            VAULT_ID.value().toString(),
+                            vault.vaultFingerprint().toHexString(),
                             secretId.value().toString(),
                             1L,
                             SecretType.API_TOKEN.name(),
@@ -445,7 +383,7 @@ class SyncExportTest {
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                VAULT_ID.value().toString(),
+                                FINGERPRINT,
                                 UUID.randomUUID().toString(),
                                 0L,
                                 SecretType.API_TOKEN.name(),
@@ -456,7 +394,7 @@ class SyncExportTest {
 
     @Test
     void syncRecordRejectsBlankIdentityAndSecretType() {
-        String vaultId = VAULT_ID.value().toString();
+        String fingerprint = FINGERPRINT;
         String secretId = UUID.randomUUID().toString();
 
         assertThrows(
@@ -474,7 +412,7 @@ class SyncExportTest {
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                vaultId,
+                                fingerprint,
                                 " ",
                                 1L,
                                 SecretType.API_TOKEN.name(),
@@ -485,7 +423,7 @@ class SyncExportTest {
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                vaultId, secretId, 1L, " ", "profile", "envelope", false));
+                                fingerprint, secretId, 1L, " ", "profile", "envelope", false));
     }
 
     @Test
@@ -494,7 +432,7 @@ class SyncExportTest {
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                VAULT_ID.value().toString(),
+                                FINGERPRINT,
                                 UUID.randomUUID().toString(),
                                 1L,
                                 "OAUTH_REFRESH_TOKEN",
@@ -505,14 +443,14 @@ class SyncExportTest {
 
     @Test
     void activeSyncRecordRejectsMissingEncryptedProfileOrEnvelope() {
-        String vaultId = VAULT_ID.value().toString();
+        String fingerprint = FINGERPRINT;
         String secretId = UUID.randomUUID().toString();
 
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                vaultId,
+                                fingerprint,
                                 secretId,
                                 1L,
                                 SecretType.API_TOKEN.name(),
@@ -523,7 +461,7 @@ class SyncExportTest {
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                vaultId,
+                                fingerprint,
                                 secretId,
                                 1L,
                                 SecretType.API_TOKEN.name(),
@@ -534,14 +472,14 @@ class SyncExportTest {
 
     @Test
     void deletedSyncRecordRejectsEncryptedProfileOrEnvelope() {
-        String vaultId = VAULT_ID.value().toString();
+        String fingerprint = FINGERPRINT;
         String secretId = UUID.randomUUID().toString();
 
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                vaultId,
+                                fingerprint,
                                 secretId,
                                 1L,
                                 SecretType.API_TOKEN.name(),
@@ -552,7 +490,7 @@ class SyncExportTest {
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                vaultId,
+                                fingerprint,
                                 secretId,
                                 1L,
                                 SecretType.API_TOKEN.name(),
@@ -566,7 +504,7 @@ class SyncExportTest {
         String exact = "x".repeat(MAX_ENCODED_SYNC_CHARACTERS);
         EncryptedSyncRecord record =
                 new EncryptedSyncRecord(
-                        VAULT_ID.value().toString(),
+                        FINGERPRINT,
                         UUID.randomUUID().toString(),
                         1L,
                         SecretType.API_TOKEN.name(),
@@ -580,7 +518,7 @@ class SyncExportTest {
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                VAULT_ID.value().toString(),
+                                FINGERPRINT,
                                 UUID.randomUUID().toString(),
                                 1L,
                                 SecretType.API_TOKEN.name(),
@@ -591,7 +529,7 @@ class SyncExportTest {
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                VAULT_ID.value().toString(),
+                                FINGERPRINT,
                                 UUID.randomUUID().toString(),
                                 1L,
                                 SecretType.API_TOKEN.name(),
@@ -643,29 +581,5 @@ class SyncExportTest {
         } catch (IOException e) {
             throw new AssertionError("Sync envelope should be writable", e);
         }
-    }
-
-    private static EncryptedSecretRecord storedRecord(@NonNull SecretId secretId, long revision) {
-        SecretMetadata metadata =
-                new SecretMetadata(
-                        secretId,
-                        SecretType.API_TOKEN,
-                        "stored-" + revision,
-                        Set.of(),
-                        CLOCK.instant(),
-                        CLOCK.instant(),
-                        revision);
-        return new EncryptedSecretRecord(VAULT_ID, metadata, envelope(revision), revision);
-    }
-
-    private static EncryptedEnvelope envelope(long revision) {
-        return new EncryptedEnvelope(
-                1,
-                "test",
-                new KeyId("test-key"),
-                new byte[] {(byte) revision},
-                new byte[0],
-                new byte[] {(byte) (revision + 1)},
-                CLOCK.instant());
     }
 }

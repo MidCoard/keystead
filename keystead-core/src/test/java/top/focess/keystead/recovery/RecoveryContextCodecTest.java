@@ -10,21 +10,14 @@ import org.junit.jupiter.api.Test;
 class RecoveryContextCodecTest {
 
     @Test
-    void version2SeparatesTuplesThatCollideInLegacyVersion1() {
+    void version2SeparatesTuplesThatCollideUnderFlatEncoding() {
         byte[] first = RecoveryContextCodec.version2("u", "v", "e", 1L, "k|generation:2|key:z");
         byte[] second = RecoveryContextCodec.version2("u", "v", "e|generation:1|key:k", 2L, "z");
-        byte[] legacyFirst =
-                RecoveryContextCodec.legacyVersion1("u", "v", "e", 1L, "k|generation:2|key:z");
-        byte[] legacySecond =
-                RecoveryContextCodec.legacyVersion1("u", "v", "e|generation:1|key:k", 2L, "z");
         try {
             assertFalse(Arrays.equals(first, second));
-            assertArrayEquals(legacyFirst, legacySecond);
         } finally {
             Arrays.fill(first, (byte) 0);
             Arrays.fill(second, (byte) 0);
-            Arrays.fill(legacyFirst, (byte) 0);
-            Arrays.fill(legacySecond, (byte) 0);
         }
     }
 
@@ -58,41 +51,6 @@ class RecoveryContextCodecTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> RecoveryContextCodec.version2("\uD800", "v", "e", 1L, "k"));
-    }
-
-    @Test
-    void legacyVersion1MatchesHistoricalBytesForValidBoundedText() {
-        byte[] expected =
-                ("keystead-recovery-vault-package-v1|user:alice"
-                                + "|vault:vault-1"
-                                + "|enrollment:enrollment-1"
-                                + "|generation:7"
-                                + "|key:key-1")
-                        .getBytes(StandardCharsets.UTF_8);
-        byte[] actual =
-                RecoveryContextCodec.legacyVersion1(
-                        "alice", "vault-1", "enrollment-1", 7L, "key-1");
-        try {
-            assertArrayEquals(expected, actual);
-        } finally {
-            Arrays.fill(expected, (byte) 0);
-            Arrays.fill(actual, (byte) 0);
-        }
-    }
-
-    @Test
-    void legacyCompatibilityRejectsNonPositiveGenerationMalformedTextAndOversizedFields() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> RecoveryContextCodec.legacyVersion1("u", "v", "e", 0L, "k"));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> RecoveryContextCodec.legacyVersion1("\uD800", "v", "e", 1L, "k"));
-        assertThrows(
-                IllegalArgumentException.class,
-                () ->
-                        RecoveryContextCodec.legacyVersion1(
-                                "u", "v", "e", 1L, "a".repeat(64 * 1024 + 1)));
     }
 
     private static String readText(ByteBuffer input) {

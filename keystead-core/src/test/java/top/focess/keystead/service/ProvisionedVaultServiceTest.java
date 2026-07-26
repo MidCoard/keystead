@@ -11,54 +11,56 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
+import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.DeviceKeyPair;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecurityLimits;
-import top.focess.keystead.model.VaultId;
-import top.focess.keystead.store.FileVaultStore;
+import top.focess.keystead.model.VaultFingerprint;
 
 class ProvisionedVaultServiceTest {
 
     private static final Clock CLOCK =
             Clock.fixed(Instant.parse("2026-07-03T00:00:00Z"), ZoneOffset.UTC);
-    private static final VaultId VAULT_ID =
-            new VaultId(UUID.fromString("30000000-0000-0000-0000-000000000001"));
 
     @TempDir Path tempDir;
+
+    private Path vaultFile(String name) {
+        return tempDir.resolve(name + ".kv");
+    }
 
     @Test
     void provisionedVaultUsesDevicePackageToImportAndReadSyncedSecrets() {
         DefaultCryptoService crypto = new DefaultCryptoService();
         DefaultVaultService sourceService =
-                new DefaultVaultService(new FileVaultStore(tempDir.resolve("source")), CLOCK);
+                new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         DefaultVaultService targetService =
-                new DefaultVaultService(new FileVaultStore(tempDir.resolve("target")), CLOCK);
+                new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         byte[] context = "vault:vault-1:device:laptop-1".getBytes(StandardCharsets.UTF_8);
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
                         sourceService.createVault(
-                                new CreateVaultRequest(VAULT_ID), masterPassword())) {
+                                new CreateVaultRequest(vaultFile("source")), masterPassword())) {
             SecretId secretId = saveLogin(source);
             List<EncryptedSyncRecord> exported = source.exportRecordsSince(0);
-            byte[] packageBytes = source.wrapVaultKeyForDevice(device.publicKey(), context);
+            DeviceVaultKeyPackage keyPackage =
+                    source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
 
             try (VaultHandle target =
                     targetService.provisionVault(
-                            VAULT_ID, packageBytes, privateKeyBytes(device), context)) {
+                            vaultFile("target"), keyPackage, privateKeyBytes(device), context)) {
                 assertEquals(1, target.importRecords(exported));
             }
 
             try (VaultHandle target =
                     targetService.openVaultWithDeviceKey(
-                            VAULT_ID, privateKeyBytes(device), context)) {
+                            vaultFile("target"), privateKeyBytes(device), context)) {
                 target.withLogin(
                         secretId,
                         view ->
@@ -75,24 +77,27 @@ class ProvisionedVaultServiceTest {
     void provisionedVaultPullsTombstoneAndDeletesSyncedSecret() {
         DefaultCryptoService crypto = new DefaultCryptoService();
         DefaultVaultService sourceService =
-                new DefaultVaultService(
-                        new FileVaultStore(tempDir.resolve("delete-source")), CLOCK);
+                new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         DefaultVaultService targetService =
-                new DefaultVaultService(
-                        new FileVaultStore(tempDir.resolve("delete-target")), CLOCK);
+                new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         byte[] context = "vault:vault-delete:device:laptop-1".getBytes(StandardCharsets.UTF_8);
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
                         sourceService.createVault(
-                                new CreateVaultRequest(VAULT_ID), masterPassword())) {
+                                new CreateVaultRequest(vaultFile("delete-source")),
+                                masterPassword())) {
             SecretId secretId = saveLogin(source);
             List<EncryptedSyncRecord> created = source.exportRecordsSince(0);
-            byte[] packageBytes = source.wrapVaultKeyForDevice(device.publicKey(), context);
+            DeviceVaultKeyPackage keyPackage =
+                    source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
 
             try (VaultHandle target =
                     targetService.provisionVault(
-                            VAULT_ID, packageBytes, privateKeyBytes(device), context)) {
+                            vaultFile("delete-target"),
+                            keyPackage,
+                            privateKeyBytes(device),
+                            context)) {
                 assertEquals(1, target.importRecords(created));
                 assertEquals(1, target.listSecrets().size());
             }
@@ -102,7 +107,7 @@ class ProvisionedVaultServiceTest {
 
             try (VaultHandle target =
                     targetService.openVaultWithDeviceKey(
-                            VAULT_ID, privateKeyBytes(device), context)) {
+                            vaultFile("delete-target"), privateKeyBytes(device), context)) {
                 assertEquals(1, target.importRecords(deleted));
                 assertEquals(0, target.listSecrets().size());
             }
@@ -113,124 +118,95 @@ class ProvisionedVaultServiceTest {
     void rawMetadataProvisioningPreservesCallerOwnedCiphertext() {
         DefaultCryptoService crypto = new DefaultCryptoService();
         DefaultVaultService sourceService =
-                new DefaultVaultService(
-                        new FileVaultStore(tempDir.resolve("metadata-source")), CLOCK);
+                new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         DefaultVaultService targetService =
-                new DefaultVaultService(
-                        new FileVaultStore(tempDir.resolve("metadata-target")), CLOCK);
+                new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         byte[] context = "vault:metadata:device:laptop-1".getBytes(StandardCharsets.UTF_8);
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
                         sourceService.createVault(
-                                new CreateVaultRequest(VAULT_ID), masterPassword())) {
+                                new CreateVaultRequest(vaultFile("metadata-source")),
+                                masterPassword())) {
             DeviceVaultKeyPackage keyPackage =
                     source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
-            byte[] ciphertext = keyPackage.encryptedVaultKey();
-            byte[] expectedCiphertext = Arrays.copyOf(ciphertext, ciphertext.length);
+            byte[] expectedCiphertext = keyPackage.encryptedVaultKey();
             try (VaultHandle target =
                     targetService.provisionVault(
-                            VAULT_ID,
-                            keyPackage.vaultKeyId(),
-                            keyPackage.keyAlgorithm(),
-                            ciphertext,
+                            vaultFile("metadata-target"),
+                            keyPackage,
                             privateKeyBytes(device),
                             context)) {
                 assertEquals(source.vaultKeyId(), target.vaultKeyId());
-                assertArrayEquals(expectedCiphertext, ciphertext);
+                // Provisioning must not destroy the caller-owned package ciphertext.
+                assertArrayEquals(expectedCiphertext, keyPackage.encryptedVaultKey());
             } finally {
-                Arrays.fill(ciphertext, (byte) 0);
                 Arrays.fill(expectedCiphertext, (byte) 0);
             }
         }
     }
 
     @Test
-    void defaultRawProvisioningDestroysOnlyItsEphemeralPackage() {
-        byte[] callerCiphertext = {1, 2, 3};
-        LegacyVaultService service = new LegacyVaultService();
-
-        org.junit.jupiter.api.Assertions.assertThrows(
-                IllegalStateException.class,
-                () ->
-                        service.provisionVault(
-                                VAULT_ID,
-                                new KeyId("ephemeral-key"),
-                                DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
-                                callerCiphertext,
-                                new byte[] {4},
-                                new byte[] {5}));
-
-        assertArrayEquals(new byte[] {1, 2, 3}, callerCiphertext);
-        assertArrayEquals(new byte[] {0, 0, 0}, service.captured.encryptedVaultKey());
-    }
-
-    @Test
     void provisionVaultRejectsInvalidKeyPackageArguments() {
-        DefaultVaultService service =
-                new DefaultVaultService(new FileVaultStore(tempDir.resolve("validate")), CLOCK);
+        VaultFingerprint fingerprint =
+                VaultFingerprint.fromHexString("00112233445566778899aabbccddeeff");
         KeyId keyId = new KeyId("vault-key");
-        byte[] devicePrivateKey = new byte[32];
-        byte[] context = new byte[16];
 
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
-                        service.provisionVault(
-                                VAULT_ID,
+                        new DeviceVaultKeyPackage(
+                                fingerprint,
                                 keyId,
                                 CryptoAlgorithmRegistry.KDF_PBKDF2_HMAC_SHA256,
-                                new byte[] {1},
-                                devicePrivateKey,
-                                context));
+                                new byte[] {1}));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
-                        service.provisionVault(
-                                VAULT_ID,
+                        new DeviceVaultKeyPackage(
+                                fingerprint,
                                 keyId,
                                 DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
-                                new byte[0],
-                                devicePrivateKey,
-                                context));
+                                new byte[0]));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
-                        service.provisionVault(
-                                VAULT_ID,
+                        new DeviceVaultKeyPackage(
+                                fingerprint,
                                 keyId,
                                 DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
-                                new byte[SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES + 1],
-                                devicePrivateKey,
-                                context));
+                                new byte[SecurityLimits.MAX_WRAPPED_KEY_PACKAGE_BYTES + 1]));
     }
 
     @Test
     void openVaultRejectsDeviceKeyProtectedVault() {
         DefaultCryptoService crypto = new DefaultCryptoService();
         DefaultVaultService sourceService =
-                new DefaultVaultService(
-                        new FileVaultStore(tempDir.resolve("mismatch-source")), CLOCK);
+                new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         DefaultVaultService targetService =
-                new DefaultVaultService(
-                        new FileVaultStore(tempDir.resolve("mismatch-target")), CLOCK);
+                new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         byte[] context = "vault:vault-mismatch:device:laptop-1".getBytes(StandardCharsets.UTF_8);
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
                         sourceService.createVault(
-                                new CreateVaultRequest(VAULT_ID), masterPassword())) {
-            byte[] packageBytes = source.wrapVaultKeyForDevice(device.publicKey(), context);
+                                new CreateVaultRequest(vaultFile("mismatch-source")),
+                                masterPassword())) {
+            DeviceVaultKeyPackage keyPackage =
+                    source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
             try (VaultHandle target =
                     targetService.provisionVault(
-                            VAULT_ID, packageBytes, privateKeyBytes(device), context)) {
+                            vaultFile("mismatch-target"),
+                            keyPackage,
+                            privateKeyBytes(device),
+                            context)) {
                 // provision a device-key-package-protected vault
             }
         }
 
         assertThrows(
-                ValidationException.class,
-                () -> targetService.openVault(VAULT_ID, masterPassword()));
+                CryptoException.class,
+                () -> targetService.openVault(vaultFile("mismatch-target"), masterPassword()));
     }
 
     private static SecretId saveLogin(VaultHandle vault) {
@@ -247,51 +223,6 @@ class ProvisionedVaultServiceTest {
 
     private static char[] masterPassword() {
         return "correct horse battery staple".toCharArray();
-    }
-
-    private static final class LegacyVaultService implements VaultService {
-
-        private DeviceVaultKeyPackage captured;
-
-        @Override
-        public VaultHandle createVault(CreateVaultRequest request, char[] masterPassword) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public VaultHandle openVault(VaultId vaultId, char[] masterPassword) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public VaultHandle rotateVaultKey(VaultId vaultId, char[] masterPassword) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public VaultHandle provisionVault(
-                VaultId vaultId,
-                byte[] encryptedVaultKey,
-                byte[] devicePrivateKey,
-                byte[] context) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public VaultHandle provisionVault(
-                VaultId vaultId,
-                DeviceVaultKeyPackage keyPackage,
-                byte[] devicePrivateKey,
-                byte[] context) {
-            captured = keyPackage;
-            throw new IllegalStateException("deliberate provisioning failure");
-        }
-
-        @Override
-        public VaultHandle openVaultWithDeviceKey(
-                VaultId vaultId, byte[] devicePrivateKey, byte[] context) {
-            throw new UnsupportedOperationException();
-        }
     }
 
     private static byte[] privateKeyBytes(DeviceKeyPair device) {

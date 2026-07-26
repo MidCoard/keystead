@@ -25,6 +25,12 @@ public record KdfParameters(
     /** The standard parameter name for a KDF iteration count. */
     public static final @NonNull String ITERATIONS = "iterations";
 
+    /** The Argon2id memory-cost parameter name, in KiB. */
+    public static final @NonNull String MEMORY_KIB = "memoryKib";
+
+    /** The Argon2id parallelism (lanes) parameter name. */
+    public static final @NonNull String PARALLELISM = "parallelism";
+
     /** Validates the components, defensively copies the salt, and sorts the parameters. */
     public KdfParameters {
         Objects.requireNonNull(algorithm, "algorithm");
@@ -63,6 +69,24 @@ public record KdfParameters(
     public static @NonNull KdfParameters pbkdf2(
             @NonNull String algorithm, byte @NonNull [] salt, int iterations) {
         return new KdfParameters(algorithm, salt, Map.of(ITERATIONS, iterations));
+    }
+
+    /**
+     * Creates Argon2id parameters with an iteration count, memory cost, and parallelism.
+     *
+     * @param salt the KDF salt
+     * @param iterations the time cost (iteration count); must be positive
+     * @param memoryKib the memory cost in KiB; must be positive
+     * @param parallelism the parallelism (lanes); must be positive
+     * @return the Argon2id KDF parameters
+     */
+    public static @NonNull KdfParameters argon2id(
+            byte @NonNull [] salt, int iterations, int memoryKib, int parallelism) {
+        Map<String, Integer> parameters = new LinkedHashMap<>();
+        parameters.put(ITERATIONS, iterations);
+        parameters.put(MEMORY_KIB, memoryKib);
+        parameters.put(PARALLELISM, parallelism);
+        return new KdfParameters(CryptoAlgorithmRegistry.KDF_ARGON2ID, salt, parameters);
     }
 
     /**

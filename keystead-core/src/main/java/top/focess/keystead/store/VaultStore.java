@@ -7,46 +7,44 @@ import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.*;
 
 /**
- * Durable persistence abstraction for vault headers, secret records, tombstones, and revisions.
+ * Durable persistence abstraction for an opened single-file vault.
  *
- * <p>Mutations are coordinated through {@link #commitMutation}, which assigns the next monotonic
- * revision. {@link #commitVaultKeyRotation} is optional and defaults to unsupported.
- * Implementations must keep revisions positive and monotonic within a vault.
+ * <p>A {@code VaultStore} is bound to exactly one vault file: it holds the unlocked vault key and the
+ * decrypted record set in memory, and rewrites the whole container atomically on every mutation.
+ * There is no vault id; identity is implicit in the file the store was opened against. Mutations are
+ * coordinated through {@link #commitMutation}, which assigns the next monotonic revision.
+ * {@link #commitVaultKeyRotation} is optional and defaults to unsupported. Implementations must keep
+ * revisions positive and monotonic within a vault.
  */
 public interface VaultStore {
 
-    /** Persists the given vault header, rejecting vault-identity or timestamp regressions.
+    /** Persists the given vault header, rejecting timestamp regressions.
      *
      * @param header the vault header to persist */
     void saveVaultHeader(@NonNull VaultHeader header);
 
-    /** Loads the vault header for the given vault id, if present.
+    /** Loads the vault header for this vault, if present.
      *
-     * @param vaultId the vault identifier
-     * @return the vault header, or empty if no vault exists for the id */
-    @NonNull Optional<VaultHeader> loadVaultHeader(@NonNull VaultId vaultId);
+     * @return the vault header, or empty if no vault exists */
+    @NonNull Optional<VaultHeader> loadVaultHeader();
 
-    /** Returns the next monotonic revision for the given vault.
+    /** Returns the next monotonic revision for this vault.
      *
-     * @param vaultId the vault identifier
      * @return the next positive monotonic revision */
-    long nextRevision(@NonNull VaultId vaultId);
+    long nextRevision();
 
-    /** Records the highest revision seen for the given vault, if it advances the stored value.
+    /** Records the highest revision seen for this vault, if it advances the stored value.
      *
-     * @param vaultId the vault identifier
      * @param revision the revision to record; must not be negative */
-    void recordRevision(@NonNull VaultId vaultId, long revision);
+    void recordRevision(long revision);
 
     /** Commits a mutation atomically, assigning the next monotonic revision.
      *
-     * @param vaultId the vault identifier
      * @param mutation the mutation to commit */
-    default void commitMutation(@NonNull VaultId vaultId, @NonNull VaultMutation mutation) {
-        Objects.requireNonNull(vaultId, "vaultId");
+    default void commitMutation(@NonNull VaultMutation mutation) {
         Objects.requireNonNull(mutation, "mutation");
         synchronized (this) {
-            mutation.commit(nextRevision(vaultId));
+            mutation.commit(nextRevision());
         }
     }
 
@@ -64,56 +62,47 @@ public interface VaultStore {
      * @param record the encrypted secret record to persist */
     void saveSecretRecord(@NonNull EncryptedSecretRecord record);
 
-    /** Loads the encrypted secret record for the given vault and secret id, if present and not
-     * hidden by a newer tombstone.
+    /** Loads the encrypted secret record for the given secret id, if present and not hidden by a
+     * newer tombstone.
      *
-     * @param vaultId the vault identifier
      * @param secretId the secret identifier
      * @return the encrypted secret record, or empty if absent or hidden */
-    @NonNull Optional<EncryptedSecretRecord> loadSecretRecord(
-            @NonNull VaultId vaultId, @NonNull SecretId secretId);
+    @NonNull Optional<EncryptedSecretRecord> loadSecretRecord(@NonNull SecretId secretId);
 
-    /** Deletes the encrypted secret record for the given vault and secret id, if present.
+    /** Deletes the encrypted secret record for the given secret id, if present.
      *
-     * @param vaultId the vault identifier
      * @param secretId the secret identifier */
-    void deleteSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId);
+    void deleteSecretRecord(@NonNull SecretId secretId);
 
     /** Persists the given deleted secret record (tombstone), advancing the vault revision.
      *
      * @param record the deleted secret record to persist */
     void saveDeletedSecretRecord(@NonNull DeletedSecretRecord record);
 
-    /** Loads the deleted secret record for the given vault and secret id, if present and not
-     * hidden by a newer active record.
+    /** Loads the deleted secret record for the given secret id, if present and not hidden by a newer
+     * active record.
      *
-     * @param vaultId the vault identifier
      * @param secretId the secret identifier
      * @return the deleted secret record, or empty if absent or hidden */
-    @NonNull Optional<DeletedSecretRecord> loadDeletedSecretRecord(
-            @NonNull VaultId vaultId, @NonNull SecretId secretId);
+    @NonNull Optional<DeletedSecretRecord> loadDeletedSecretRecord(@NonNull SecretId secretId);
 
-    /** Deletes the deleted secret record for the given vault and secret id, if present.
+    /** Deletes the deleted secret record for the given secret id, if present.
      *
-     * @param vaultId the vault identifier
      * @param secretId the secret identifier */
-    void deleteDeletedSecretRecord(@NonNull VaultId vaultId, @NonNull SecretId secretId);
+    void deleteDeletedSecretRecord(@NonNull SecretId secretId);
 
-    /** Lists the metadata of all non-hidden secret records for the given vault.
+    /** Lists the metadata of all non-hidden secret records for this vault.
      *
-     * @param vaultId the vault identifier
      * @return the non-hidden secret metadata, sorted by secret id */
-    @NonNull List<SecretMetadata> listMetadata(@NonNull VaultId vaultId);
+    @NonNull List<SecretMetadata> listMetadata();
 
-    /** Lists all non-hidden encrypted secret records for the given vault.
+    /** Lists all non-hidden encrypted secret records for this vault.
      *
-     * @param vaultId the vault identifier
      * @return the non-hidden encrypted secret records, sorted by secret id */
-    @NonNull List<EncryptedSecretRecord> listSecretRecords(@NonNull VaultId vaultId);
+    @NonNull List<EncryptedSecretRecord> listSecretRecords();
 
-    /** Lists all non-hidden deleted secret records for the given vault.
+    /** Lists all non-hidden deleted secret records for this vault.
      *
-     * @param vaultId the vault identifier
      * @return the non-hidden deleted secret records, sorted by secret id */
-    @NonNull List<DeletedSecretRecord> listDeletedSecretRecords(@NonNull VaultId vaultId);
+    @NonNull List<DeletedSecretRecord> listDeletedSecretRecords();
 }

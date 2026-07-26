@@ -12,7 +12,11 @@ import top.focess.keystead.model.VaultHeader;
 
 /**
  * An encrypted, versioned backup of a vault's header, records, and tombstones. The manifest, header,
- * record list, and tombstone list must all refer to the same vault and agree on counts.
+ * record list, and tombstone list must all agree on counts.
+ *
+ * <p>The backup is taken from a single opened vault (the store is vault-scoped), so every row
+ * inherently belongs to the same vault; no per-row identity cross-check is needed. The manifest
+ * records the vault {@link top.focess.keystead.model.VaultFingerprint} for attribution.
  *
  * @param manifest the archive manifest
  * @param vaultHeader the vault header at backup time
@@ -35,28 +39,14 @@ public record BackupArchive(
             throw new ValidationException(
                     "Backup archive format version is unsupported: " + manifest.formatVersion());
         }
-        if (!manifest.vaultId().equals(vaultHeader.vaultId())) {
-            throw new ValidationException("Backup archive vault header does not match manifest");
-        }
         if (manifest.recordCount() != records.size()) {
             throw new ValidationException("Backup archive record count does not match manifest");
         }
         if (manifest.tombstoneCount() != tombstones.size()) {
             throw new ValidationException("Backup archive tombstone count does not match manifest");
         }
-        for (EncryptedSecretRecord record : records) {
-            if (!manifest.vaultId().equals(record.vaultId())) {
-                throw new ValidationException("Backup archive contains record from another vault");
-            }
-        }
         Set<SecretId> recordIds = recordIds(records);
         requireUniqueRecordIds(records, recordIds);
-        for (DeletedSecretRecord tombstone : tombstones) {
-            if (!manifest.vaultId().equals(tombstone.vaultId())) {
-                throw new ValidationException(
-                        "Backup archive contains tombstone from another vault");
-            }
-        }
         Set<SecretId> tombstoneIds = tombstoneIds(tombstones);
         requireUniqueTombstoneIds(tombstones, tombstoneIds);
         requireDisjointRecordStates(recordIds, tombstoneIds);

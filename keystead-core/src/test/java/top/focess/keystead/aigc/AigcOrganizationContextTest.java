@@ -19,7 +19,6 @@ import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretMetadata;
 import top.focess.keystead.model.SecretProfile;
 import top.focess.keystead.model.SecretType;
-import top.focess.keystead.model.VaultId;
 
 class AigcOrganizationContextTest {
 
@@ -46,7 +45,6 @@ class AigcOrganizationContextTest {
                         7L);
         EncryptedSecretRecord record =
                 new EncryptedSecretRecord(
-                        new VaultId(UUID.fromString("22222222-2222-2222-2222-222222222222")),
                         metadata,
                         new EncryptedEnvelope(
                                 1,

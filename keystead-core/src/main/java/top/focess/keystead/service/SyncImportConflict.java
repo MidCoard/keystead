@@ -7,7 +7,7 @@ import org.jspecify.annotations.NonNull;
  * A conflict between a local and remote sync record where the local revision is at least as new as
  * the remote revision.
  *
- * @param vaultId the vault id
+ * @param fingerprint the vault fingerprint (hex)
  * @param secretId the secret id
  * @param localRevision the local revision that won
  * @param remoteRevision the remote revision that was skipped
@@ -15,7 +15,7 @@ import org.jspecify.annotations.NonNull;
  * @param remoteDeleted whether the remote state is a tombstone
  */
 public record SyncImportConflict(
-        @NonNull String vaultId,
+        @NonNull String fingerprint,
         @NonNull String secretId,
         long localRevision,
         long remoteRevision,
@@ -24,7 +24,7 @@ public record SyncImportConflict(
 
     /** Validates the record components. */
     public SyncImportConflict {
-        requireNotBlank(vaultId, "vaultId");
+        requireNotBlank(fingerprint, "fingerprint");
         requireNotBlank(secretId, "secretId");
         if (localRevision <= 0) {
             throw new IllegalArgumentException("Local revision must be positive");

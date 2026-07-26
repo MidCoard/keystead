@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -14,10 +15,10 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretDestroyedException;
 import top.focess.keystead.model.SecretClassification;
@@ -25,28 +26,29 @@ import top.focess.keystead.model.SecretFieldSchema;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretType;
 import top.focess.keystead.model.SecretTypeSchema;
-import top.focess.keystead.model.VaultId;
-import top.focess.keystead.store.FileVaultStore;
 
 class StructuredSecretServiceTest {
 
     private static final Clock CLOCK =
             Clock.fixed(Instant.parse("2026-07-03T00:00:00Z"), ZoneOffset.UTC);
-    private static final VaultId VAULT_ID =
-            new VaultId(UUID.fromString("40000000-0000-0000-0000-000000000001"));
 
     @TempDir Path tempDir;
 
+    private Path vaultFile() {
+        return tempDir.resolve("vault.kv");
+    }
+
     @Test
     void createSaveReopenAndReadSshKey() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         SecretId secretId;
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             secretId = saveSshKey(vault);
         }
 
-        try (VaultHandle vault = service.openVault(VAULT_ID, master())) {
+        try (VaultHandle vault = service.openVault(vaultFile(), master())) {
             vault.withSecret(
                     secretId,
                     view -> {
@@ -73,9 +75,10 @@ class StructuredSecretServiceTest {
 
     @Test
     void structuredSecretViewOrdersTypedFieldsBySchema() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             SecretId secretId;
             try (SecretBuffer passphrase = SecretBuffer.fromChars(chars("private-passphrase"));
                     SecretBuffer privateKey =
@@ -102,9 +105,10 @@ class StructuredSecretServiceTest {
 
     @Test
     void structuredSecretViewKeepsGenericCustomFieldsInPayloadOrder() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             SecretId secretId;
             try (SecretBuffer second = SecretBuffer.fromChars(chars("second-value"));
                     SecretBuffer first = SecretBuffer.fromChars(chars("first-value"))) {
@@ -125,9 +129,10 @@ class StructuredSecretServiceTest {
 
     @Test
     void structuredSecretSupportsAllGeneralSecretTypes() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             for (SecretType type :
                     Set.of(
                             SecretType.SSH_KEY,
@@ -162,9 +167,10 @@ class StructuredSecretServiceTest {
 
     @Test
     void saveSecretRejectsDedicatedPayloadTypes() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             assertThrows(
                     ValidationException.class,
                     () -> vault.saveSecret(SecretType.LOGIN_PASSWORD, draft -> {}));
@@ -176,10 +182,11 @@ class StructuredSecretServiceTest {
 
     @Test
     void structuredSecretViewIsInvalidAfterCallbackReturns() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         AtomicReference<StructuredSecretView> captured = new AtomicReference<>();
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             SecretId secretId = saveSshKey(vault);
             vault.withSecret(secretId, captured::set);
         }
@@ -191,9 +198,10 @@ class StructuredSecretServiceTest {
 
     @Test
     void saveStructuredSecretRequiresTitleAndField() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             assertThrows(
                     ValidationException.class,
                     () ->
@@ -214,9 +222,10 @@ class StructuredSecretServiceTest {
 
     @Test
     void saveStructuredSecretEnforcesTypeSchemaFields() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             assertThrows(
                     ValidationException.class,
                     () ->
@@ -244,18 +253,18 @@ class StructuredSecretServiceTest {
 
     @Test
     void persistedStructuredSecretDoesNotContainPlaintextFields() throws IOException {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
-        SecretId secretId;
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
-            secretId = saveSshKey(vault);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+            saveSshKey(vault);
         }
 
-        String file =
-                Files.readString(
-                        tempDir.resolve("secrets").resolve(secretId.value() + ".properties"));
-        assertFalse(file.contains("-----BEGIN OPENSSH PRIVATE KEY-----"));
-        assertFalse(file.contains("private-passphrase"));
+        byte[] bytes = Files.readAllBytes(vaultFile());
+        assertFalse(
+                new String(bytes, StandardCharsets.UTF_8)
+                        .contains("-----BEGIN OPENSSH PRIVATE KEY-----"));
+        assertFalse(new String(bytes, StandardCharsets.UTF_8).contains("private-passphrase"));
     }
 
     private static SecretId saveSshKey(VaultHandle vault) {

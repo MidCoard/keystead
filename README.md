@@ -526,6 +526,38 @@ Core can support additional clients, but browser integration, mobile
 applications, passkey/WebAuthn login, and biometric-gated vault unlock are not
 implemented in the current product surface.
 
+## Vault format and protocol (v2)
+
+Keystead v2 is a clean-break redesign of the vault protocol. The authoritative
+public specification is **[VAULT_PROTOCOL.md](VAULT_PROTOCOL.md)**: the
+on-disk file format, the key model, every cryptographic construction, device
+provisioning, recovery, synchronization, and single-secret sharing. It is the
+contract shared by Core, Server, and Client.
+
+Highlights:
+
+- **One-file vault.** A vault is a single opaque `.kvault` file. The whole record
+  set - titles, classification, tags, fields, tombstones, revisions - is
+  encrypted in one AEAD container. No plaintext metadata on disk.
+- **No vault id.** A vault is identified locally by its file path and unlocked by
+  a passphrase. Server routing and per-record AAD use a **passphrase-bound
+  fingerprint** (`HMAC-SHA-256(wrappingKey, label ‖ salt)`, 128 bits).
+- **Multi-slot header (KeePass-style).** The same data-encryption key (DEK) is
+  wrapped under several independent unlock credentials: a **passphrase** slot
+  (Argon2id), one or more **device** slots (hybrid encryption), and one or more
+  **recovery** slots. Any single slot unlocks the vault. New devices bootstrap
+  from a server-stored device package and a local device slot - no file copy.
+- **Argon2id** for the vault passphrase (memory-hard; the vault file is the
+  offline-attackable crown jewels); **PBKDF2** for single-secret share temp
+  passphrases.
+- **Whole-vault AEAD tag** is the integrity MAC: header or ciphertext tampering,
+  and a wrong passphrase, both fail the tag cleanly.
+- **Zero-knowledge preserved.** The server stores only opaque ciphertext,
+  wrapped key packages, share blobs, and the non-secret fingerprint. No
+  passphrase, salt, wrapping key, DEK, or plaintext ever touches the server.
+- **Clean break from v0.2.** A v0.2 folder-vault is rejected gracefully, never
+  read. Major version bump.
+
 ## Contributing
 
 Contributions should preserve the zero-knowledge boundary, explicit JSpecify
@@ -536,7 +568,8 @@ change.
 
 Changes that alter algorithms, authenticated data, vault headers, revisions,
 backup formats, or device packages require migration and compatibility tests;
-they are protocol changes, not local refactors.
+they are protocol changes, not local refactors. The v2 protocol is specified in
+[VAULT_PROTOCOL.md](VAULT_PROTOCOL.md).
 
 ## License
 

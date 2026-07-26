@@ -6,24 +6,26 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
 /**
- * Non-stored, passphrase-derived routing identifier for a vault.
+ * Non-secret, passphrase-derived routing identity for a vault.
  *
- * <p>A vault fingerprint is computed at unlock as a truncated HMAC-SHA-256 over the vault's KDF
- * salt, keyed by the password-derived wrapping key (see {@code DefaultCryptoService#deriveFingerprint}).
- * It is <em>not</em> stored in the vault file: it replaces the legacy vault id as the opaque routing
- * token for server sync and is bound into record additional-authenticated data.
+ * <p>A vault fingerprint is a truncated HMAC-SHA-256 over the vault's KDF salt, keyed by the
+ * password-derived wrapping key (see {@code DefaultCryptoService#deriveFingerprint}). It replaces
+ * the legacy vault id as the opaque routing token for server sync and is bound into record
+ * additional-authenticated data.
  *
  * <p>Stability: two vaults with different KDF salts yield different fingerprints. The fingerprint is
  * stable across vault-key rotations, because the wrapping key is derived from the passphrase and salt
  * alone and is unchanged when only the data-encryption key is rewrapped. It changes only when the
  * passphrase or salt changes.
  *
- * <p>Disclosure model: the fingerprint is secret-derived but is intentionally disclosed to the sync
- * server as a routing token. It cannot be used to recover the passphrase offline, because the server
- * never receives the KDF salt (the vault file is never uploaded), so it cannot recompute the password
- * KDF. A holder of both the salt (from a copied file) and the fingerprint gains no advantage over the
- * existing offline-brute-force surface already presented by the wrapped vault key: both are gated by
- * the password KDF iteration count.
+ * <p>Storage and disclosure: the fingerprint is a <em>non-secret</em> routing identity. It is stored
+ * in the plaintext v2 vault header so that passphrase-less device and recovery opens can recover it
+ * (they have no wrapping key to derive it from), and it is disclosed to the sync server as a routing
+ * token. It is integrity-protected on disk by the whole-vault AEAD tag (the header is the
+ * container AAD). Offline passphrase protection rests on the Argon2id-gated wrapped vault key, not on
+ * fingerprint secrecy: a holder of both the salt (from the file) and the fingerprint gains no
+ * advantage over the offline-brute-force surface already presented by the wrapped vault key, since
+ * each passphrase guess still pays the full password-KDF cost.
  *
  * @param value the {@link #BYTES}-byte fingerprint
  */
@@ -59,6 +61,22 @@ public record VaultFingerprint(byte @NonNull [] value) {
      */
     public @NonNull String toHexString() {
         return HexFormat.of().formatHex(value);
+    }
+
+    /**
+     * Parses a fingerprint from a hex string produced by {@link #toHexString}.
+     *
+     * <p>The hex string must decode to exactly {@link #BYTES} bytes; the constructor validates the
+     * length. This is the inverse of {@link #toHexString} and is used to rebuild a fingerprint from a
+     * stored hex form (for example a recovery or backup archive that carries the fingerprint as text).
+     *
+     * @param hex the hex string
+     * @return the fingerprint
+     * @throws IllegalArgumentException if the string is not valid hex or not {@link #BYTES} bytes
+     */
+    public static @NonNull VaultFingerprint fromHexString(@NonNull String hex) {
+        Objects.requireNonNull(hex, "hex");
+        return new VaultFingerprint(HexFormat.of().parseHex(hex));
     }
 
     @Override

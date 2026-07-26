@@ -21,6 +21,9 @@ public final class CryptoAlgorithmRegistry {
     /** Approved KDF algorithm name for PBKDF2-HMAC-SHA-512. */
     public static final @NonNull String KDF_PBKDF2_HMAC_SHA512 = "PBKDF2WithHmacSHA512";
 
+    /** Approved KDF algorithm name for Argon2id, the v2 vault passphrase KDF. */
+    public static final @NonNull String KDF_ARGON2ID = "ARGON2ID";
+
     /** Approved device key-package algorithm name for Tink ECIES P-256. */
     public static final @NonNull String DEVICE_TINK_ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM =
             "TINK_ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM";
@@ -31,7 +34,7 @@ public final class CryptoAlgorithmRegistry {
     private static final List<String> APPROVED_AEAD =
             List.of(AEAD_AES_256_GCM, AEAD_CHACHA20_POLY1305);
     private static final List<String> APPROVED_KDF =
-            List.of(KDF_PBKDF2_HMAC_SHA256, KDF_PBKDF2_HMAC_SHA512);
+            List.of(KDF_PBKDF2_HMAC_SHA256, KDF_PBKDF2_HMAC_SHA512, KDF_ARGON2ID);
     private static final List<String> APPROVED_DEVICE_KEY_PACKAGES =
             List.of(
                     DEVICE_TINK_ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM,

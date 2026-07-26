@@ -6,41 +6,43 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.memory.SecretBuffer;
 import top.focess.keystead.memory.SecretDestroyedException;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecretType;
-import top.focess.keystead.model.VaultId;
-import top.focess.keystead.store.FileVaultStore;
 
 class SecureNoteServiceTest {
 
     private static final Clock CLOCK =
             Clock.fixed(Instant.parse("2026-07-02T00:00:00Z"), ZoneOffset.UTC);
-    private static final VaultId VAULT_ID =
-            new VaultId(UUID.fromString("20000000-0000-0000-0000-000000000001"));
 
     @TempDir Path tempDir;
 
+    private Path vaultFile() {
+        return tempDir.resolve("vault.kv");
+    }
+
     @Test
     void createSaveReopenAndReadSecureNote() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         SecretId secretId;
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             secretId = saveNote(vault);
         }
 
-        try (VaultHandle vault = service.openVault(VAULT_ID, master())) {
+        try (VaultHandle vault = service.openVault(vaultFile(), master())) {
             vault.withSecureNote(
                     secretId,
                     view -> {
@@ -56,10 +58,11 @@ class SecureNoteServiceTest {
 
     @Test
     void secureNoteViewIsInvalidAfterCallbackReturns() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         AtomicReference<SecureNoteView> captured = new AtomicReference<>();
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             SecretId secretId = saveNote(vault);
             vault.withSecureNote(secretId, captured::set);
         }
@@ -69,9 +72,10 @@ class SecureNoteServiceTest {
 
     @Test
     void saveSecureNoteRequiresTitleAndBody() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             assertThrows(
                     ValidationException.class,
                     () ->
@@ -88,24 +92,24 @@ class SecureNoteServiceTest {
 
     @Test
     void persistedSecureNoteDoesNotContainPlaintextBody() throws IOException {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
-        SecretId secretId;
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
-            secretId = saveNote(vault);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+            saveNote(vault);
         }
 
-        String file =
-                Files.readString(
-                        tempDir.resolve("secrets").resolve(secretId.value() + ".properties"));
-        assertFalse(file.contains("very private recovery note"));
+        byte[] bytes = Files.readAllBytes(vaultFile());
+        assertFalse(
+                new String(bytes, StandardCharsets.UTF_8).contains("very private recovery note"));
     }
 
     @Test
     void openingSecureNoteAsLoginIsRejected() {
-        VaultService service = new DefaultVaultService(new FileVaultStore(tempDir), CLOCK);
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(VAULT_ID), master())) {
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
             SecretId secretId = saveNote(vault);
 
             assertThrows(ValidationException.class, () -> vault.withLogin(secretId, view -> {}));

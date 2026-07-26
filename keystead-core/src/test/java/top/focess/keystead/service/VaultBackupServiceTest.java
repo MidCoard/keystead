@@ -5,12 +5,15 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,64 +27,80 @@ import java.util.zip.ZipOutputStream;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import top.focess.keystead.crypto.KdfParameters;
 import top.focess.keystead.model.*;
-import top.focess.keystead.store.FileVaultStore;
+import top.focess.keystead.store.VaultStore;
 
 class VaultBackupServiceTest {
 
     private static final Clock CLOCK =
             Clock.fixed(Instant.parse("2026-07-03T00:00:00Z"), ZoneOffset.UTC);
-    private static final VaultId VAULT_ID = new VaultId(new UUID(0L, 1L));
+    private static final VaultFingerprint FINGERPRINT =
+            VaultFingerprint.fromHexString("00112233445566778899aabbccddeeff");
 
     private final VaultBackupService backup = new VaultBackupService(CLOCK);
 
-    @TempDir Path tempDir;
-
     @Test
     void exportAndRestoreRoundTripsIntoFreshStore() {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
         source.saveSecretRecord(record(secretId(3L), "beta", 2L));
         source.saveDeletedSecretRecord(deleted(secretId(4L), 3L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         assertEquals(2, archive.records().size());
         assertEquals(1, archive.tombstones().size());
-        assertEquals(VAULT_ID, archive.manifest().vaultId());
+        assertEquals(FINGERPRINT, archive.manifest().fingerprint());
         assertEquals(2, archive.manifest().recordCount());
 
-        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        InMemoryVaultStore target = new InMemoryVaultStore();
+        target.saveVaultHeader(header());
         BackupImportReport report = backup.restore(target, archive);
 
         assertEquals(2, report.imported());
         assertEquals(0, report.skipped());
         assertEquals(1, report.tombstones());
         assertTrue(report.conflicts().isEmpty());
-        assertEquals(Optional.of(header()), target.loadVaultHeader(VAULT_ID));
-        assertEquals(2, target.listSecretRecords(VAULT_ID).size());
-        assertEquals(1, target.listDeletedSecretRecords(VAULT_ID).size());
+        assertEquals(Optional.of(header()), target.loadVaultHeader());
+        assertEquals(2, target.listSecretRecords().size());
+        assertEquals(1, target.listDeletedSecretRecords().size());
     }
 
     @Test
     void archiveCodecRoundTripsCanonicalGenericKdfHeader() {
         VaultHeader header =
                 new VaultHeader(
-                        VAULT_ID,
                         1,
-                        new KdfParameters(
-                                "TEST-KDF",
-                                new byte[] {1, 2, 3},
-                                Map.of("b", 2, "a", 1, "memoryKiB", 64, "iterations", 3)),
+                        FINGERPRINT,
                         new KeyId("vault-key"),
-                        new byte[] {4, 5, 6},
+                        List.of(
+                                new KeySlot(
+                                        SlotType.PASSPHRASE,
+                                        new KeyId("passphrase"),
+                                        new KdfParameters(
+                                                "TEST-KDF",
+                                                new byte[] {1, 2, 3},
+                                                Map.of(
+                                                        "b",
+                                                        2,
+                                                        "a",
+                                                        1,
+                                                        "memoryKiB",
+                                                        64,
+                                                        "iterations",
+                                                        3)),
+                                        new byte[] {4, 5, 6})),
                         Instant.parse("2026-07-02T00:00:00Z"),
                         Instant.parse("2026-07-02T00:01:00Z"));
         BackupArchive archive =
                 new BackupArchive(
-                        new BackupManifest(1, VAULT_ID, 0, 0, CLOCK.instant()),
+                        new BackupManifest(
+                                VaultBackupService.FORMAT_VERSION,
+                                FINGERPRINT,
+                                0,
+                                0,
+                                CLOCK.instant()),
                         header,
                         List.of(),
                         List.of());
@@ -93,24 +112,30 @@ class VaultBackupServiceTest {
         assertEquals(header, read.archive().vaultHeader());
         assertEquals(
                 Map.of("a", 1, "b", 2, "iterations", 3, "memoryKiB", 64),
-                read.archive().vaultHeader().kdfParameters().parameters());
+                read.archive()
+                        .vaultHeader()
+                        .firstPassphraseSlot()
+                        .orElseThrow()
+                        .kdfParameters()
+                        .parameters());
         String serialized =
                 assertDoesNotThrow(() -> zipEntryText(output.toByteArray(), "vault.properties"));
         assertTrue(
-                serialized.indexOf("kdf.parameter.a=1") < serialized.indexOf("kdf.parameter.b=2"));
+                serialized.indexOf("slot.0.kdf.parameter.a=1")
+                        < serialized.indexOf("slot.0.kdf.parameter.b=2"));
         assertTrue(
-                serialized.indexOf("kdf.parameter.b=2")
-                        < serialized.indexOf("kdf.parameter.iterations=3"));
+                serialized.indexOf("slot.0.kdf.parameter.b=2")
+                        < serialized.indexOf("slot.0.kdf.parameter.iterations=3"));
         assertTrue(
-                serialized.indexOf("kdf.parameter.iterations=3")
-                        < serialized.indexOf("kdf.parameter.memoryKiB=64"));
+                serialized.indexOf("slot.0.kdf.parameter.iterations=3")
+                        < serialized.indexOf("slot.0.kdf.parameter.memoryKiB=64"));
     }
 
     @Test
     void backupReaderRejectsEncodedSaltBeforeUnboundedBase64Decode() throws Exception {
         byte[] archive =
                 archiveWithVaultProperties(
-                        properties -> properties.setProperty("kdfSalt", "!".repeat(89)));
+                        properties -> properties.setProperty("slot.0.kdfSalt", "!".repeat(89)));
 
         ValidationException failure =
                 assertThrows(
@@ -126,7 +151,7 @@ class VaultBackupServiceTest {
                 archiveWithVaultProperties(
                         properties ->
                                 properties.setProperty(
-                                        "kdfSalt",
+                                        "slot.0.kdfSalt",
                                         Base64.getEncoder().encodeToString(new byte[65])));
 
         ValidationException failure =
@@ -162,7 +187,7 @@ class VaultBackupServiceTest {
                         });
 
         assertEquals(1, result.unsupported());
-        assertEquals(1, result.archive().records().size());
+        assertEquals(0, result.archive().records().size());
     }
 
     @Test
@@ -171,7 +196,7 @@ class VaultBackupServiceTest {
                 archiveWithVaultProperties(
                         properties -> {
                             for (int index = 0; index < 17; index++) {
-                                properties.setProperty("kdf.parameter.p" + index, "1");
+                                properties.setProperty("slot.0.kdf.parameter.p" + index, "1");
                             }
                         });
 
@@ -240,13 +265,13 @@ class VaultBackupServiceTest {
 
     @Test
     void restoreSkipsConflictingRecordsWithoutDestroyingExistingData() {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "older", 1L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
 
-        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        InMemoryVaultStore target = new InMemoryVaultStore();
         target.saveVaultHeader(header());
         target.saveSecretRecord(record(secretId(2L), "newer", 5L));
 
@@ -260,7 +285,7 @@ class VaultBackupServiceTest {
         assertEquals(5L, conflict.existingRevision());
         assertEquals(1L, conflict.incomingRevision());
 
-        List<EncryptedSecretRecord> restored = target.listSecretRecords(VAULT_ID);
+        List<EncryptedSecretRecord> restored = target.listSecretRecords();
         assertEquals(1, restored.size());
         assertEquals(5L, restored.get(0).revision());
         assertEquals("newer", restored.get(0).metadata().title());
@@ -268,20 +293,25 @@ class VaultBackupServiceTest {
 
     @Test
     void restoreRejectsDifferentExistingVaultHeaderBeforeWriting() {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
 
-        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        InMemoryVaultStore target = new InMemoryVaultStore();
         VaultHeader different =
                 new VaultHeader(
-                        VAULT_ID,
                         1,
-                        "PBKDF2WithHmacSHA256",
-                        new byte[] {9, 8, 7},
-                        120_000,
+                        VaultFingerprint.fromHexString("ff112233445566778899aabbccddeeff"),
                         new KeyId("different-vault-key"),
-                        new byte[] {6, 5, 4},
+                        List.of(
+                                new KeySlot(
+                                        SlotType.PASSPHRASE,
+                                        new KeyId("passphrase"),
+                                        KdfParameters.pbkdf2(
+                                                "PBKDF2WithHmacSHA256",
+                                                new byte[] {9, 8, 7},
+                                                120_000),
+                                        new byte[] {6, 5, 4})),
                         Instant.parse("2026-06-01T00:00:00Z"),
                         Instant.parse("2026-06-01T00:01:00Z"));
         target.saveVaultHeader(different);
@@ -289,19 +319,19 @@ class VaultBackupServiceTest {
         ValidationException exception =
                 assertThrows(ValidationException.class, () -> backup.restore(target, archive));
 
-        assertTrue(exception.getMessage().contains("different local vault header"));
-        assertEquals(Optional.of(different), target.loadVaultHeader(VAULT_ID));
+        assertTrue(exception.getMessage().contains("different vault"));
+        assertEquals(Optional.of(different), target.loadVaultHeader());
     }
 
     @Test
     void restoreSkipsRecordOlderThanExistingTombstone() {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "older", 1L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
 
-        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        InMemoryVaultStore target = new InMemoryVaultStore();
         target.saveVaultHeader(header());
         target.saveDeletedSecretRecord(deleted(secretId(2L), 5L));
 
@@ -314,20 +344,20 @@ class VaultBackupServiceTest {
         assertEquals(secretId(2L), conflict.secretId());
         assertEquals(5L, conflict.existingRevision());
         assertEquals(1L, conflict.incomingRevision());
-        assertEquals(List.of(), target.listSecretRecords(VAULT_ID));
-        assertEquals(1, target.listDeletedSecretRecords(VAULT_ID).size());
-        assertEquals(5L, target.listDeletedSecretRecords(VAULT_ID).getFirst().revision());
+        assertEquals(List.of(), target.listSecretRecords());
+        assertEquals(1, target.listDeletedSecretRecords().size());
+        assertEquals(5L, target.listDeletedSecretRecords().getFirst().revision());
     }
 
     @Test
     void restoreSkipsTombstoneOlderThanExistingRecord() {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveDeletedSecretRecord(deleted(secretId(2L), 1L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
 
-        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        InMemoryVaultStore target = new InMemoryVaultStore();
         target.saveVaultHeader(header());
         target.saveSecretRecord(record(secretId(2L), "newer", 5L));
 
@@ -341,19 +371,19 @@ class VaultBackupServiceTest {
         assertEquals(secretId(2L), conflict.secretId());
         assertEquals(5L, conflict.existingRevision());
         assertEquals(1L, conflict.incomingRevision());
-        assertEquals(1, target.listSecretRecords(VAULT_ID).size());
-        assertEquals(5L, target.listSecretRecords(VAULT_ID).getFirst().revision());
-        assertEquals(List.of(), target.listDeletedSecretRecords(VAULT_ID));
+        assertEquals(1, target.listSecretRecords().size());
+        assertEquals(5L, target.listSecretRecords().getFirst().revision());
+        assertEquals(List.of(), target.listDeletedSecretRecords());
     }
 
     @Test
     void archiveSurvivesSerializationRoundTrip() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
         source.saveDeletedSecretRecord(deleted(secretId(3L), 2L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -365,37 +395,20 @@ class VaultBackupServiceTest {
         assertEquals(archive.records(), restored.records());
         assertEquals(archive.tombstones(), restored.tombstones());
 
-        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        InMemoryVaultStore target = new InMemoryVaultStore();
+        target.saveVaultHeader(header());
         BackupImportReport report = backup.restore(target, restored);
         assertEquals(1, report.imported());
         assertEquals(1, report.tombstones());
     }
 
     @Test
-    void serializedRecordEntriesDoNotStoreEnvelopeAad() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
-        source.saveVaultHeader(header());
-        source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
-
-        BackupArchive archive = backup.export(source, VAULT_ID);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        backup.writeTo(archive, out);
-
-        String recordEntry =
-                zipEntryText(
-                        out.toByteArray(),
-                        "records/00000000-0000-0000-0000-000000000002.properties");
-
-        assertFalse(recordEntry.contains("envelope.aad"));
-    }
-
-    @Test
     void readFromRejectsTamperedRecordEntryDigest() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -411,11 +424,11 @@ class VaultBackupServiceTest {
 
     @Test
     void readFromRejectsTamperedRecordEntryWhenManifestIsLast() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -432,11 +445,11 @@ class VaultBackupServiceTest {
 
     @Test
     void readFromRejectsRecordEntryMissingDigestInDigestedManifest() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -450,11 +463,11 @@ class VaultBackupServiceTest {
 
     @Test
     void readFromRejectsTombstoneEntryMissingDigestInDigestedManifest() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveDeletedSecretRecord(deleted(secretId(3L), 2L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -468,11 +481,11 @@ class VaultBackupServiceTest {
 
     @Test
     void readFromRejectsVaultHeaderEntryMissingDigestInDigestedManifest() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -486,11 +499,11 @@ class VaultBackupServiceTest {
 
     @Test
     void readFromRejectsExtraRecordEntryMissingDigestInDigestedManifest() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -506,7 +519,7 @@ class VaultBackupServiceTest {
             zip.putNextEntry(
                     new ZipEntry("records/00000000-0000-0000-0000-000000000009.properties"));
             zip.write(
-                    "vaultId=00000000-0000-0000-0000-000000000001\n"
+                    "fingerprint=00112233445566778899aabbccddeeff\n"
                             .getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
         }
@@ -518,11 +531,11 @@ class VaultBackupServiceTest {
 
     @Test
     void readFromRejectsExtraTombstoneEntryMissingDigestInDigestedManifest() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveDeletedSecretRecord(deleted(secretId(3L), 2L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -539,7 +552,7 @@ class VaultBackupServiceTest {
                     new ZipEntry("deleted/00000000-0000-0000-0000-000000000009.properties"));
             zip.write(
                     """
-                    vaultId=00000000-0000-0000-0000-000000000001
+                    fingerprint=00112233445566778899aabbccddeeff
                     secretId=00000000-0000-0000-0000-000000000009
                     """
                             .getBytes(StandardCharsets.UTF_8));
@@ -553,11 +566,11 @@ class VaultBackupServiceTest {
 
     @Test
     void readFromRejectsManifestDigestForMissingEntry() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -574,12 +587,12 @@ class VaultBackupServiceTest {
 
     @Test
     void readFromSkipsMalformedEntriesWithoutLosingValidOnes() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
         source.saveSecretRecord(record(secretId(3L), "beta", 2L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -596,7 +609,7 @@ class VaultBackupServiceTest {
             zip.putNextEntry(
                     new ZipEntry("records/00000000-0000-0000-0000-000000000009.properties"));
             zip.write(
-                    "vaultId=00000000-0000-0000-0000-000000000001\n"
+                    "fingerprint=00112233445566778899aabbccddeeff\n"
                             .getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
         }
@@ -607,19 +620,20 @@ class VaultBackupServiceTest {
         assertEquals(1, read.unsupported());
         assertEquals(2, read.archive().records().size());
 
-        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        InMemoryVaultStore target = new InMemoryVaultStore();
+        target.saveVaultHeader(header());
         BackupImportReport report = backup.restore(target, read.archive());
         assertEquals(2, report.imported());
     }
 
     @Test
     void readFromSkipsDigestedUnsupportedRecordWithoutLosingValidOnes() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
         source.saveSecretRecord(record(secretId(3L), "beta", 2L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -640,19 +654,20 @@ class VaultBackupServiceTest {
         assertEquals(1, read.archive().records().size());
         assertEquals(1, read.archive().manifest().recordCount());
 
-        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        InMemoryVaultStore target = new InMemoryVaultStore();
+        target.saveVaultHeader(header());
         BackupImportReport report = backup.restore(target, read.archive());
         assertEquals(1, report.imported());
     }
 
     @Test
     void restoreFromReadResultPreservesUnsupportedRowCount() throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve("source"));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         source.saveSecretRecord(record(secretId(2L), "alpha", 1L));
         source.saveSecretRecord(record(secretId(3L), "beta", 2L));
 
-        BackupArchive archive = backup.export(source, VAULT_ID);
+        BackupArchive archive = backup.export(source);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         backup.writeTo(archive, out);
 
@@ -668,7 +683,8 @@ class VaultBackupServiceTest {
                         sha256(unsupportedRecord.getBytes(StandardCharsets.UTF_8)));
         BackupReadResult read = backup.readFrom(new ByteArrayInputStream(redigested));
 
-        FileVaultStore target = new FileVaultStore(tempDir.resolve("target"));
+        InMemoryVaultStore target = new InMemoryVaultStore();
+        target.saveVaultHeader(header());
         BackupImportReport report = backup.restore(target, read);
 
         assertEquals(1, report.imported());
@@ -679,7 +695,7 @@ class VaultBackupServiceTest {
     void archiveRejectsManifestRecordCountMismatch() {
         BackupManifest manifest =
                 new BackupManifest(
-                        VaultBackupService.FORMAT_VERSION, VAULT_ID, 2, 0, CLOCK.instant());
+                        VaultBackupService.FORMAT_VERSION, FINGERPRINT, 2, 0, CLOCK.instant());
 
         ValidationException exception =
                 assertThrows(
@@ -698,7 +714,7 @@ class VaultBackupServiceTest {
     void archiveRejectsUnsupportedFutureFormatVersion() {
         BackupManifest manifest =
                 new BackupManifest(
-                        VaultBackupService.FORMAT_VERSION + 1, VAULT_ID, 0, 0, CLOCK.instant());
+                        VaultBackupService.FORMAT_VERSION + 1, FINGERPRINT, 0, 0, CLOCK.instant());
 
         ValidationException exception =
                 assertThrows(
@@ -706,34 +722,6 @@ class VaultBackupServiceTest {
                         () -> new BackupArchive(manifest, header(), List.of(), List.of()));
 
         assertTrue(exception.getMessage().contains("format version"));
-    }
-
-    @Test
-    void archiveRejectsRecordFromAnotherVault() {
-        VaultId otherVault = new VaultId(new UUID(0L, 99L));
-        EncryptedSecretRecord foreignRecord =
-                new EncryptedSecretRecord(
-                        otherVault,
-                        record(secretId(2L), "alpha", 1L).metadata(),
-                        record(secretId(2L), "alpha", 1L).payload(),
-                        1L);
-
-        ValidationException exception =
-                assertThrows(
-                        ValidationException.class,
-                        () ->
-                                new BackupArchive(
-                                        new BackupManifest(
-                                                VaultBackupService.FORMAT_VERSION,
-                                                VAULT_ID,
-                                                1,
-                                                0,
-                                                CLOCK.instant()),
-                                        header(),
-                                        List.of(foreignRecord),
-                                        List.of()));
-
-        assertTrue(exception.getMessage().contains("vault"));
     }
 
     @Test
@@ -746,7 +734,7 @@ class VaultBackupServiceTest {
                                 new BackupArchive(
                                         new BackupManifest(
                                                 VaultBackupService.FORMAT_VERSION,
-                                                VAULT_ID,
+                                                FINGERPRINT,
                                                 2,
                                                 0,
                                                 CLOCK.instant()),
@@ -769,7 +757,7 @@ class VaultBackupServiceTest {
                                 new BackupArchive(
                                         new BackupManifest(
                                                 VaultBackupService.FORMAT_VERSION,
-                                                VAULT_ID,
+                                                FINGERPRINT,
                                                 0,
                                                 2,
                                                 CLOCK.instant()),
@@ -790,7 +778,7 @@ class VaultBackupServiceTest {
                                 new BackupArchive(
                                         new BackupManifest(
                                                 VaultBackupService.FORMAT_VERSION,
-                                                VAULT_ID,
+                                                FINGERPRINT,
                                                 1,
                                                 1,
                                                 CLOCK.instant()),
@@ -803,13 +791,16 @@ class VaultBackupServiceTest {
 
     private static VaultHeader header() {
         return new VaultHeader(
-                VAULT_ID,
                 1,
-                "PBKDF2WithHmacSHA256",
-                new byte[] {1, 2, 3},
-                120_000,
+                FINGERPRINT,
                 new KeyId("vault-key"),
-                new byte[] {4, 5, 6},
+                List.of(
+                        new KeySlot(
+                                SlotType.PASSPHRASE,
+                                new KeyId("passphrase"),
+                                KdfParameters.pbkdf2(
+                                        "PBKDF2WithHmacSHA256", new byte[] {1, 2, 3}, 120_000),
+                                new byte[] {4, 5, 6})),
                 Instant.parse("2026-07-02T00:00:00Z"),
                 Instant.parse("2026-07-02T00:01:00Z"));
     }
@@ -834,19 +825,15 @@ class VaultBackupServiceTest {
                         "AES-256-GCM",
                         new KeyId("vault-key"),
                         new byte[] {1, 2, 3},
-                        SecretRecordAad.encode(VAULT_ID, metadata, revision),
+                        SecretRecordAad.encode(FINGERPRINT, metadata, revision),
                         new byte[] {7, 8, 9},
                         Instant.parse("2026-07-02T00:02:00Z"));
-        return new EncryptedSecretRecord(VAULT_ID, metadata, envelope, revision);
+        return new EncryptedSecretRecord(metadata, envelope, revision);
     }
 
     private static DeletedSecretRecord deleted(SecretId id, long revision) {
         return new DeletedSecretRecord(
-                VAULT_ID,
-                id,
-                SecretType.LOGIN_PASSWORD,
-                revision,
-                Instant.parse("2026-07-02T00:03:00Z"));
+                id, SecretType.LOGIN_PASSWORD, revision, Instant.parse("2026-07-02T00:03:00Z"));
     }
 
     private static String zipEntryText(byte[] archive, String entryName) throws Exception {
@@ -863,10 +850,10 @@ class VaultBackupServiceTest {
 
     private byte[] archiveWithVaultProperties(@NonNull Consumer<Properties> mutation)
             throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve(UUID.randomUUID().toString()));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        backup.writeTo(backup.export(source, VAULT_ID), output);
+        backup.writeTo(backup.export(source), output);
         Properties properties = new Properties();
         properties.load(
                 new java.io.StringReader(zipEntryText(output.toByteArray(), "vault.properties")));
@@ -885,13 +872,12 @@ class VaultBackupServiceTest {
 
     private byte[] archiveWithRecordProperties(@NonNull Consumer<Properties> mutation)
             throws Exception {
-        FileVaultStore source = new FileVaultStore(tempDir.resolve(UUID.randomUUID().toString()));
+        InMemoryVaultStore source = new InMemoryVaultStore();
         source.saveVaultHeader(header());
-        source.saveSecretRecord(record(secretId(98L), "valid-record", 1L));
         EncryptedSecretRecord record = record(secretId(99L), "record", 1L);
         source.saveSecretRecord(record);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        backup.writeTo(backup.export(source, VAULT_ID), output);
+        backup.writeTo(backup.export(source), output);
         String entryName = "records/" + record.metadata().id().value() + ".properties";
         Properties properties = new Properties();
         properties.load(new java.io.StringReader(zipEntryText(output.toByteArray(), entryName)));
@@ -1005,5 +991,114 @@ class VaultBackupServiceTest {
     private static String sha256(byte[] bytes) throws Exception {
         return Base64.getEncoder()
                 .encodeToString(MessageDigest.getInstance("SHA-256").digest(bytes));
+    }
+
+    /** Minimal in-memory {@link VaultStore} fixture for backup round-trip and restore tests. */
+    private static final class InMemoryVaultStore implements VaultStore {
+        private VaultHeader header;
+        private final Map<SecretId, EncryptedSecretRecord> active = new LinkedHashMap<>();
+        private final Map<SecretId, DeletedSecretRecord> deleted = new LinkedHashMap<>();
+        private long revision;
+
+        @Override
+        public void saveVaultHeader(VaultHeader header) {
+            this.header = header;
+        }
+
+        @Override
+        public Optional<VaultHeader> loadVaultHeader() {
+            return Optional.ofNullable(header);
+        }
+
+        @Override
+        public long nextRevision() {
+            return ++revision;
+        }
+
+        @Override
+        public void recordRevision(long revision) {
+            if (revision > this.revision) {
+                this.revision = revision;
+            }
+        }
+
+        @Override
+        public void saveSecretRecord(EncryptedSecretRecord record) {
+            active.put(record.metadata().id(), record);
+        }
+
+        @Override
+        public Optional<EncryptedSecretRecord> loadSecretRecord(SecretId secretId) {
+            EncryptedSecretRecord record = active.get(secretId);
+            if (record == null) {
+                return Optional.empty();
+            }
+            DeletedSecretRecord tombstone = deleted.get(secretId);
+            if (tombstone != null && tombstone.revision() > record.revision()) {
+                return Optional.empty();
+            }
+            return Optional.of(record);
+        }
+
+        @Override
+        public void deleteSecretRecord(SecretId secretId) {
+            active.remove(secretId);
+        }
+
+        @Override
+        public void saveDeletedSecretRecord(DeletedSecretRecord record) {
+            deleted.put(record.secretId(), record);
+        }
+
+        @Override
+        public Optional<DeletedSecretRecord> loadDeletedSecretRecord(SecretId secretId) {
+            DeletedSecretRecord tombstone = deleted.get(secretId);
+            if (tombstone == null) {
+                return Optional.empty();
+            }
+            EncryptedSecretRecord record = active.get(secretId);
+            if (record != null && record.revision() > tombstone.revision()) {
+                return Optional.empty();
+            }
+            return Optional.of(tombstone);
+        }
+
+        @Override
+        public void deleteDeletedSecretRecord(SecretId secretId) {
+            deleted.remove(secretId);
+        }
+
+        @Override
+        public List<SecretMetadata> listMetadata() {
+            return listSecretRecords().stream().map(EncryptedSecretRecord::metadata).toList();
+        }
+
+        @Override
+        public List<EncryptedSecretRecord> listSecretRecords() {
+            List<EncryptedSecretRecord> records = new ArrayList<>();
+            for (EncryptedSecretRecord record : active.values()) {
+                DeletedSecretRecord tombstone = deleted.get(record.metadata().id());
+                if (tombstone != null && tombstone.revision() > record.revision()) {
+                    continue;
+                }
+                records.add(record);
+            }
+            records.sort(Comparator.comparing(record -> record.metadata().id().value()));
+            return Collections.unmodifiableList(records);
+        }
+
+        @Override
+        public List<DeletedSecretRecord> listDeletedSecretRecords() {
+            List<DeletedSecretRecord> tombstones = new ArrayList<>();
+            for (DeletedSecretRecord tombstone : deleted.values()) {
+                EncryptedSecretRecord record = active.get(tombstone.secretId());
+                if (record != null && record.revision() > tombstone.revision()) {
+                    continue;
+                }
+                tombstones.add(tombstone);
+            }
+            tombstones.sort(Comparator.comparing(tombstone -> tombstone.secretId().value()));
+            return Collections.unmodifiableList(tombstones);
+        }
     }
 }

@@ -1,18 +1,19 @@
 package top.focess.keystead.service;
 
+import java.nio.file.Path;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
-import top.focess.keystead.model.VaultId;
 
 /**
- * Request to create a new password-protected vault.
+ * Request to create a new password-protected vault at a given file path. A v2 vault is identified
+ * locally by its file path; no vault id is supplied.
  *
- * @param vaultId the id of the vault to create
+ * @param file the path of the vault file to create
  */
-public record CreateVaultRequest(@NonNull VaultId vaultId) {
+public record CreateVaultRequest(@NonNull Path file) {
 
     /** Validates the record components. */
     public CreateVaultRequest {
-        Objects.requireNonNull(vaultId, "vaultId");
+        Objects.requireNonNull(file, "file");
     }
 }

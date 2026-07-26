@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.crypto.DefaultCryptoService;
@@ -14,7 +15,10 @@ import top.focess.keystead.crypto.TinkAesGcmCipher;
 import top.focess.keystead.crypto.VaultKey;
 import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.model.KeyId;
+import top.focess.keystead.model.KeySlot;
+import top.focess.keystead.model.SlotType;
 import top.focess.keystead.model.VaultFingerprint;
+import top.focess.keystead.model.VaultHeader;
 
 class VaultFileFormatTest {
 
@@ -25,7 +29,7 @@ class VaultFileFormatTest {
             new DefaultCryptoService(
                     new SecureRandom(), new TinkAesGcmCipher(), SecretMemoryProvider.heap());
 
-    private record WrittenVault(byte[] file, byte[] wrapped, VaultFileFormat.Header header) {}
+    private record WrittenVault(byte[] file, byte[] wrapped, VaultHeader header) {}
 
     @Test
     void roundTripPreservesBodyHeaderAndFingerprint() {
@@ -47,11 +51,13 @@ class VaultFileFormatTest {
             assertEquals(keyId, opened.header().vaultKeyId());
             assertEquals(
                     KdfParameters.pbkdf2(KDF_ALGORITHM, salt, ITERATIONS),
-                    opened.header().kdfParameters());
+                    opened.header().firstPassphraseSlot().orElseThrow().kdfParameters());
             assertEquals(createdAt, opened.header().createdAt());
             assertEquals(updatedAt, opened.header().updatedAt());
             VaultFingerprint expected =
-                    crypto.deriveFingerprint(passphrase, opened.header().kdfParameters());
+                    crypto.deriveFingerprint(
+                            passphrase,
+                            opened.header().firstPassphraseSlot().orElseThrow().kdfParameters());
             assertEquals(expected, opened.fingerprint());
         }
     }
@@ -199,12 +205,14 @@ class VaultFileFormatTest {
         KdfParameters kdf = KdfParameters.pbkdf2(KDF_ALGORITHM, salt, ITERATIONS);
         try (VaultKey vaultKey = crypto.generateVaultKey(encryptingKeyId)) {
             byte[] wrapped = crypto.wrapVaultKey(vaultKey, passphrase, salt, ITERATIONS);
-            VaultFileFormat.Header header =
-                    new VaultFileFormat.Header(
+            VaultFingerprint fingerprint = crypto.deriveFingerprint(passphrase, kdf);
+            KeySlot slot = new KeySlot(SlotType.PASSPHRASE, new KeyId("passphrase"), kdf, wrapped);
+            VaultHeader header =
+                    new VaultHeader(
                             VaultFileFormat.FORMAT_VERSION,
-                            kdf,
+                            fingerprint,
                             headerKeyId,
-                            wrapped,
+                            List.of(slot),
                             createdAt,
                             updatedAt);
             byte[] file = VaultFileFormat.write(crypto, header, vaultKey, body, Instant.now());
@@ -217,15 +225,25 @@ class VaultFileFormatTest {
             String kdfAlgorithm, byte[] salt, String vaultKeyId, int wrappedVaultKeyLength) {
         int algoBytes = kdfAlgorithm.getBytes(StandardCharsets.UTF_8).length;
         int keyIdBytes = vaultKeyId.getBytes(StandardCharsets.UTF_8).length;
+        int slotKeyIdBytes = "passphrase".getBytes(StandardCharsets.UTF_8).length;
+        int paramNameBytes = KdfParameters.ITERATIONS.getBytes(StandardCharsets.UTF_8).length;
         return VaultFileFormat.MAGIC.length
                 + 1 // version
-                + 2 // algorithm length
-                + algoBytes
-                + 2 // salt length
-                + salt.length
-                + 4 // iterations
-                + 2 // key id length
+                + VaultFingerprint.BYTES // fingerprint
+                + 2 // vault key id length
                 + keyIdBytes
+                + 2 // slot count
+                + 1 // slot type
+                + 2 // slot key id length
+                + slotKeyIdBytes
+                + 2 // kdf algorithm length
+                + algoBytes
+                + 2 // kdf salt length
+                + salt.length
+                + 2 // kdf parameter count (single "iterations" entry)
+                + 2 // parameter name length
+                + paramNameBytes
+                + 4 // parameter value
                 + 4 // wrapped key length
                 + wrappedVaultKeyLength
                 + 12 // createdAt

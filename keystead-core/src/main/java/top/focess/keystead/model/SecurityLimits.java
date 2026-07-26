@@ -24,6 +24,24 @@ public final class SecurityLimits {
     /** Maximum PBKDF2 iteration count. */
     public static final int MAX_PBKDF2_ITERATIONS = 10_000_000;
 
+    /** Minimum Argon2id iteration count (time cost). */
+    public static final int MIN_ARGON2ID_ITERATIONS = 1;
+
+    /** Maximum Argon2id iteration count (time cost). */
+    public static final int MAX_ARGON2ID_ITERATIONS = 100;
+
+    /** Minimum Argon2id memory cost, in KiB. */
+    public static final int MIN_ARGON2ID_MEMORY_KIB = 1_024;
+
+    /** Maximum Argon2id memory cost, in KiB. */
+    public static final int MAX_ARGON2ID_MEMORY_KIB = 1_048_576;
+
+    /** Minimum Argon2id parallelism (lanes). */
+    public static final int MIN_ARGON2ID_PARALLELISM = 1;
+
+    /** Maximum Argon2id parallelism (lanes). */
+    public static final int MAX_ARGON2ID_PARALLELISM = 64;
+
     /** Maximum number of named KDF parameter entries. */
     public static final int MAX_KDF_PARAMETER_ENTRIES = 16;
 
