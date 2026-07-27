@@ -52,6 +52,26 @@ class SharePassphrasePolicyTest {
     }
 
     @Test
+    void rejectsWhitespaceAsOnlySymbolClass() {
+        // 12 chars, upper + lower + space; the space must NOT count as the symbol class.
+        ValidationException ex =
+                assertThrows(
+                        ValidationException.class,
+                        () ->
+                                SharePassphrasePolicy.requireAcceptable(
+                                        "Abcdefghijk ".toCharArray()));
+        assertTrue(ex.getMessage().toLowerCase().contains("character classes"));
+    }
+
+    @Test
+    void acceptsWhitespaceAlongsideRealClasses() {
+        // Spaces are allowed; they simply do not count toward the class floor. The real symbol
+        // '!' supplies the fourth class here.
+        assertDoesNotThrow(
+                () -> SharePassphrasePolicy.requireAcceptable("Correct Horse42!".toCharArray()));
+    }
+
+    @Test
     void rejectsNull() {
         assertThrows(
                 NullPointerException.class, () -> SharePassphrasePolicy.requireAcceptable(null));

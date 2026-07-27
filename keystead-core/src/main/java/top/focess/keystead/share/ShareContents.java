@@ -1,6 +1,7 @@
 package top.focess.keystead.share;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -50,7 +51,7 @@ public record ShareContents(
                     Objects.requireNonNull(entry.getKey(), "field name"),
                     Objects.requireNonNull(entry.getValue(), "field value"));
         }
-        fields = Map.copyOf(copy);
+        fields = Collections.unmodifiableMap(copy);
     }
 
     @Override
@@ -59,8 +60,7 @@ public record ShareContents(
                 + shareId
                 + ", secretType="
                 + secretType
-                + ", title="
-                + title
+                + ", title=<redacted>"
                 + ", fields=<redacted:"
                 + fields.size()
                 + ">"

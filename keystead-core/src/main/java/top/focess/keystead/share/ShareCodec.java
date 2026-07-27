@@ -4,6 +4,7 @@ import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -106,15 +107,18 @@ final class ShareCodec {
 
         TreeMap<String, String> sorted = new TreeMap<>(fields);
         List<byte[]> valueBytes = new ArrayList<>(sorted.size());
-        byte[] noteBytes = note == null ? null : utf8(note);
-        byte[] salt = crypto.randomSalt();
-        byte[] nonce = crypto.randomNonce();
+        byte[] noteBytes = null;
+        byte[] salt = null;
+        byte[] nonce = null;
         byte[] bodyBytes = null;
         byte[] ciphertext = null;
         try {
+            noteBytes = note == null ? null : utf8(note);
             if (noteBytes != null && noteBytes.length > 0xFFFF) {
                 throw new ValidationException("Share note exceeds maximum encoded length");
             }
+            salt = crypto.randomSalt();
+            nonce = crypto.randomNonce();
 
             String shareId = UUID.randomUUID().toString();
             String secretTypeName = draft.secretType().name();
@@ -139,6 +143,7 @@ final class ShareCodec {
                 }
                 byte[] vb = utf8(entry.getValue());
                 if (vb.length > SecurityLimits.SHARE_MAX_FIELD_VALUE_BYTES) {
+                    Wipe.wipe(vb);
                     throw new ValidationException(
                             "Share field value exceeds maximum size: " + name);
                 }
@@ -291,6 +296,9 @@ final class ShareCodec {
                 throw new ValidationException("Share KDF salt has invalid length");
             }
             int iterations = readInt(buf);
+            // Decode accepts any positive count up to the absolute maximum; it deliberately does
+            // NOT enforce the mint-side minimum, so raising that minimum never invalidates shares
+            // minted under an older floor.
             if (iterations < 1 || iterations > SecurityLimits.MAX_PBKDF2_ITERATIONS) {
                 throw new ValidationException("Share KDF iterations are out of range");
             }
@@ -481,7 +489,11 @@ final class ShareCodec {
         if (nanos < 0 || nanos > 999_999_999) {
             throw new ValidationException("Instant nanos are out of range");
         }
-        return Instant.ofEpochSecond(seconds, nanos);
+        try {
+            return Instant.ofEpochSecond(seconds, nanos);
+        } catch (DateTimeException e) {
+            throw new ValidationException("Instant is out of range", e);
+        }
     }
 
     private static boolean bytesEqual(byte @NonNull [] a, byte @NonNull [] b) {

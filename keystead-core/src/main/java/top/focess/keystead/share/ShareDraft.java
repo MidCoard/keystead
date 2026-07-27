@@ -1,6 +1,7 @@
 package top.focess.keystead.share;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -14,7 +15,9 @@ import top.focess.keystead.model.SecretType;
  *
  * <p>{@code fields} is the secret payload the recipient will recover (for a login that is
  * typically {@code url/username/password/notes} keyed however the caller prefers). The map
- * is defensively copied and exposed as an unmodifiable, insertion-ordered snapshot.
+ * is defensively copied and exposed as an unmodifiable, insertion-ordered snapshot. Field
+ * keys and values are <em>not</em> validated against {@code secretType}'s schema; a share is
+ * a field-agnostic transport, so the caller's key set is recovered verbatim by the recipient.
  *
  * <p>{@code kdfIterations} selects the PBKDF2 cost; {@code 0} means "use the format default".
  * Values below {@link top.focess.keystead.model.SecurityLimits#SHARE_PBKDF2_MIN_ITERATIONS}
@@ -42,6 +45,9 @@ public record ShareDraft(
         Objects.requireNonNull(secretType, "secretType");
         Objects.requireNonNull(title, "title");
         Objects.requireNonNull(fields, "fields");
+        if (kdfIterations < 0) {
+            throw new IllegalArgumentException("Share kdfIterations must not be negative");
+        }
         String trimmed = title.trim();
         if (trimmed.isEmpty()) {
             throw new IllegalArgumentException("Share title must not be blank");
@@ -56,7 +62,7 @@ public record ShareDraft(
             copy.put(name, entry.getValue());
         }
         title = trimmed;
-        fields = Map.copyOf(copy);
+        fields = Collections.unmodifiableMap(copy);
     }
 
     /**

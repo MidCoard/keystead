@@ -37,7 +37,10 @@ final class SharePassphrasePolicy {
                 upper = true;
             } else if (Character.isDigit(c)) {
                 digit = true;
-            } else {
+            } else if (!Character.isWhitespace(c) && !Character.isISOControl(c)) {
+                // Whitespace and control characters do not count toward the symbol class: a space
+                // is a single extra code point and would otherwise let a two-class passphrase
+                // satisfy the composition floor cheaply.
                 symbol = true;
             }
         }

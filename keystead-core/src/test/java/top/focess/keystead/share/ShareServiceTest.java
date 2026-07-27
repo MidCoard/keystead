@@ -11,7 +11,9 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import top.focess.keystead.crypto.CryptoException;
@@ -19,6 +21,7 @@ import top.focess.keystead.crypto.DefaultCryptoService;
 import top.focess.keystead.crypto.TinkAesGcmCipher;
 import top.focess.keystead.memory.SecretMemoryProvider;
 import top.focess.keystead.model.SecretType;
+import top.focess.keystead.model.SecurityLimits;
 import top.focess.keystead.service.ValidationException;
 
 class ShareServiceTest {
@@ -258,5 +261,56 @@ class ShareServiceTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new ShareDraft(SecretType.GENERIC_SECRET, "t", fields));
+    }
+
+    @Test
+    void draftFieldsPreserveInsertionOrder() {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("zeta", "1");
+        fields.put("alpha", "2");
+        fields.put("mike", "3");
+        ShareDraft draft = new ShareDraft(SecretType.GENERIC_SECRET, "order", fields);
+
+        // The unmodifiable snapshot preserves the caller's insertion order (Map.copyOf would
+        // give an unspecified iteration order).
+        assertEquals(List.of("zeta", "alpha", "mike"), new ArrayList<>(draft.fields().keySet()));
+    }
+
+    @Test
+    void contentsFieldsIterateInSortedWireOrder() {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("zeta", "1");
+        fields.put("alpha", "2");
+        fields.put("mike", "3");
+        ShareDraft draft = new ShareDraft(SecretType.GENERIC_SECRET, "order", fields);
+
+        ShareContents contents = share.open(share.create(draft, passphrase()), passphrase());
+
+        // The wire format sorts fields by name; the recovered snapshot preserves that order.
+        assertEquals(List.of("alpha", "mike", "zeta"), new ArrayList<>(contents.fields().keySet()));
+    }
+
+    @Test
+    void draftRejectsNegativeIterations() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new ShareDraft(
+                                SecretType.GENERIC_SECRET, "t", Map.of("k", "v"), null, null, -1));
+    }
+
+    @Test
+    void toStringAlsoRedactsTitle() {
+        ShareContents contents = share.open(share.create(loginDraft(), passphrase()), passphrase());
+        assertFalse(contents.toString().contains("Alice login"));
+    }
+
+    @Test
+    void oversizedFieldValueIsRejected() {
+        String tooLarge = "x".repeat(SecurityLimits.SHARE_MAX_FIELD_VALUE_BYTES + 1);
+        ShareDraft draft = new ShareDraft(SecretType.GENERIC_SECRET, "big", Map.of("k", tooLarge));
+        ValidationException ex =
+                assertThrows(ValidationException.class, () -> share.create(draft, passphrase()));
+        assertTrue(ex.getMessage().toLowerCase().contains("field value"));
     }
 }
