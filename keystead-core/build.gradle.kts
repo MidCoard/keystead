@@ -38,6 +38,7 @@ val namedModuleTestPackages =
         "top.focess.keystead.security",
         "top.focess.keystead.security.internal",
         "top.focess.keystead.service",
+        "top.focess.keystead.share",
         "top.focess.keystead.store")
 
 dependencies {

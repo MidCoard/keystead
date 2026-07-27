@@ -25,6 +25,7 @@ class ModuleContractTest {
                     "top.focess.keystead.recovery",
                     "top.focess.keystead.security",
                     "top.focess.keystead.service",
+                    "top.focess.keystead.share",
                     "top.focess.keystead.store");
 
     @Test

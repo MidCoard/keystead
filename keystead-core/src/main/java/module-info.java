@@ -19,5 +19,6 @@ module top.focess.keystead.core {
     exports top.focess.keystead.recovery;
     exports top.focess.keystead.security;
     exports top.focess.keystead.service;
+    exports top.focess.keystead.share;
     exports top.focess.keystead.store;
 }

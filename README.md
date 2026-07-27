@@ -145,6 +145,46 @@ Generated private material is owned by `SecretBuffer`-based or
 - Restart-safe resumption from a device-wrapped staged package, followed by an
   atomic local commit.
 
+### Single-secret sharing
+
+- Share one secret as a self-contained encrypted string
+  `keystead-share:v1:<base64url>` unlockable with a temporary passphrase. The
+  recipient needs no vault and no account.
+- The temp passphrase is the **only** key: PBKDF2-HMAC-SHA-256 (120 000
+  iterations, mint-time floor) derives the AES-256-GCM key. A min-strength floor
+  (≥ 12 characters, ≥ 3 of 4 character classes) bounds offline brute-force of a
+  leaked string.
+- No vault fingerprint, vault id, or key id is embedded; a share is unlinked from
+  the vault. The server, when used for a short link, routes by an opaque share id
+  it issues and hosts only transport and lifecycle (expiry / view-once / revoke)
+  - the decryption key never touches the server, and there is no link-fragment
+  key mode.
+- The plaintext header (magic, version, KDF parameters, nonce) is the AEAD
+  additional-authenticated data, so tampering with any routing or KDF parameter
+  is detected at decryption. A wrong passphrase fails the AEAD tag; an expired
+  share is rejected after decryption.
+
+```java
+ShareService shares = new ShareService(crypto);
+
+Map<String, String> fields = new LinkedHashMap<>();
+fields.put("username", "alice");
+fields.put("password", "s3cret-pw");
+
+String shareString = shares.create(
+        new ShareDraft(SecretType.LOGIN_PASSWORD, "Alice login", fields),
+        tempPassphrase);              // tempPassphrase is wiped by create
+
+ShareContents contents = shares.open(shareString, tempPassphrase);  // wiped by open
+contents.fields().get("password");
+```
+
+The passphrase arrays are wiped by `create` / `open` on return, including on
+failure. `ShareContents` holds recovered plaintext `String` fields (Java strings
+cannot be wiped deterministically), so callers should consume them promptly and
+avoid retaining the object. The binary layout is specified in
+[VAULT_PROTOCOL.md](VAULT_PROTOCOL.md) §12.
+
 ## Secret type model
 
 Keystead does not treat every item as an arbitrary collection of strings.
@@ -396,6 +436,7 @@ keystead-core/src/main/java/top/focess/keystead/
 |-- recovery/    recovery kits, device requests, and vault-key packages
 |-- security/    process-hardening inspection and strict application
 |-- service/     public vault, backup, and sync workflows
+|-- share/       self-contained single-secret share codec and service
 `-- store/       persistence abstraction and filesystem implementation
 ```
 

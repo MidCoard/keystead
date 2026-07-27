@@ -372,26 +372,85 @@ Share **one** secret from a vault as a self-contained encrypted string,
 unlockable with a temporary passphrase. The recipient needs no vault and no
 account.
 
-- **Codec**: `SecretShare`, magic `KSTS\x01`, version 1. The plaintext header
-  (KDF params + nonce) is the AAD; the AEAD payload is
-  `{shareId, secretType, title, fields{}, sharerNote?, createdAt, expiresAt?}`.
-  Encoded `keystead-share:v1:<base64url>`.
-- **KDF**: PBKDF2-HMAC-SHA-256 over the temp passphrase, with a **min-strength
-  floor** (length + character classes) enforced at creation to bound offline
-  brute-force of leaked strings.
-- **No vault fingerprint embedded**: a share is intentionally unlinked from the
-  vault.
-- **Transport = both**: the string is always self-contained (offline-capable);
-  optionally uploaded to the server for a short link carrying
-  expiry / view-once / revoke. The decryption key never touches the server (the
-  temp passphrase, or a key carried in the link fragment, is the only key).
-- **Automation-integrated**: automation principals (API tokens / CI) mint shares
-  from a vault they hold a vault-key package for, via the server API; the
-  server-side share-link hosting and lifecycle live in the automation subsystem
-  alongside the automation vault-key-package endpoints. Humans mint via the
-  client.
-- **Recipient flow**: paste the string (or follow a link -> fetch the blob) ->
-  enter the temp passphrase -> view in a short-lived, wiped view.
+### 12.1 Wire format
+
+A share string is `keystead-share:v1:` followed by base64url (no padding) of the
+byte stream below (all integers big-endian):
+
+```
+magic[4]              "KSTS"
+version[1]            1
+HEADER  (plaintext; = AEAD AAD, bytes [0, headerEnd))
+  kdfAlgorithm        u16 len + UTF-8   ("PBKDF2WithHmacSHA256")
+  kdfSalt             u8  len + bytes
+  kdfIterations       s32
+  nonce               u8  len + bytes
+ENVELOPE
+  envelopeVersion[1]  1
+  algorithm           u16 len + UTF-8   ("AES-256-GCM")
+  ciphertext          s32 len + bytes
+BODY  (plaintext the ciphertext decrypts to)
+  bodyVersion[1]      1
+  shareId             u16 len + UTF-8   (UUID string)
+  secretType          u16 len + UTF-8   (SecretType name)
+  title               u16 len + UTF-8
+  fieldCount          s32
+  fields[fieldCount]
+    name              u16 len + UTF-8
+    value             u16 len + UTF-8
+  hasNote[1]          0/1
+  sharerNote          u16 len + UTF-8   (only if hasNote)
+  createdAt           s64 seconds + s32 nanos
+  hasExpiresAt[1]     0/1
+  expiresAt           s64 seconds + s32 nanos   (only if hasExpiresAt)
+```
+
+The plaintext header (magic through nonce) is the AEAD additional-authenticated-
+data, so any tampering with versioning or KDF parameters is detected at
+decryption time. Fields are sorted by name at mint time for deterministic
+encoding. There is no `encryptedAt` in the envelope: `createdAt` (inside the
+authenticated body) already conveys mint time, so every byte outside the
+ciphertext is either validated (version / algorithm) or authenticated
+(ciphertext).
+
+### 12.2 Key and KDF
+
+The temp passphrase is the **only** key. It is stretched with
+PBKDF2-HMAC-SHA-256 (default 120 000 iterations; mint-time floor 120 000,
+resource ceiling 10 000 000) over the per-share salt, producing the 32-byte
+AES-256-GCM key. A **min-strength floor** (≥ 12 characters and ≥ 3 of 4
+character classes) is enforced at creation to bound offline brute-force of a
+leaked share string. The passphrase is wiped immediately after mint and after
+redeem (success or failure).
+
+### 12.3 No vault fingerprint
+
+A share is intentionally unlinked from the vault: no fingerprint, vault id, or
+key id is embedded. The server (when used) routes a short link by an opaque
+share id it issues, not by vault identity.
+
+### 12.4 Transport
+
+The string is always self-contained (offline-capable). Optionally it is uploaded
+to the server for a short link carrying expiry / view-once / revoke; that link is
+**transport and server-side lifecycle only** — the decryption key never touches
+the server, and there is no link-fragment key mode. The temp passphrase is
+communicated to the recipient out of band.
+
+### 12.5 Mint and redeem
+
+- **Mint** (holder of the secret): choose a temp passphrase meeting the floor,
+  build a `ShareDraft` (secret type, title, fields, optional note, optional
+  expiry), and produce the string via `ShareService.create`.
+- **Redeem** (recipient): paste the string, enter the temp passphrase, view the
+  recovered `ShareContents` in a short-lived, wiped view via
+  `ShareService.open`. A wrong passphrase fails the AEAD tag; an expired share is
+  rejected after decryption (so the failure mode does not leak whether
+  decryption succeeded).
+- **Automation**: automation principals (API tokens / CI) mint shares from a
+  vault they hold a vault-key package for, via the server API; share-link hosting
+  and lifecycle live in the automation subsystem alongside the automation
+  vault-key-package endpoints. Humans mint via the client.
 
 ---
 
@@ -423,7 +482,9 @@ account.
 - `formatVersion = 2`; envelope version `1`; AAD label `keystead-secret-record-v3`;
   sync profile `keystead-sync-profile-v2`; fingerprint label
   `keystead-vault-fingerprint-v2`; key-wrap label
-  `keystead-vault-key-wrap-v2`; share magic `KSTS\x01` / `keystead-share:v1`.
+  `keystead-vault-key-wrap-v2`; share magic `KSTS` + version `1` / prefix
+  `keystead-share:v1:`; share AAD = serialized header bytes (magic through
+  nonce).
 - **Clean break from v0.2**: a v0.2 folder-vault is rejected with a clear error
   (no read, no importer). This is a major version bump (proposed `1.0.0`;
   final number is the maintainer's call).

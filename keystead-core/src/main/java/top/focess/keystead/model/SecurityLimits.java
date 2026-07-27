@@ -51,5 +51,32 @@ public final class SecurityLimits {
     /** Byte size of an AES-256 key. */
     public static final int AES_256_KEY_BYTES = 32;
 
+    /** Minimum character count of a single-secret share temp passphrase (bounds offline brute-force of a leaked share string). */
+    public static final int SHARE_PASSPHRASE_MIN_CHARACTERS = 12;
+
+    /** Minimum number of character classes (lower, upper, digit, symbol) in a share temp passphrase. */
+    public static final int SHARE_PASSPHRASE_MIN_CHAR_CLASSES = 3;
+
+    /** Minimum PBKDF2 iteration count accepted when minting a share. */
+    public static final int SHARE_PBKDF2_MIN_ITERATIONS = 120_000;
+
+    /** Maximum character count of a share title. */
+    public static final int SHARE_MAX_TITLE_CHARACTERS = 256;
+
+    /** Maximum character count of a sharer note in a share. */
+    public static final int SHARE_MAX_NOTE_CHARACTERS = 4_096;
+
+    /** Maximum number of fields in a share. */
+    public static final int SHARE_MAX_FIELD_COUNT = 64;
+
+    /** Maximum character count of a share field name. */
+    public static final int SHARE_MAX_FIELD_NAME_CHARACTERS = 64;
+
+    /** Maximum byte size of a share field value (fits a u16 length prefix). */
+    public static final int SHARE_MAX_FIELD_VALUE_BYTES = 65_535;
+
+    /** Maximum byte size of a decrypted share body. */
+    public static final int SHARE_MAX_BODY_BYTES = 1_048_576;
+
     private SecurityLimits() {}
 }

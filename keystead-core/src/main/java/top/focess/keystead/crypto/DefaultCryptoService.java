@@ -159,6 +159,17 @@ public final class DefaultCryptoService {
     }
 
     /**
+     * Generates a fresh random AEAD nonce of the primary cipher's nonce size.
+     *
+     * @return the nonce
+     */
+    public byte @NonNull [] randomNonce() {
+        byte[] nonce = new byte[aeadCipher.nonceSizeBytes()];
+        random.nextBytes(nonce);
+        return nonce;
+    }
+
+    /**
      * Builds the default v2 Argon2id passphrase KDF parameters for a fresh salt.
      *
      * @param salt the KDF salt
@@ -427,6 +438,81 @@ public final class DefaultCryptoService {
             Wipe.wipe(nonce);
             Wipe.wipe(ciphertext);
             Wipe.wipe(opened);
+        }
+    }
+
+    /**
+     * Derives a key from the passphrase and AEAD-encrypts the plaintext under it. The nonce is
+     * supplied by the caller so it can be bound into the additional authenticated data (the
+     * single-secret share format stores the nonce in its plaintext header, which is the AAD). The
+     * derived key is wiped; the caller retains ownership of the passphrase.
+     *
+     * @param passphrase caller-owned passphrase
+     * @param kdfParameters the passphrase KDF parameters
+     * @param nonce the caller-supplied AEAD nonce
+     * @param plaintext the plaintext to encrypt
+     * @param aad the additional authenticated data
+     * @return the ciphertext
+     */
+    public byte @NonNull [] sealWithPassphrase(
+            char @NonNull [] passphrase,
+            @NonNull KdfParameters kdfParameters,
+            byte @NonNull [] nonce,
+            byte @NonNull [] plaintext,
+            byte @NonNull [] aad) {
+        Objects.requireNonNull(passphrase, "passphrase");
+        Objects.requireNonNull(kdfParameters, "kdfParameters");
+        Objects.requireNonNull(nonce, "nonce");
+        Objects.requireNonNull(plaintext, "plaintext");
+        Objects.requireNonNull(aad, "aad");
+        if (nonce.length != aeadCipher.nonceSizeBytes()) {
+            throw new CryptoException("Invalid AEAD nonce length");
+        }
+        byte @Nullable [] wrappingKey = null;
+        try {
+            wrappingKey = deriveWrappingKey(passphrase, kdfParameters);
+            return aeadCipher.encrypt(wrappingKey, nonce, plaintext, aad);
+        } finally {
+            Wipe.wipe(wrappingKey);
+        }
+    }
+
+    /**
+     * Derives a key from the passphrase and AEAD-decrypts the ciphertext under it. A wrong
+     * passphrase or a tampered ciphertext fails the AEAD tag and throws {@link CryptoException}.
+     *
+     * @param passphrase caller-owned passphrase
+     * @param kdfParameters the passphrase KDF parameters used at seal time
+     * @param nonce the AEAD nonce used at seal time
+     * @param ciphertext the ciphertext to decrypt
+     * @param aad the additional authenticated data
+     * @return the plaintext
+     */
+    public byte @NonNull [] openWithPassphrase(
+            char @NonNull [] passphrase,
+            @NonNull KdfParameters kdfParameters,
+            byte @NonNull [] nonce,
+            byte @NonNull [] ciphertext,
+            byte @NonNull [] aad) {
+        Objects.requireNonNull(passphrase, "passphrase");
+        Objects.requireNonNull(kdfParameters, "kdfParameters");
+        Objects.requireNonNull(nonce, "nonce");
+        Objects.requireNonNull(ciphertext, "ciphertext");
+        Objects.requireNonNull(aad, "aad");
+        if (nonce.length != aeadCipher.nonceSizeBytes()) {
+            throw new CryptoException("Invalid AEAD nonce length");
+        }
+        byte @Nullable [] wrappingKey = null;
+        byte @Nullable [] plaintext = null;
+        try {
+            wrappingKey = deriveWrappingKey(passphrase, kdfParameters);
+            plaintext = aeadCipher.decrypt(wrappingKey, nonce, ciphertext, aad);
+            byte[] result = plaintext;
+            plaintext = null;
+            return result;
+        } finally {
+            Wipe.wipe(wrappingKey);
+            Wipe.wipe(plaintext);
         }
     }
 
