@@ -18,7 +18,7 @@ import top.focess.keystead.service.ValidationException;
  * supplies the same passphrase to recover the payload.
  *
  * <p>This facade is the public entry point for the share format; the binary layout lives in
- * {@link ShareCodec} and is documented in {@code VAULT_PROTOCOL.md}.
+ * {@link ShareCodec} and is documented in {@code README.md} (Single-secret sharing).
  *
  * <p>The {@code char[]} passphrase arguments are wiped by these methods on return (including
  * on failure); callers should not reuse the array afterwards.
