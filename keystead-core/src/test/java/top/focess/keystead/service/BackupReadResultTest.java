@@ -15,7 +15,7 @@ import top.focess.keystead.model.VaultHeader;
 class BackupReadResultTest {
 
     private static final VaultFingerprint FINGERPRINT =
-            VaultFingerprint.fromHexString("00112233445566778899aabbccddeeff");
+            VaultFingerprint.fromHexString("0011223344556677");
 
     @Test
     void rejectsNegativeUnsupportedCount() {

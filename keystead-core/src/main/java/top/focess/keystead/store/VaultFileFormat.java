@@ -26,7 +26,7 @@ import top.focess.keystead.model.VaultFingerprint;
 import top.focess.keystead.model.VaultHeader;
 
 /**
- * On-disk format for a v2 single-file vault.
+ * On-disk format for a single-file vault.
  *
  * <p>A vault file is one opaque container: a plaintext multi-slot header (magic, format version,
  * fingerprint, vault key id, key slots, timestamps) followed by a single authenticated-encryption
@@ -52,8 +52,8 @@ import top.focess.keystead.model.VaultHeader;
  * <pre>
  *   HEADER (plaintext; also the container AAD)
  *     magic[6]            "KSTEAD"
- *     version[1]          2
- *     fingerprint[16]     HMAC-SHA-256(wrappingKey, label ‖ kdfSalt), low 128 bits
+ *     version[1]          3
+ *     fingerprint[8]      HMAC-SHA-256(wrappingKey, label ‖ kdfSalt), low 64 bits
  *     vaultKeyId          u16 len + UTF-8
  *     slotCount           u16
  *     slots[slotCount]:
@@ -82,11 +82,11 @@ import top.focess.keystead.model.VaultHeader;
  */
 public final class VaultFileFormat {
 
-    /** Magic bytes prefixing every v2 vault file. */
+    /** Magic bytes prefixing every vault file. */
     public static final byte @NonNull [] MAGIC = "KSTEAD".getBytes(StandardCharsets.US_ASCII);
 
     /** Current vault file format version. */
-    public static final int FORMAT_VERSION = 2;
+    public static final int FORMAT_VERSION = 3;
 
     /** Upper bound on an envelope nonce (the on-disk length is a single byte, so this is 255). */
     private static final int MAX_NONCE_BYTES = 0xFF;

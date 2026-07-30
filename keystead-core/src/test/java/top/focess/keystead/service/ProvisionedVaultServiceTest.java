@@ -148,8 +148,7 @@ class ProvisionedVaultServiceTest {
 
     @Test
     void provisionVaultRejectsInvalidKeyPackageArguments() {
-        VaultFingerprint fingerprint =
-                VaultFingerprint.fromHexString("00112233445566778899aabbccddeeff");
+        VaultFingerprint fingerprint = VaultFingerprint.fromHexString("0011223344556677");
         KeyId keyId = new KeyId("vault-key");
 
         assertThrows(

@@ -19,7 +19,7 @@ import org.jspecify.annotations.NonNull;
  * passphrase or salt changes.
  *
  * <p>Storage and disclosure: the fingerprint is a <em>non-secret</em> routing identity. It is stored
- * in the plaintext v2 vault header so that passphrase-less device and recovery opens can recover it
+ * in the plaintext vault header so that passphrase-less device and recovery opens can recover it
  * (they have no wrapping key to derive it from), and it is disclosed to the sync server as a routing
  * token. It is integrity-protected on disk by the whole-vault AEAD tag (the header is the
  * container AAD). Offline passphrase protection rests on the Argon2id-gated wrapped vault key, not on
@@ -31,8 +31,8 @@ import org.jspecify.annotations.NonNull;
  */
 public record VaultFingerprint(byte @NonNull [] value) {
 
-    /** Byte length of a vault fingerprint (128 bits). */
-    public static final int BYTES = 16;
+    /** Byte length of a vault fingerprint (64 bits). */
+    public static final int BYTES = 8;
 
     /** Validates the record components. */
     public VaultFingerprint {

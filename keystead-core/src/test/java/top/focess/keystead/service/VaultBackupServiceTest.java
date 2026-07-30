@@ -36,7 +36,7 @@ class VaultBackupServiceTest {
     private static final Clock CLOCK =
             Clock.fixed(Instant.parse("2026-07-03T00:00:00Z"), ZoneOffset.UTC);
     private static final VaultFingerprint FINGERPRINT =
-            VaultFingerprint.fromHexString("00112233445566778899aabbccddeeff");
+            VaultFingerprint.fromHexString("0011223344556677");
 
     private final VaultBackupService backup = new VaultBackupService(CLOCK);
 
@@ -301,7 +301,7 @@ class VaultBackupServiceTest {
         VaultHeader different =
                 new VaultHeader(
                         1,
-                        VaultFingerprint.fromHexString("ff112233445566778899aabbccddeeff"),
+                        VaultFingerprint.fromHexString("ff11223344556677"),
                         new KeyId("different-vault-key"),
                         List.of(
                                 new KeySlot(

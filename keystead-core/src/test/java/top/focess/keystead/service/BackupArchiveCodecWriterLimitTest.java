@@ -38,7 +38,7 @@ class BackupArchiveCodecWriterLimitTest {
     private static final Instant UPDATED_AT = Instant.parse("2026-07-02T00:01:00Z");
     private static final Instant ENCRYPTED_AT = Instant.parse("2026-07-02T00:02:00Z");
     private static final VaultFingerprint FINGERPRINT =
-            VaultFingerprint.fromHexString("00112233445566778899aabbccddeeff");
+            VaultFingerprint.fromHexString("0011223344556677");
 
     @Test
     void writerRoundTripsRecordAtExactSerializedEntryLimit() throws Exception {

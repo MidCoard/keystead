@@ -31,8 +31,8 @@ class SyncExportTest {
 
     private static final Clock CLOCK =
             Clock.fixed(Instant.parse("2026-07-03T00:00:00Z"), ZoneOffset.UTC);
-    private static final String FINGERPRINT = "60000000000000000000000000000001";
-    private static final String FOREIGN_FINGERPRINT = "60000000000000000000000000000099";
+    private static final String FINGERPRINT = "6000000000000001";
+    private static final String FOREIGN_FINGERPRINT = "6000000000000099";
 
     @TempDir Path tempDir;
 

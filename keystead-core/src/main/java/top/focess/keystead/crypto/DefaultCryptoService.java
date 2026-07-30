@@ -62,7 +62,7 @@ public final class DefaultCryptoService {
     public static final @NonNull String ARGON2ID_ALGORITHM = CryptoAlgorithmRegistry.KDF_ARGON2ID;
 
     /** Label mixed into the vault fingerprint HMAC to domain-separate it from other uses. */
-    public static final @NonNull String FINGERPRINT_LABEL = "keystead-vault-fingerprint-v2";
+    public static final @NonNull String FINGERPRINT_LABEL = "keystead-vault-fingerprint-v3";
 
     private static final int KEY_BYTES = 32;
     private static final int SALT_BYTES = 16;
@@ -623,8 +623,8 @@ public final class DefaultCryptoService {
      * Derives the vault fingerprint from a master password and KDF parameters.
      *
      * <p>The fingerprint is {@code HMAC-SHA-256(wrappingKey, FINGERPRINT_LABEL ‖ kdfSalt)} truncated to
-     * 128 bits, where {@code wrappingKey} is the password-derived key. It is a non-secret routing
-     * identity, stored in the v2 vault header so passphrase-less device/recovery opens can recover it.
+     * 64 bits, where {@code wrappingKey} is the password-derived key. It is a non-secret routing
+     * identity, stored in the vault header so passphrase-less device/recovery opens can recover it.
      * It is stable across vault-key rotations (the wrapping key is unchanged when only the
      * data-encryption key is rewrapped) and changes only when the passphrase or salt changes.
      *
