@@ -506,6 +506,55 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
+    public synchronized @NonNull KeyId addDeviceKey(
+            byte @NonNull [] devicePublicKey, byte @NonNull [] context) {
+        Objects.requireNonNull(devicePublicKey, "devicePublicKey");
+        Objects.requireNonNull(context, "context");
+        requireOpen();
+        requireMutable();
+        byte @Nullable [] wrapped = null;
+        try {
+            wrapped = crypto.wrapVaultKeyForDevice(vaultKey, devicePublicKey, context);
+            VaultHeader header = store.header();
+            if (header.slots().size() >= VaultHeader.MAX_SLOTS) {
+                throw new ValidationException("Vault header has no room for another key slot");
+            }
+            KeyId slotKeyId = new KeyId("device-" + UUID.randomUUID());
+            KeySlot slot = new KeySlot(SlotType.DEVICE, slotKeyId, null, wrapped);
+            List<KeySlot> slots = new ArrayList<>(header.slots());
+            slots.add(slot);
+            store.saveVaultHeader(header.withVaultKey(header.vaultKeyId(), slots, clock.instant()));
+            return slotKeyId;
+        } finally {
+            Wipe.wipe(wrapped);
+        }
+    }
+
+    @Override
+    public synchronized void removeDeviceKey(@NonNull KeyId slotKeyId) {
+        Objects.requireNonNull(slotKeyId, "slotKeyId");
+        requireOpen();
+        requireMutable();
+        VaultHeader header = store.header();
+        List<KeySlot> remaining = new ArrayList<>();
+        boolean found = false;
+        for (KeySlot slot : header.slots()) {
+            if (slot.slotType() == SlotType.DEVICE && slot.slotKeyId().equals(slotKeyId)) {
+                found = true;
+            } else {
+                remaining.add(slot);
+            }
+        }
+        if (!found) {
+            throw new ValidationException("No device key slot with id " + slotKeyId.value());
+        }
+        if (remaining.isEmpty()) {
+            throw new ValidationException("Vault must retain at least one key slot");
+        }
+        store.saveVaultHeader(header.withVaultKey(header.vaultKeyId(), remaining, clock.instant()));
+    }
+
+    @Override
     public synchronized @NonNull PreparedVaultKeyRotation prepareVaultKeyRotation() {
         requireOpen();
         requireMutable();

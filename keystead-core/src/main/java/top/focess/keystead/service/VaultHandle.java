@@ -192,6 +192,29 @@ public interface VaultHandle extends AutoCloseable {
             byte @NonNull [] devicePublicKey, byte @NonNull [] context);
 
     /**
+     * Wraps the current vault key for the given device public key and appends a DEVICE slot to the
+     * vault header, so that device can thereafter unlock the vault without a passphrase. The
+     * data-encryption key is unchanged and no secret records are re-encrypted; the existing
+     * passphrase slot (and any other slots) are preserved.
+     *
+     * @param devicePublicKey the recipient device's public key
+     * @param context caller-owned binding context; wiped by the caller
+     * @return the key id of the newly added device slot
+     * @throws ValidationException if the header is full
+     * @throws top.focess.keystead.store.StoreException if the updated header cannot be persisted
+     */
+    @NonNull KeyId addDeviceKey(byte @NonNull [] devicePublicKey, byte @NonNull [] context);
+
+    /**
+     * Removes the DEVICE slot with the given key id from the vault header, revoking that device's
+     * passphrase-less access. The vault must retain at least one slot.
+     *
+     * @param slotKeyId the key id of the device slot to remove (as returned by {@link #addDeviceKey})
+     * @throws ValidationException if no matching device slot exists or it is the last remaining slot
+     */
+    void removeDeviceKey(@NonNull KeyId slotKeyId);
+
+    /**
      * Prepares a vault-key rotation: generates the next key and re-encrypts current records without
      * committing, so recipient packages can be collected first.
      *
