@@ -55,6 +55,17 @@ public record KeySlot(
         return kdfParameters;
     }
 
+    /** Returns the KDF parameters, which are present on passphrase slots.
+     *
+     * @return the KDF parameters
+     * @throws IllegalStateException if this slot has no KDF parameters (not a passphrase slot) */
+    public @NonNull KdfParameters requireKdfParameters() {
+        if (kdfParameters == null) {
+            throw new IllegalStateException("KDF parameters are present only on passphrase slots");
+        }
+        return kdfParameters;
+    }
+
     @Override
     public @NonNull String toString() {
         return "KeySlot[slotType=%s, slotKeyId=%s, kdfParameters=%s, wrappedVaultKey=[REDACTED %d bytes]]"

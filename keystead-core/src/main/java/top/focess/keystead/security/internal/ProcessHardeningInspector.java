@@ -296,7 +296,7 @@ public final class ProcessHardeningInspector {
             @NonNull ProcessHardeningOperations operations) {
         NativeMemoryProtectionReport probe = operations.nativeMemoryProbe();
         NativeProtectionStatus allocation =
-                probe.result(NativeProtectionControl.ALLOCATION).status();
+                probe.requireResult(NativeProtectionControl.ALLOCATION).status();
         HardeningStatus status =
                 switch (allocation) {
                     case VERIFIED -> HardeningStatus.VERIFIED;

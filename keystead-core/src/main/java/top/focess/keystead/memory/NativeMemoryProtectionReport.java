@@ -52,6 +52,21 @@ public record NativeMemoryProtectionReport(
         return results.get(control.ordinal());
     }
 
+    /**
+     * Returns the result for one control, which a complete report always contains.
+     *
+     * @param control the control to look up
+     * @return the non-null result for {@code control}
+     * @throws IllegalStateException if {@code control} has no result (not expected for a complete report)
+     */
+    public @NonNull NativeProtectionResult requireResult(@NonNull NativeProtectionControl control) {
+        NativeProtectionResult result = result(control);
+        if (result == null) {
+            throw new IllegalStateException("No native protection result for control: " + control);
+        }
+        return result;
+    }
+
     @Override
     public @NonNull String toString() {
         return "NativeMemoryProtectionReport[platform=" + platform + ", results=" + results + "]";

@@ -190,7 +190,7 @@ public final class VaultFileFormat {
                         header.vaultKeyId(),
                         passphraseSlot.wrappedVaultKey(),
                         masterPassword,
-                        passphraseSlot.kdfParameters());
+                        passphraseSlot.requireKdfParameters());
         try {
             byte[] body = crypto.decrypt(vaultKey, envelope, headerBytes);
             return new OpenedFile(header, vaultKey, header.fingerprint(), body);

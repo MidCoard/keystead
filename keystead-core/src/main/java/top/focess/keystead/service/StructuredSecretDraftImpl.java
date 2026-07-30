@@ -68,6 +68,16 @@ final class StructuredSecretDraftImpl implements StructuredSecretDraft, AutoClos
         return title;
     }
 
+    /** Returns the title, which {@link #validate()} has confirmed is set.
+     * @return the non-null title
+     * @throws IllegalStateException if the title has not been set */
+    @NonNull String requireTitle() {
+        if (title == null) {
+            throw new IllegalStateException("Structured secret draft title has not been set");
+        }
+        return title;
+    }
+
     @NonNull Set<String> tags() {
         return Set.copyOf(tags);
     }

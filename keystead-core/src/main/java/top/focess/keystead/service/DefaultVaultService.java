@@ -124,7 +124,7 @@ public final class DefaultVaultService implements VaultService {
                                     () ->
                                             new ValidationException(
                                                     "Vault has no passphrase key slot"));
-            KdfParameters kdf = passSlot.kdfParameters();
+            KdfParameters kdf = passSlot.requireKdfParameters();
             VaultFingerprint fingerprint = store.vaultFingerprint();
             nextDek = crypto.generateVaultKey(new KeyId("vault-" + UUID.randomUUID()));
             List<EncryptedSecretRecord> rotated = new ArrayList<>();

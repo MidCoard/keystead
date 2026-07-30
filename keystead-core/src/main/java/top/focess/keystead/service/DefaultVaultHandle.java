@@ -76,7 +76,7 @@ final class DefaultVaultHandle implements VaultHandle {
                                         secretId,
                                         SecretType.LOGIN_PASSWORD,
                                         new SecretProfile(
-                                                draft.title(),
+                                                draft.requireTitle(),
                                                 draft.classification(),
                                                 draft.tags(),
                                                 draft.attributes()),
@@ -131,7 +131,7 @@ final class DefaultVaultHandle implements VaultHandle {
                                         secretId,
                                         SecretType.LOGIN_PASSWORD,
                                         new SecretProfile(
-                                                draft.title(),
+                                                draft.requireTitle(),
                                                 draft.classification(),
                                                 draft.tags(),
                                                 draft.attributes()),
@@ -208,7 +208,7 @@ final class DefaultVaultHandle implements VaultHandle {
                                         secretId,
                                         SecretType.SECURE_NOTE,
                                         new SecretProfile(
-                                                draft.title(),
+                                                draft.requireTitle(),
                                                 draft.classification(),
                                                 draft.tags(),
                                                 draft.attributes()),
@@ -290,7 +290,7 @@ final class DefaultVaultHandle implements VaultHandle {
                                         secretId,
                                         type,
                                         new SecretProfile(
-                                                draft.title(),
+                                                draft.requireTitle(),
                                                 draft.classification(),
                                                 draft.tags(),
                                                 draft.attributes()),
@@ -347,7 +347,7 @@ final class DefaultVaultHandle implements VaultHandle {
                                         secretId,
                                         type,
                                         new SecretProfile(
-                                                draft.title(),
+                                                draft.requireTitle(),
                                                 draft.classification(),
                                                 draft.tags(),
                                                 draft.attributes()),

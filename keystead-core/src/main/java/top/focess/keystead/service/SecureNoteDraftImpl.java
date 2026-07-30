@@ -64,6 +64,16 @@ final class SecureNoteDraftImpl implements SecureNoteDraft, AutoCloseable {
         return title;
     }
 
+    /** Returns the title, which {@link #validate()} has confirmed is set.
+     * @return the non-null title
+     * @throws IllegalStateException if the title has not been set */
+    @NonNull String requireTitle() {
+        if (title == null) {
+            throw new IllegalStateException("Secure note draft title has not been set");
+        }
+        return title;
+    }
+
     @NonNull Set<String> tags() {
         return Set.copyOf(tags);
     }
