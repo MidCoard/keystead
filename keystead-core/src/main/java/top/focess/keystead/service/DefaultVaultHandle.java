@@ -17,6 +17,7 @@ import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import top.focess.keystead.crypto.CryptoException;
 import top.focess.keystead.crypto.DefaultCryptoService;
+import top.focess.keystead.crypto.KdfParameters;
 import top.focess.keystead.crypto.VaultKey;
 import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.model.*;
@@ -51,6 +52,14 @@ final class DefaultVaultHandle implements VaultHandle {
     public synchronized @NonNull KeyId vaultKeyId() {
         requireOpen();
         return vaultKey.keyId();
+    }
+
+    @Override
+    public synchronized @NonNull FullBackupArchive createFullBackup(
+            char @NonNull [] backupPassword) {
+        Objects.requireNonNull(backupPassword, "backupPassword");
+        requireOpen();
+        return FullVaultBackupService.createArchive(store, crypto, vaultKey, backupPassword, clock);
     }
 
     @Override
@@ -466,12 +475,29 @@ final class DefaultVaultHandle implements VaultHandle {
         Objects.requireNonNull(records, "records");
         requireOpen();
         requireMutable();
-        requireSyncImportBatchPreflight(records);
+        List<EncryptedSyncRecord> verified = new ArrayList<>();
+        List<SyncImportRejection> rejected = new ArrayList<>();
+        for (EncryptedSyncRecord record : records) {
+            Objects.requireNonNull(record, "record");
+            try {
+                requireSyncRecordPreflight(record);
+                verified.add(record);
+            } catch (ValidationException error) {
+                rejected.add(
+                        new SyncImportRejection(
+                                record.secretId(),
+                                record.revision(),
+                                error.getMessage() != null
+                                                && error.getMessage().contains("different vault")
+                                        ? SyncImportRejectionReason.WRONG_VAULT
+                                        : SyncImportRejectionReason.UNVERIFIABLE));
+            }
+        }
         int imported = 0;
         int skipped = 0;
         List<SyncImportConflict> conflicts = new ArrayList<>();
-        for (EncryptedSyncRecord record : records) {
-            ImportOutcome outcome = importRecord(record);
+        for (EncryptedSyncRecord record : verified) {
+            ImportOutcome outcome = importVerifiedRecord(record);
             if (outcome.imported()) {
                 imported++;
             } else if (outcome.conflict() != null) {
@@ -480,7 +506,7 @@ final class DefaultVaultHandle implements VaultHandle {
                 skipped++;
             }
         }
-        return new SyncImportReport(imported, skipped, conflicts);
+        return new SyncImportReport(imported, skipped, conflicts, rejected);
     }
 
     @Override
@@ -503,6 +529,39 @@ final class DefaultVaultHandle implements VaultHandle {
                 vaultKey.keyId(),
                 DefaultVaultService.DEVICE_KEY_PACKAGE_ALGORITHM,
                 crypto.wrapVaultKeyForDevice(vaultKey, devicePublicKey, context));
+    }
+
+    @Override
+    public synchronized @NonNull KeyId addPassphrase(char @NonNull [] passphrase) {
+        Objects.requireNonNull(passphrase, "passphrase");
+        requireOpen();
+        requireMutable();
+        if (passphrase.length == 0) {
+            throw new ValidationException("Vault master passphrase must not be empty");
+        }
+        VaultHeader header = store.header();
+        if (header.firstPassphraseSlot().isPresent()) {
+            throw new ValidationException("Vault already has a passphrase key slot");
+        }
+        if (header.slots().size() >= VaultHeader.MAX_SLOTS) {
+            throw new ValidationException("Vault header has no room for another key slot");
+        }
+        byte @Nullable [] salt = null;
+        byte @Nullable [] wrapped = null;
+        try {
+            salt = crypto.randomSalt();
+            KdfParameters kdf = crypto.defaultArgon2idParameters(salt);
+            wrapped = crypto.wrapVaultKey(vaultKey, passphrase, kdf);
+            KeyId slotKeyId = new KeyId("passphrase");
+            KeySlot slot = new KeySlot(SlotType.PASSPHRASE, slotKeyId, kdf, wrapped);
+            List<KeySlot> slots = new ArrayList<>(header.slots());
+            slots.add(slot);
+            store.saveVaultHeader(header.withVaultKey(header.vaultKeyId(), slots, clock.instant()));
+            return slotKeyId;
+        } finally {
+            Wipe.wipe(salt);
+            Wipe.wipe(wrapped);
+        }
     }
 
     @Override
@@ -641,19 +700,31 @@ final class DefaultVaultHandle implements VaultHandle {
 
     private @NonNull EncryptedSyncRecord exportDeletedRecord(
             @NonNull String fingerprintText, @NonNull DeletedSecretRecord record) {
-        return new EncryptedSyncRecord(
-                fingerprintText,
-                record.secretId().value().toString(),
-                record.revision(),
-                record.secretType().name(),
-                "",
-                "",
-                true);
+        String secretId = record.secretId().value().toString();
+        String secretType = record.secretType().name();
+        byte[] aad =
+                SyncRecordCodec.tombstoneAad(
+                        fingerprintText, secretId, record.revision(), secretType);
+        byte[] marker = SyncRecordCodec.tombstoneBytes(secretType);
+        try {
+            EncryptedEnvelope authenticated =
+                    crypto.encrypt(vaultKey, marker, aad, clock.instant());
+            return new EncryptedSyncRecord(
+                    fingerprintText,
+                    secretId,
+                    record.revision(),
+                    secretType,
+                    SyncRecordCodec.envelopeWithoutAad(authenticated),
+                    "",
+                    true);
+        } finally {
+            Wipe.wipe(aad);
+            Wipe.wipe(marker);
+        }
     }
 
-    private @NonNull ImportOutcome importRecord(@NonNull EncryptedSyncRecord record) {
+    private @NonNull ImportOutcome importVerifiedRecord(@NonNull EncryptedSyncRecord record) {
         Objects.requireNonNull(record, "record");
-        requireSyncRecordPreflight(record);
         SecretId secretId = new SecretId(UUID.fromString(record.secretId()));
         @Nullable EncryptedSecretRecord existing = store.loadSecretRecord(secretId).orElse(null);
         @Nullable DeletedSecretRecord deleted =
@@ -698,16 +769,6 @@ final class DefaultVaultHandle implements VaultHandle {
         }
     }
 
-    private void requireSyncImportBatchPreflight(@NonNull List<EncryptedSyncRecord> records) {
-        Set<String> secretIds = new HashSet<>();
-        for (EncryptedSyncRecord record : records) {
-            requireSyncRecordPreflight(record);
-            if (!secretIds.add(record.secretId())) {
-                throw new ValidationException("Sync import batch contains duplicate secret id");
-            }
-        }
-    }
-
     private void requireSyncRecordPreflight(@NonNull EncryptedSyncRecord record) {
         Objects.requireNonNull(record, "record");
         requireSyncRecordVault(record);
@@ -721,8 +782,38 @@ final class DefaultVaultHandle implements VaultHandle {
         } catch (IllegalArgumentException e) {
             throw new ValidationException("Sync record secret type is unsupported", e);
         }
-        if (!record.deleted()) {
+        if (record.deleted()) {
+            requireAuthenticatedTombstone(record);
+        } else {
             requireActiveSyncRecordDecodable(record);
+        }
+    }
+
+    private void requireAuthenticatedTombstone(@NonNull EncryptedSyncRecord record) {
+        if (record.encryptedProfile().isEmpty()) {
+            throw new ValidationException("Deleted sync record is not authenticated");
+        }
+        byte[] aad =
+                SyncRecordCodec.tombstoneAad(
+                        record.fingerprint(),
+                        record.secretId(),
+                        record.revision(),
+                        record.secretType());
+        byte[] expected = SyncRecordCodec.tombstoneBytes(record.secretType());
+        byte @Nullable [] actual = null;
+        try {
+            EncryptedEnvelope envelope =
+                    SyncRecordCodec.envelopeWithAad(record.encryptedProfile(), aad);
+            actual = crypto.decrypt(vaultKey, envelope, aad);
+            if (!java.security.MessageDigest.isEqual(expected, actual)) {
+                throw new ValidationException("Deleted sync record is not authenticated");
+            }
+        } catch (CryptoException | IllegalArgumentException error) {
+            throw new ValidationException("Deleted sync record is not authenticated", error);
+        } finally {
+            Wipe.wipe(aad);
+            Wipe.wipe(expected);
+            Wipe.wipe(actual);
         }
     }
 

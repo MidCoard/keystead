@@ -27,6 +27,8 @@ import top.focess.keystead.model.SecurityLimits;
 
 final class SyncRecordCodec {
 
+    private static final String TOMBSTONE_LABEL = "keystead-sync-delete-v1";
+
     private SyncRecordCodec() {}
 
     static @NonNull String envelopeWithoutAad(@NonNull EncryptedEnvelope envelope) {
@@ -61,6 +63,24 @@ final class SyncRecordCodec {
         return "keystead-sync-profile-v2|%s|%s|%d"
                 .formatted(fingerprint, secretId, revision)
                 .getBytes(StandardCharsets.UTF_8);
+    }
+
+    static byte @NonNull [] tombstoneAad(
+            @NonNull String fingerprint,
+            @NonNull String secretId,
+            long revision,
+            @NonNull String secretType) {
+        Objects.requireNonNull(fingerprint, "fingerprint");
+        Objects.requireNonNull(secretId, "secretId");
+        Objects.requireNonNull(secretType, "secretType");
+        return "%s|%s|%s|%d|%s"
+                .formatted(TOMBSTONE_LABEL, fingerprint, secretId, revision, secretType)
+                .getBytes(StandardCharsets.UTF_8);
+    }
+
+    static byte @NonNull [] tombstoneBytes(@NonNull String secretType) {
+        Objects.requireNonNull(secretType, "secretType");
+        return (TOMBSTONE_LABEL + "|" + secretType).getBytes(StandardCharsets.UTF_8);
     }
 
     static @NonNull EncryptedEnvelope envelopeWithAad(

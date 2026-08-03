@@ -17,12 +17,12 @@ class ModuleContractTest {
     private static final String CORE_MODULE_NAME = "top.focess.keystead.core";
     private static final Set<String> EXPORTED_PACKAGES =
             Set.of(
+                    "top.focess.keystead.access",
                     "top.focess.keystead.aigc",
                     "top.focess.keystead.crypto",
                     "top.focess.keystead.generator",
                     "top.focess.keystead.memory",
                     "top.focess.keystead.model",
-                    "top.focess.keystead.recovery",
                     "top.focess.keystead.security",
                     "top.focess.keystead.service",
                     "top.focess.keystead.share",

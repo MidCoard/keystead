@@ -11,12 +11,12 @@ module top.focess.keystead.core {
     requires org.bouncycastle.provider;
     requires transitive org.jspecify;
 
+    exports top.focess.keystead.access;
     exports top.focess.keystead.aigc;
     exports top.focess.keystead.crypto;
     exports top.focess.keystead.generator;
     exports top.focess.keystead.memory;
     exports top.focess.keystead.model;
-    exports top.focess.keystead.recovery;
     exports top.focess.keystead.security;
     exports top.focess.keystead.service;
     exports top.focess.keystead.share;

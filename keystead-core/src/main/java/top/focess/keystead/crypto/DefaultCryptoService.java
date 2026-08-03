@@ -624,7 +624,7 @@ public final class DefaultCryptoService {
      *
      * <p>The fingerprint is {@code HMAC-SHA-256(wrappingKey, FINGERPRINT_LABEL ‖ kdfSalt)} truncated to
      * 64 bits, where {@code wrappingKey} is the password-derived key. It is a non-secret routing
-     * identity, stored in the vault header so passphrase-less device/recovery opens can recover it.
+     * identity, stored in the vault header so passphrase-less device opens can recover it.
      * It is stable across vault-key rotations (the wrapping key is unchanged when only the
      * data-encryption key is rewrapped) and changes only when the passphrase or salt changes.
      *

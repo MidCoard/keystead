@@ -151,7 +151,7 @@ class SyncExportTest {
             assertEquals(2L, tombstone.revision());
             assertEquals(SecretType.API_TOKEN.name(), tombstone.secretType());
             assertTrue(tombstone.deleted());
-            assertEquals("", tombstone.encryptedProfile());
+            assertFalse(tombstone.encryptedProfile().isEmpty());
             assertEquals("", tombstone.envelope());
             assertEquals(0, vault.importRecords(List.of(original)));
             assertTrue(vault.listSecrets().isEmpty());
@@ -176,7 +176,7 @@ class SyncExportTest {
     }
 
     @Test
-    void importRejectsMixedVaultBatchBeforeWritingAnyRows() {
+    void importRejectsForeignVaultRowWithoutRejectingTheWholeBatch() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         try (VaultHandle vault =
                 service.createVault(new CreateVaultRequest(vaultFile()), master())) {
@@ -197,17 +197,18 @@ class SyncExportTest {
                             true);
 
             assertEquals(1, vault.listSecrets().size());
-            assertThrows(
-                    ValidationException.class,
-                    () -> vault.importRecordsWithReport(List.of(valid, foreign)));
+            SyncImportReport report = vault.importRecordsWithReport(List.of(valid, foreign));
 
+            assertEquals(1, report.rejected().size());
+            assertEquals(
+                    SyncImportRejectionReason.WRONG_VAULT, report.rejected().getFirst().reason());
             assertEquals(1, vault.listSecrets().size());
             assertEquals(1, vault.exportRecordsSince(0).size());
         }
     }
 
     @Test
-    void importRejectsMalformedBatchBeforeWritingAnyRows() {
+    void importReportsMalformedRowWithoutThrowingForTheBatch() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         try (VaultHandle vault =
                 service.createVault(new CreateVaultRequest(vaultFile()), master())) {
@@ -228,17 +229,16 @@ class SyncExportTest {
                             true);
 
             assertEquals(1, vault.listSecrets().size());
-            assertThrows(
-                    ValidationException.class,
-                    () -> vault.importRecordsWithReport(List.of(valid, malformed)));
+            SyncImportReport report = vault.importRecordsWithReport(List.of(valid, malformed));
 
+            assertEquals(1, report.rejected().size());
             assertEquals(1, vault.listSecrets().size());
             assertEquals(1, vault.exportRecordsSince(0).size());
         }
     }
 
     @Test
-    void importRejectsUndecodableActiveBatchBeforeWritingAnyRows() {
+    void importReportsUndecodableActiveRowWithoutThrowingForTheBatch() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         try (VaultHandle vault =
                 service.createVault(new CreateVaultRequest(vaultFile()), master())) {
@@ -259,17 +259,16 @@ class SyncExportTest {
                             false);
 
             assertEquals(1, vault.listSecrets().size());
-            assertThrows(
-                    ValidationException.class,
-                    () -> vault.importRecordsWithReport(List.of(valid, undecodable)));
+            SyncImportReport report = vault.importRecordsWithReport(List.of(valid, undecodable));
 
+            assertEquals(1, report.rejected().size());
             assertEquals(1, vault.listSecrets().size());
             assertEquals(1, vault.exportRecordsSince(0).size());
         }
     }
 
     @Test
-    void importRejectsUndecryptablePayloadBatchBeforeWritingAnyRows() {
+    void importReportsUndecryptablePayloadWithoutThrowingForTheBatch() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         try (VaultHandle vault =
                 service.createVault(new CreateVaultRequest(vaultFile()), master())) {
@@ -297,17 +296,16 @@ class SyncExportTest {
                             false);
 
             assertEquals(2, vault.listSecrets().size());
-            assertThrows(
-                    ValidationException.class,
-                    () -> vault.importRecordsWithReport(List.of(valid, corrupt)));
+            SyncImportReport report = vault.importRecordsWithReport(List.of(valid, corrupt));
 
+            assertEquals(1, report.rejected().size());
             assertEquals(2, vault.listSecrets().size());
             assertEquals(2, vault.exportRecordsSince(0).size());
         }
     }
 
     @Test
-    void importRejectsDuplicateSecretBatchBeforeWritingAnyRows() {
+    void importRejectsUnauthenticatedDuplicateTombstoneWithoutRejectingTheBatch() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         try (VaultHandle vault =
                 service.createVault(new CreateVaultRequest(vaultFile()), master())) {
@@ -328,17 +326,17 @@ class SyncExportTest {
                             true);
 
             assertEquals(1, vault.listSecrets().size());
-            assertThrows(
-                    ValidationException.class,
-                    () -> vault.importRecordsWithReport(List.of(valid, duplicateTombstone)));
+            SyncImportReport report =
+                    vault.importRecordsWithReport(List.of(valid, duplicateTombstone));
 
+            assertEquals(1, report.rejected().size());
             assertEquals(1, vault.listSecrets().size());
             assertEquals(1, vault.exportRecordsSince(0).size());
         }
     }
 
     @Test
-    void importReportPreservesConflictWhenRemoteTombstoneIsOlderThanLocalUpdate() {
+    void importRejectsUnauthenticatedRemoteTombstoneBeforeConflictResolution() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         try (VaultHandle vault =
                 service.createVault(new CreateVaultRequest(vaultFile()), master())) {
@@ -366,13 +364,9 @@ class SyncExportTest {
 
             assertEquals(0, report.imported());
             assertEquals(0, report.skipped());
-            assertEquals(1, report.conflicts().size());
-            SyncImportConflict conflict = report.conflicts().getFirst();
-            assertEquals(secretId.value().toString(), conflict.secretId());
-            assertEquals(2L, conflict.localRevision());
-            assertEquals(1L, conflict.remoteRevision());
-            assertFalse(conflict.localDeleted());
-            assertTrue(conflict.remoteDeleted());
+            assertEquals(0, report.conflicts().size());
+            assertEquals(1, report.rejected().size());
+            assertEquals(secretId.value().toString(), report.rejected().getFirst().secretId());
             assertEquals(1, vault.listSecrets().size());
         }
     }
@@ -471,21 +465,20 @@ class SyncExportTest {
     }
 
     @Test
-    void deletedSyncRecordRejectsEncryptedProfileOrEnvelope() {
+    void deletedSyncRecordAllowsAuthenticationEnvelopeButRejectsPayload() {
         String fingerprint = FINGERPRINT;
         String secretId = UUID.randomUUID().toString();
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () ->
-                        new EncryptedSyncRecord(
-                                fingerprint,
-                                secretId,
-                                1L,
-                                SecretType.API_TOKEN.name(),
-                                "profile",
-                                "",
-                                true));
+        EncryptedSyncRecord authenticated =
+                new EncryptedSyncRecord(
+                        fingerprint,
+                        secretId,
+                        1L,
+                        SecretType.API_TOKEN.name(),
+                        "profile",
+                        "",
+                        true);
+        assertEquals("profile", authenticated.encryptedProfile());
         assertThrows(
                 IllegalArgumentException.class,
                 () ->

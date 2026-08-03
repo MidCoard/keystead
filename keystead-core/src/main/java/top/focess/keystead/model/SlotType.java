@@ -10,7 +10,6 @@ import org.jspecify.annotations.NonNull;
  *   <li>{@link #PASSPHRASE}: the DEK is wrapped under an Argon2id passphrase-derived key; the slot
  *       carries its own KDF parameters.
  *   <li>{@link #DEVICE}: the DEK is wrapped to a device public key via hybrid encryption.
- *   <li>{@link #RECOVERY}: the DEK is wrapped to a recovery public key via hybrid encryption.
  * </ul>
  *
  * <p>Any single slot unlocks the vault. The on-disk byte code is stable across versions.
@@ -19,9 +18,7 @@ public enum SlotType {
     /** DEK wrapped under an Argon2id passphrase-derived key. Carries KDF parameters. */
     PASSPHRASE(1),
     /** DEK wrapped to a device public key via hybrid encryption. */
-    DEVICE(2),
-    /** DEK wrapped to a recovery public key via hybrid encryption. */
-    RECOVERY(3);
+    DEVICE(2);
 
     private final byte code;
 

@@ -6,15 +6,16 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
 /**
- * Plaintext v2 vault header: format version, passphrase-derived fingerprint, vault key id, the
+ * Plaintext v2 vault header: format version, routing fingerprint, vault key id, the
  * multi-slot key list, and timestamps.
  *
  * <p>A v2 vault carries no stored vault identifier; identity is the file path locally and the
- * passphrase-derived {@link VaultFingerprint} for routing and AAD binding. The same
+ * {@link VaultFingerprint} for routing and AAD binding. A newly created vault derives that
+ * fingerprint from its initial passphrase; a server-provisioned copy imports and preserves it.
+ * The same
  * data-encryption key is wrapped under one or more {@link KeySlot slots}; any single slot unlocks
- * the vault. The fingerprint is stable across data-encryption-key rotations (the passphrase
- * wrapping key is unchanged when only the DEK is rewrapped) and changes only when the passphrase or
- * salt changes.
+ * the vault. The fingerprint is stable across data-encryption-key rotations and when a
+ * server-provisioned copy installs a device-local passphrase slot.
  */
 public record VaultHeader(
         int formatVersion,

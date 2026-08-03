@@ -7,14 +7,15 @@ import top.focess.keystead.model.SecurityLimits;
 
 /**
  * An encrypted secret record exchanged with a sync server. Active records carry an encrypted profile
- * and envelope; deleted records carry neither. Routing is keyed by the vault fingerprint rather than
- * the v0.2 vault id.
+ * and envelope; deleted records carry an authenticated control envelope in {@code
+ * encryptedProfile}. Legacy empty tombstones can still be decoded from old servers, but import
+ * rejects them because they cannot prove possession of the vault key.
  *
  * @param fingerprint the vault fingerprint (hex)
  * @param secretId the secret id
  * @param revision the monotonic record revision
  * @param secretType the secret type name
- * @param encryptedProfile the encrypted profile envelope, or empty when deleted
+ * @param encryptedProfile the encrypted profile or authenticated deletion-control envelope
  * @param envelope the encrypted payload envelope, or empty when deleted
  * @param deleted whether this record is a tombstone
  */
@@ -48,8 +49,8 @@ public record EncryptedSyncRecord(
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Sync record secret type is unsupported", e);
         }
-        if (deleted && (!encryptedProfile.isEmpty() || !envelope.isEmpty())) {
-            throw new IllegalArgumentException("Deleted sync records must not carry envelopes");
+        if (deleted && !envelope.isEmpty()) {
+            throw new IllegalArgumentException("Deleted sync records must not carry payloads");
         }
         if (!deleted && (encryptedProfile.isEmpty() || envelope.isEmpty())) {
             throw new IllegalArgumentException("Active sync records must carry envelopes");

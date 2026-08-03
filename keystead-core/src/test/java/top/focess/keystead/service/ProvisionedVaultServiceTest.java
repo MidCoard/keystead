@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
@@ -22,6 +23,7 @@ import top.focess.keystead.model.KeyId;
 import top.focess.keystead.model.SecretId;
 import top.focess.keystead.model.SecurityLimits;
 import top.focess.keystead.model.VaultFingerprint;
+import top.focess.keystead.store.StoreException;
 
 class ProvisionedVaultServiceTest {
 
@@ -71,6 +73,34 @@ class ProvisionedVaultServiceTest {
                                                         password)));
             }
         }
+    }
+
+    @Test
+    void provisioningNeverReplacesAnExistingTarget() throws Exception {
+        DefaultCryptoService crypto = new DefaultCryptoService();
+        DefaultVaultService sourceService =
+                new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        DefaultVaultService targetService =
+                new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        byte[] context = "vault:vault-new-only:device:laptop-1".getBytes(StandardCharsets.UTF_8);
+        Path target = vaultFile("existing-target");
+        Files.writeString(target, "sentinel", StandardCharsets.UTF_8);
+
+        try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
+                VaultHandle source =
+                        sourceService.createVault(
+                                new CreateVaultRequest(vaultFile("new-only-source")),
+                                masterPassword())) {
+            DeviceVaultKeyPackage keyPackage =
+                    source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
+            assertThrows(
+                    StoreException.class,
+                    () ->
+                            targetService.provisionVault(
+                                    target, keyPackage, privateKeyBytes(device), context));
+        }
+
+        assertEquals("sentinel", Files.readString(target, StandardCharsets.UTF_8));
     }
 
     @Test

@@ -13,16 +13,26 @@ import org.jspecify.annotations.NonNull;
  * @param conflicts the per-row conflicts explaining skipped rows
  */
 public record SyncImportReport(
-        int imported, int skipped, @NonNull List<SyncImportConflict> conflicts) {
+        int imported,
+        int skipped,
+        @NonNull List<SyncImportConflict> conflicts,
+        @NonNull List<SyncImportRejection> rejected) {
 
     /** Validates the record components. */
     public SyncImportReport {
         conflicts = List.copyOf(Objects.requireNonNull(conflicts, "conflicts"));
+        rejected = List.copyOf(Objects.requireNonNull(rejected, "rejected"));
         if (imported < 0) {
             throw new IllegalArgumentException("Imported count must not be negative");
         }
         if (skipped < 0) {
             throw new IllegalArgumentException("Skipped count must not be negative");
         }
+    }
+
+    /** Compatibility constructor for reports with no authentication rejection. */
+    public SyncImportReport(
+            int imported, int skipped, @NonNull List<SyncImportConflict> conflicts) {
+        this(imported, skipped, conflicts, List.of());
     }
 }

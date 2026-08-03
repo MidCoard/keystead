@@ -185,35 +185,10 @@ public final class DefaultVaultService implements VaultService {
                     keyPackage.vaultKeyId(),
                     wrapped,
                     devicePrivateKey,
-                    context,
-                    SlotType.DEVICE);
+                    context);
         } finally {
             Wipe.wipe(wrapped);
         }
-    }
-
-    @Override
-    public @NonNull VaultHandle provisionVaultWithRecoveryKey(
-            @NonNull Path file,
-            @NonNull VaultFingerprint fingerprint,
-            @NonNull KeyId vaultKeyId,
-            byte @NonNull [] encryptedVaultKey,
-            byte @NonNull [] recoveryPrivateKey,
-            byte @NonNull [] context) {
-        Objects.requireNonNull(file, "file");
-        Objects.requireNonNull(fingerprint, "fingerprint");
-        Objects.requireNonNull(vaultKeyId, "vaultKeyId");
-        Objects.requireNonNull(encryptedVaultKey, "encryptedVaultKey");
-        Objects.requireNonNull(recoveryPrivateKey, "recoveryPrivateKey");
-        Objects.requireNonNull(context, "context");
-        return provisionVault(
-                file,
-                fingerprint,
-                vaultKeyId,
-                encryptedVaultKey,
-                recoveryPrivateKey,
-                context,
-                SlotType.RECOVERY);
     }
 
     private @NonNull VaultHandle provisionVault(
@@ -222,8 +197,7 @@ public final class DefaultVaultService implements VaultService {
             @NonNull KeyId vaultKeyId,
             byte @NonNull [] encryptedVaultKey,
             byte @NonNull [] privateKey,
-            byte @NonNull [] context,
-            @NonNull SlotType slotType) {
+            byte @NonNull [] context) {
         @Nullable VaultKey dek = null;
         boolean storeTransferred = false;
         try {
@@ -233,8 +207,8 @@ public final class DefaultVaultService implements VaultService {
             Instant now = clock.instant();
             KeySlot slot =
                     new KeySlot(
-                            slotType,
-                            new KeyId(slotType.name().toLowerCase() + "-" + UUID.randomUUID()),
+                            SlotType.DEVICE,
+                            new KeyId("device-" + UUID.randomUUID()),
                             null,
                             encryptedVaultKey);
             VaultHeader header =

@@ -44,6 +44,15 @@ public interface VaultHandle extends AutoCloseable {
     @NonNull KeyId vaultKeyId();
 
     /**
+     * Creates a complete encrypted backup archive protected by an independent backup password.
+     * The returned archive contains no raw vault key or plaintext secret.
+     *
+     * @param backupPassword caller-owned backup password
+     * @return complete encrypted backup material
+     */
+    @NonNull FullBackupArchive createFullBackup(char @NonNull [] backupPassword);
+
+    /**
      * Saves a new login-password secret and returns its assigned id.
      *
      * @param draftConsumer callback that populates a {@link LoginDraft}; the draft is validated and
@@ -190,6 +199,18 @@ public interface VaultHandle extends AutoCloseable {
      */
     @NonNull DeviceVaultKeyPackage wrapVaultKeyPackageForDevice(
             byte @NonNull [] devicePublicKey, byte @NonNull [] context);
+
+    /**
+     * Wraps the current vault key with a new local master passphrase and appends a PASSPHRASE slot.
+     * The data-encryption key, vault fingerprint, and encrypted records are unchanged. This is used
+     * after server provisioning so the temporary transfer-device slot can be removed safely.
+     *
+     * @param passphrase caller-owned local master passphrase; wiped by the caller
+     * @return the key id of the new passphrase slot
+     * @throws ValidationException if the passphrase is empty, a passphrase slot already exists, or
+     *     the header is full
+     */
+    @NonNull KeyId addPassphrase(char @NonNull [] passphrase);
 
     /**
      * Wraps the current vault key for the given device public key and appends a DEVICE slot to the

@@ -38,7 +38,7 @@ import top.focess.keystead.model.VaultFingerprint;
  * <p>Each record's envelope is stored <em>without</em> its additional-authenticated data: the AAD is
  * recomputed on decode from the vault {@link VaultFingerprint}, the record metadata, and the record
  * revision via {@link SecretRecordAad#encode}. The fingerprint is read from the integrity-protected
- * header by {@link VaultFileFormat} and passed in, so a passphrase-less device or recovery open
+ * header by {@link VaultFileFormat} and passed in, so a passphrase-less device open
  * recovers the same AAD without re-deriving the wrapping key.
  *
  * <p>Layout (big-endian, all lengths unsigned):

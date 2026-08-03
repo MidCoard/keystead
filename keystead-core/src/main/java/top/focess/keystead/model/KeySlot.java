@@ -10,10 +10,10 @@ import top.focess.keystead.crypto.KdfParameters;
  * One key slot in a v2 multi-slot vault header: a single credential that can unwrap the
  * data-encryption key.
  *
- * @param slotType how the DEK is wrapped (passphrase / device / recovery)
- * @param slotKeyId the slot's recipient identifier ("passphrase", a device id, or an enrollment id)
+ * @param slotType how the DEK is wrapped (passphrase or device)
+ * @param slotKeyId the slot's recipient identifier ("passphrase" or a device id)
  * @param kdfParameters the password KDF parameters; required for {@link SlotType#PASSPHRASE}, null
- *     for {@link SlotType#DEVICE} and {@link SlotType#RECOVERY}
+ *     for {@link SlotType#DEVICE}
  * @param wrappedVaultKey the slot-specific wrapping of the DEK bytes
  */
 public record KeySlot(

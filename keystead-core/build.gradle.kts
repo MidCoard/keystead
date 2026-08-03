@@ -27,6 +27,7 @@ val namedModuleTestClasspath = sourceSets.test.get().runtimeClasspath.minus(main
 val namedModuleTestPackages =
     listOf(
         "top.focess.keystead",
+        "top.focess.keystead.access",
         "top.focess.keystead.aigc",
         "top.focess.keystead.crypto",
         "top.focess.keystead.generator",
@@ -34,7 +35,6 @@ val namedModuleTestPackages =
         "top.focess.keystead.memory.internal",
         "top.focess.keystead.model",
         "top.focess.keystead.module",
-        "top.focess.keystead.recovery",
         "top.focess.keystead.security",
         "top.focess.keystead.security.internal",
         "top.focess.keystead.service",
@@ -75,7 +75,8 @@ tasks.test {
             "--patch-module",
             "$coreModuleName=${sourceSets.test.get().output.asPath}",
             "--add-reads=$coreModuleName=ALL-UNNAMED",
-            "--enable-native-access=$coreModuleName")
+            "--enable-native-access=$coreModuleName",
+            "--sun-misc-unsafe-memory-access=allow")
     namedModuleTestPackages.forEach {
         jvmArgs("--add-opens=$coreModuleName/$it=ALL-UNNAMED")
     }
@@ -94,7 +95,10 @@ tasks.register<Test>("classpathTest") {
     classpath = classpathTest.runtimeClasspath
     modularity.inferModulePath = false
     useJUnitPlatform()
-    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    jvmArgs(
+        "--enable-native-access=ALL-UNNAMED",
+        "--sun-misc-unsafe-memory-access=allow",
+    )
 }
 
 tasks.check {
@@ -109,7 +113,8 @@ mavenPublishing {
         name.set("Keystead Core")
         description.set(
             "Encrypted local vault library: key derivation, authenticated encryption, " +
-                "typed secret schemas, local persistence, backup, sync, recovery, and key rotation.")
+                "typed secret schemas, local persistence, backup, encrypted sync, " +
+                "recipient-key wrapping, and key rotation.")
         inceptionYear.set("2026")
         url.set("https://github.com/MidCoard/keystead")
         scm {

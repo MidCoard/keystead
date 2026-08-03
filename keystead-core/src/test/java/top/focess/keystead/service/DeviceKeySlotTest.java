@@ -147,6 +147,44 @@ class DeviceKeySlotTest {
         }
     }
 
+    @Test
+    void provisionedVaultCanInstallMasterPassphraseAndDiscardTransferSlot() throws Exception {
+        DefaultCryptoService crypto = new DefaultCryptoService();
+        DefaultVaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        byte[] context = "vault:restore:device:new-device".getBytes(StandardCharsets.UTF_8);
+        Path file = vaultFile("restored-with-passphrase");
+        DeviceKeyPair device = crypto.generateDeviceKeyPair();
+        try {
+            DeviceVaultKeyPackage keyPackage;
+            top.focess.keystead.model.VaultFingerprint fingerprint;
+            try (VaultHandle source =
+                    service.createVault(
+                            new CreateVaultRequest(vaultFile("restore-source")),
+                            masterPassword())) {
+                fingerprint = source.vaultFingerprint();
+                keyPackage = source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
+            }
+
+            SecretId restoredSecret;
+            try (VaultHandle restored =
+                    service.provisionVault(file, keyPackage, privateKeyBytes(device), context)) {
+                restoredSecret = saveLogin(restored);
+                restored.addPassphrase(restoredMasterPassword());
+                restored.removeDeviceKey(deviceSlotId(file));
+            }
+
+            assertThrows(
+                    ValidationException.class,
+                    () -> service.openVaultWithDeviceKey(file, privateKeyBytes(device), context));
+            try (VaultHandle reopened = service.openVault(file, restoredMasterPassword())) {
+                assertEquals(fingerprint, reopened.vaultFingerprint());
+                assertLoginReadable(reopened, restoredSecret);
+            }
+        } finally {
+            device.close();
+        }
+    }
+
     private static SecretId saveLogin(VaultHandle vault) {
         try (SecretBuffer username = SecretBuffer.fromChars("alice@example.com".toCharArray());
                 SecretBuffer password = SecretBuffer.fromChars("secret-password".toCharArray())) {
@@ -180,6 +218,10 @@ class DeviceKeySlotTest {
 
     private static char[] masterPassword() {
         return "correct horse battery staple".toCharArray();
+    }
+
+    private static char[] restoredMasterPassword() {
+        return "new local vault master passphrase".toCharArray();
     }
 
     private static byte[] privateKeyBytes(DeviceKeyPair device) {

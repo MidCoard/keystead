@@ -2,8 +2,6 @@ package top.focess.keystead.service;
 
 import java.nio.file.Path;
 import org.jspecify.annotations.NonNull;
-import top.focess.keystead.model.KeyId;
-import top.focess.keystead.model.VaultFingerprint;
 
 /**
  * Entry point for creating, opening, provisioning, and rotating v2 single-file vaults.
@@ -14,10 +12,10 @@ import top.focess.keystead.model.VaultFingerprint;
  * VaultHandle} that holds the unlocked key only for the lifetime of the handle. Closing the handle
  * destroys its key material and releases the file locks.
  *
- * <p>A vault is identified locally by its file path and, for routing, by its passphrase-derived
- * {@link top.focess.keystead.model.VaultFingerprint}; there is no vault id. The fingerprint is
- * stable across DEK rotations (the passphrase wrapping key is unchanged when only the DEK is
- * rewrapped) and changes only when the passphrase or salt changes.
+ * <p>A vault is identified locally by its file path and, for routing, by its {@link
+ * top.focess.keystead.model.VaultFingerprint}; there is no vault id. New vaults derive the
+ * fingerprint from their initial passphrase. Server-provisioned copies import that routing
+ * fingerprint and preserve it when installing a different device-local passphrase slot.
  *
  * <p>The caller owns every {@code char[]} and {@code byte[]} passed to this service. Passphrases,
  * device private keys, and context buffers must be wiped by the caller once the call returns; the
@@ -59,9 +57,8 @@ public interface VaultService {
      *
      * <p>The new DEK is wrapped under the same passphrase and the same Argon2id parameters (so the
      * fingerprint is unchanged), and the new header, re-encrypted records, and preserved tombstones
-     * are committed as one atomic store mutation. Device and recovery slots are dropped: a passphrase
-     * rotation can only re-wrap the passphrase slot. On failure the previous key and records are left
-     * untouched.
+     * are committed as one atomic store mutation. Device slots are dropped: a passphrase rotation
+     * can only re-wrap the passphrase slot. On failure the previous key and records are left untouched.
      *
      * @param file the vault file whose key should be rotated
      * @param passphrase caller-owned passphrase; wiped by the caller
@@ -91,33 +88,6 @@ public interface VaultService {
             @NonNull Path file,
             @NonNull DeviceVaultKeyPackage keyPackage,
             byte @NonNull [] devicePrivateKey,
-            byte @NonNull [] context);
-
-    /**
-     * Provisions a new vault file on this device from a recovery-wrapped vault-key package.
-     *
-     * <p>Used when a vault's DEK was wrapped for a recovery public key and the user is recovering
-     * access. The recovery private key unwraps the DEK (the recovery key pair uses the same hybrid
-     * encryption as a device key pair), and a single {@link
-     * top.focess.keystead.model.SlotType#RECOVERY RECOVERY} slot is written into the provisioned
-     * header; no passphrase is involved. The provisioned vault starts empty and is filled by syncing
-     * records from the server.
-     *
-     * @param file the vault file to create; must not already exist as a vault
-     * @param fingerprint the vault fingerprint carried by the recovery package
-     * @param vaultKeyId the id of the wrapped vault key
-     * @param encryptedVaultKey the recovery-wrapped vault key bytes
-     * @param recoveryPrivateKey caller-owned recovery private key; wiped by the caller
-     * @param context caller-owned binding context used when the key was wrapped; wiped by the caller
-     * @return a live handle owning the unwrapped vault key
-     * @throws ValidationException if the package cannot be unwrapped for this recovery key
-     */
-    @NonNull VaultHandle provisionVaultWithRecoveryKey(
-            @NonNull Path file,
-            @NonNull VaultFingerprint fingerprint,
-            @NonNull KeyId vaultKeyId,
-            byte @NonNull [] encryptedVaultKey,
-            byte @NonNull [] recoveryPrivateKey,
             byte @NonNull [] context);
 
     /**

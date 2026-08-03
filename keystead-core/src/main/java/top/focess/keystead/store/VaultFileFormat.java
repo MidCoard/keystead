@@ -37,11 +37,10 @@ import top.focess.keystead.model.VaultHeader;
  *
  * <p><b>Multi-slot header.</b> The same data-encryption key (DEK) is wrapped under one or more
  * independent {@link KeySlot slots}: a {@link SlotType#PASSPHRASE PASSPHRASE} slot (DEK wrapped
- * under an Argon2id passphrase key), zero or more {@link SlotType#DEVICE DEVICE} slots (DEK wrapped
- * to a device public key via hybrid encryption), and zero or more {@link SlotType#RECOVERY
- * RECOVERY} slots. Any single slot unlocks the vault. A passphrase-less open (device or recovery)
- * reads the {@link VaultFingerprint fingerprint} from the header - it cannot derive it without the
- * passphrase wrapping key.
+ * under an Argon2id passphrase key), and zero or more {@link SlotType#DEVICE DEVICE} slots (DEK
+ * wrapped to a device public key via hybrid encryption). Any single slot unlocks the vault. A
+ * passphrase-less device open reads the {@link VaultFingerprint fingerprint} from the header - it
+ * cannot derive it without the passphrase wrapping key.
  *
  * <p>The {@link VaultFingerprint} is a <em>non-secret</em> routing identity, stored in the plaintext
  * header so that passphrase-less opens can recover it. It is integrity-protected by the container
@@ -57,7 +56,7 @@ import top.focess.keystead.model.VaultHeader;
  *     vaultKeyId          u16 len + UTF-8
  *     slotCount           u16
  *     slots[slotCount]:
- *       slotType[1]       1=PASSPHRASE, 2=DEVICE, 3=RECOVERY
+ *       slotType[1]       1=PASSPHRASE, 2=DEVICE
  *       slotKeyId         u16 len + UTF-8
  *       kdfAlgorithm      u16 len + UTF-8   (PASSPHRASE only; empty otherwise)
  *       kdfSalt           u16 len + bytes   (PASSPHRASE only; empty otherwise)
@@ -201,9 +200,9 @@ public final class VaultFileFormat {
     }
 
     /**
-     * Opens a vault file with a pre-derived vault key (DEK), for passphrase-less device or recovery
-     * opens. The DEK must have been unwrapped from a {@link SlotType#DEVICE} or {@link SlotType#RECOVERY}
-     * slot (or a server-stored key package) by the caller. The fingerprint is read from the header.
+     * Opens a vault file with a pre-derived vault key (DEK), for a passphrase-less device open. The
+     * DEK must have been unwrapped from a {@link SlotType#DEVICE} slot or a server-stored device key
+     * package by the caller. The fingerprint is read from the header.
      *
      * @param crypto the cryptographic service
      * @param file the serialized vault file bytes

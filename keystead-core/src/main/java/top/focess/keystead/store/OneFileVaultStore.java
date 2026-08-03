@@ -5,6 +5,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -127,6 +128,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
                             List.of(passphraseSlot),
                             now,
                             now);
+            reserveNewVaultFile(file);
             OneFileVaultStore store =
                     new OneFileVaultStore(file, crypto, clock, dek, header, 0L, lock);
             dek = null;
@@ -190,10 +192,9 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         }
     }
 
-    /** Opens an existing vault file with a pre-recovered vault key, for passphrase-less device or
-     * recovery opens. The caller must have unwrapped the key from a {@link SlotType#DEVICE} or
-     * {@link SlotType#RECOVERY} slot. The store takes ownership of the key on success; on failure
-     * the key is left open for the caller to close.
+    /** Opens an existing vault file with a pre-recovered vault key for a passphrase-less device
+     * open. The caller must have unwrapped the key from a {@link SlotType#DEVICE} slot. The store
+     * takes ownership of the key on success; on failure the key is left open for the caller to close.
      *
      * @param crypto the cryptographic service
      * @param file the vault file to open
@@ -242,13 +243,13 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
     }
 
     /** Creates a new vault file from a pre-recovered vault key and a caller-built header, for
-     * passphrase-less device or recovery provisioning. The header's vault key id must match the supplied
+     * passphrase-less device provisioning. The header's vault key id must match the supplied
      * key. On success the store takes ownership of {@code vaultKey}; on failure {@code vaultKey} is left
      * open for the caller to close.
      *
      * @param crypto the cryptographic service
      * @param file the vault file to create; must not already exist as a vault
-     * @param vaultKey the unlocked vault key recovered from a device or recovery slot
+     * @param vaultKey the unlocked vault key recovered from a device slot
      * @param header the vault header to persist; its vault key id must match {@code vaultKey}
      * @param clock the clock for timestamps
      * @return an opened store owning the vault key
@@ -269,6 +270,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         }
         LockHandle lock = LockHandle.acquire(file);
         try {
+            reserveNewVaultFile(file);
             OneFileVaultStore store =
                     new OneFileVaultStore(file, crypto, clock, vaultKey, header, 0L, lock);
             store.persist(header, clock.instant());
@@ -524,6 +526,16 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         byte[] bytes = VaultFileFormat.write(crypto, headerToWrite, vaultKey, body, encryptedAt);
         atomicWrite(bytes);
         this.header = headerToWrite;
+    }
+
+    private static void reserveNewVaultFile(@NonNull Path file) {
+        try {
+            Files.createFile(file);
+        } catch (FileAlreadyExistsException error) {
+            throw new StoreException("Vault file already exists: " + file, error);
+        } catch (IOException error) {
+            throw new StoreException("Could not reserve new vault file: " + file, error);
+        }
     }
 
     private void atomicWrite(byte @NonNull [] bytes) {

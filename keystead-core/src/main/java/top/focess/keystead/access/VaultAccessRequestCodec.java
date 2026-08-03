@@ -1,4 +1,4 @@
-package top.focess.keystead.recovery;
+package top.focess.keystead.access;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -16,37 +16,28 @@ import java.util.Arrays;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.memory.Wipe;
 
-/** Strict binary encoding and human-comparable fingerprint for device recovery requests. */
-public final class RecoveryDeviceRequestCodec {
+/** Strict encoding and public-key-bound comparison fingerprint for ephemeral access requests. */
+public final class VaultAccessRequestCodec {
 
-    private static final byte[] MAGIC = {'K', 'R', 'R', '1'};
+    private static final byte[] MAGIC = {'K', 'V', 'A', '2'};
     private static final int MAX_ENCODED_BYTES = 256 * 1024;
     private static final int MAX_TEXT_BYTES = 64 * 1024;
     private static final int MAX_KEY_BYTES = 64 * 1024;
 
-    private RecoveryDeviceRequestCodec() {}
+    private VaultAccessRequestCodec() {}
 
-    /**
-     * Encodes a recovery device request into a canonical binary representation.
-     *
-     * @param request the request to encode
-     * @return the canonical binary encoding of the request
-     */
-    public static byte @NonNull [] encode(@NonNull RecoveryDeviceRequest request) {
+    public static byte @NonNull [] encode(@NonNull VaultAccessRequest request) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             try (DataOutputStream output = new DataOutputStream(bytes)) {
                 output.write(MAGIC);
                 output.writeInt(request.formatVersion());
                 writeText(output, request.requestId());
-                writeText(output, request.username());
-                writeText(output, request.nonce());
+                writeText(output, request.accountId());
+                writeText(output, request.serverOrigin());
                 output.writeLong(request.expiresAt().getEpochSecond());
-                writeText(output, request.deviceId());
-                writeText(output, request.proofKeyAlgorithm());
-                writeBytes(output, request.proofPublicKey());
-                writeText(output, request.wrappingKeyAlgorithm());
-                writeBytes(output, request.wrappingPublicKey());
+                writeText(output, request.keyAlgorithm());
+                writeBytes(output, request.exchangePublicKey());
             }
             byte[] encoded = bytes.toByteArray();
             if (encoded.length > MAX_ENCODED_BYTES) {
@@ -55,60 +46,46 @@ public final class RecoveryDeviceRequestCodec {
             }
             return encoded;
         } catch (IOException error) {
-            throw new IllegalStateException("Could not encode recovery device request", error);
+            throw new IllegalStateException("Could not encode vault access request", error);
         }
     }
 
-    /**
-     * Decodes a canonical binary representation into a recovery device request.
-     *
-     * @param encoded the canonical binary encoding
-     * @return the decoded recovery device request
-     */
-    public static @NonNull RecoveryDeviceRequest decode(byte @NonNull [] encoded) {
+    public static @NonNull VaultAccessRequest decode(byte @NonNull [] encoded) {
         if (encoded.length == 0 || encoded.length > MAX_ENCODED_BYTES) {
             throw invalid();
         }
         byte[] inputBytes = Arrays.copyOf(encoded, encoded.length);
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(inputBytes))) {
-            byte[] magic = input.readNBytes(MAGIC.length);
-            if (!Arrays.equals(magic, MAGIC)) {
+            if (!Arrays.equals(input.readNBytes(MAGIC.length), MAGIC)) {
                 throw invalid();
             }
             int version = input.readInt();
             String requestId = readText(input);
-            String username = readText(input);
-            String nonce = readText(input);
+            String accountId = readText(input);
+            String serverOrigin = readText(input);
             Instant expiresAt = Instant.ofEpochSecond(input.readLong());
-            String deviceId = readText(input);
-            String proofAlgorithm = readText(input);
-            byte[] proofKey = readBytes(input, MAX_KEY_BYTES);
-            String wrappingAlgorithm = readText(input);
-            byte[] wrappingKey = readBytes(input, MAX_KEY_BYTES);
+            String algorithm = readText(input);
+            byte[] publicKey = readBytes(input, MAX_KEY_BYTES);
             try {
-                RecoveryDeviceRequest request =
-                        new RecoveryDeviceRequest(
+                VaultAccessRequest request =
+                        new VaultAccessRequest(
                                 version,
                                 requestId,
-                                username,
-                                nonce,
+                                accountId,
+                                serverOrigin,
                                 expiresAt,
-                                deviceId,
-                                proofAlgorithm,
-                                proofKey,
-                                wrappingAlgorithm,
-                                wrappingKey);
+                                algorithm,
+                                publicKey);
                 if (input.available() != 0 || !Arrays.equals(encoded, encode(request))) {
                     throw invalid();
                 }
                 return request;
             } finally {
-                Wipe.wipe(proofKey);
-                Wipe.wipe(wrappingKey);
+                Wipe.wipe(publicKey);
             }
         } catch (IOException | RuntimeException error) {
             if (error instanceof IllegalArgumentException illegal
-                    && "Recovery device request is invalid".equals(illegal.getMessage())) {
+                    && "Vault access request is invalid".equals(illegal.getMessage())) {
                 throw illegal;
             }
             throw invalid();
@@ -117,24 +94,19 @@ public final class RecoveryDeviceRequestCodec {
         }
     }
 
-    /**
-     * Computes a human-comparable fingerprint for a recovery device request.
-     *
-     * @param request the request to fingerprint
-     * @return a grouped hexadecimal fingerprint derived from the canonical encoding
-     */
-    public static @NonNull String fingerprint(@NonNull RecoveryDeviceRequest request) {
+    /** Returns the first 128 digest bits in an uppercase UUID-shaped comparison format. */
+    public static @NonNull String fingerprint(@NonNull VaultAccessRequest request) {
         byte[] encoded = encode(request);
         byte[] digest = digest(encoded);
         try {
-            StringBuilder fingerprint = new StringBuilder(24);
-            for (int index = 0; index < 10; index++) {
-                if (index > 0 && index % 2 == 0) {
-                    fingerprint.append('-');
+            StringBuilder value = new StringBuilder(36);
+            for (int index = 0; index < 16; index++) {
+                if (index == 4 || index == 6 || index == 8 || index == 10) {
+                    value.append('-');
                 }
-                fingerprint.append(String.format("%02X", digest[index] & 0xff));
+                value.append(String.format("%02X", digest[index] & 0xff));
             }
-            return fingerprint.toString();
+            return value.toString();
         } finally {
             Wipe.wipe(encoded);
             Wipe.wipe(digest);
@@ -148,8 +120,7 @@ public final class RecoveryDeviceRequestCodec {
             if (encoded.length == 0 || encoded.length > MAX_TEXT_BYTES) {
                 throw invalid();
             }
-            output.writeInt(encoded.length);
-            output.write(encoded);
+            writeBytes(output, encoded);
         } finally {
             Wipe.wipe(encoded);
         }
@@ -157,12 +128,8 @@ public final class RecoveryDeviceRequestCodec {
 
     private static void writeBytes(@NonNull DataOutputStream output, byte @NonNull [] value)
             throws IOException {
-        try {
-            output.writeInt(value.length);
-            output.write(value);
-        } finally {
-            Wipe.wipe(value);
-        }
+        output.writeInt(value.length);
+        output.write(value);
     }
 
     private static @NonNull String readText(@NonNull DataInputStream input) throws IOException {
@@ -204,6 +171,6 @@ public final class RecoveryDeviceRequestCodec {
     }
 
     private static @NonNull IllegalArgumentException invalid() {
-        return new IllegalArgumentException("Recovery device request is invalid");
+        return new IllegalArgumentException("Vault access request is invalid");
     }
 }
