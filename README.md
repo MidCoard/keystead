@@ -18,12 +18,13 @@ One Keystead account represents one personal encrypted record stream. The server
 
 ## Vault model
 
-A Keystead vault is one encrypted `.kvault` file. It is not JSON and the complete file is not the server sync format.
+A Keystead vault is one `.kvault` file whose record content is encrypted. It is not JSON and the complete file is not the server sync format.
 
 - Creation generates a random DEK.
 - The master password is processed with Argon2id and wraps the DEK; it is not used directly to encrypt records.
 - Each record is independently encrypted and authenticated with the DEK and record-specific associated data.
-- The plaintext header contains format and routing metadata plus wrapped key slots, never a raw DEK.
+- The plaintext header contains format and routing metadata plus wrapped key slots, never a raw DEK. The body container also keeps its framing fields (format version, AEAD algorithm, key id, nonce, encryption timestamp) unencrypted — these are not secret in an AEAD design; only the record ciphertext is encrypted, and the header is integrity-protected as the container's AAD.
+- Records are addressed by a random UUID (`secretId`) generated at creation. The id is a label, not a security boundary: authenticity comes from the DEK, not from identifier uniqueness.
 - Closing `VaultHandle` destroys the handle's live key material and releases its file lock.
 - `OneFileVaultStore` uses a sibling lock file, recovery journal, and atomic replacement for committed mutations.
 
@@ -61,13 +62,21 @@ There is no recovery kit in the current product. If no correct local vault or po
 
 Synchronization moves `EncryptedSyncRecord` values, not vault headers and not decrypted secrets.
 
+Each record carries a stable, export-independent identity:
+
+- `contentKey` is `HMAC-SHA-256(DEK, label ‖ profilePlaintext ‖ payloadPlaintext)`, base64url. It commits to the record's plaintext content. Because it is keyed by the DEK, a sync server storing it gains no offline guessing oracle over record contents.
+- `SyncRecordEventId` (format `KVE2`) is the SHA-256 hash of the identity fields — vault fingerprint, `secretId`, revision, secret type, deletion flag — together with the `contentKey`. Ciphertext is deliberately excluded: export re-encrypts the sync profile with a fresh random nonce every time, so ciphertext can never serve as identity. Re-exporting an unchanged record always yields the same event id, which is what makes server-side dedup and client-side comparison exact.
+- The sync codecs serialize canonically (sorted keys, no wall-clock timestamp comments), so the same record always encodes to the same bytes.
+
+Export and import:
+
 - `VaultHandle.exportRecordsSince(revision)` exports encrypted record revisions and authenticated tombstones.
-- `VaultHandle.importRecordsWithReport(records)` authenticates downloaded rows with the open vault's DEK and reports imported, skipped, conflicting, and rejected rows.
+- `VaultHandle.importRecordsWithReport(records)` verifies before storing: the vault fingerprint must match, the profile and payload must decrypt under the open vault's DEK, and the recomputed `contentKey` must match. Failures are reported as rejected rows, never written to the vault.
 - A row encrypted with another DEK fails local authentication and must not be stored in the local vault.
 - The transport can be append-only. Core does not require the server to understand record plaintext or possess the DEK.
 - The server cannot cryptographically prove that all clients used the same DEK; the receiving client is the enforcement point.
 
-The current server stores one append-only personal record event stream per account. Team and collaboration synchronization are not part of the current model.
+The current server stores one append-only personal record event stream per account. All sync timing and ordering (`createdAt`, `serverSequence`) is assigned by the server at append time; clients submit no timestamps. Team and collaboration synchronization are not part of the current model.
 
 ## Portable backup
 
@@ -101,6 +110,7 @@ The current implementation uses:
 | Master-password KDF | Argon2id |
 | Record and metadata encryption | AES-256-GCM with domain-separated associated data |
 | Recipient/exchange wrapping | Google Tink ECIES P-256, HKDF-HMAC-SHA256, AES-128-GCM |
+| Sync content identity | DEK-keyed HMAC-SHA-256 content keys with `KVE2` SHA-256 event ids |
 | Password hashes and fingerprints | Domain-separated SHA-256-based constructions where specified by the format |
 | SSH/OpenPGP/X.509 generation | Bouncy Castle |
 
@@ -131,17 +141,13 @@ Run all named-module and classpath-consumer tests:
 .\gradlew.bat check --no-daemon
 ```
 
-Publish the current snapshot to Maven Local for Client and Server development:
-
-```powershell
-.\gradlew.bat :keystead-core:publishToMavenLocal --no-daemon
-```
-
-Dependency coordinates:
+Dependency coordinates (Maven Central):
 
 ```kotlin
-implementation("top.focess:keystead-core:0.4.4-SNAPSHOT")
+implementation("top.focess:keystead-core:0.4.5")
 ```
+
+Client and Server consume only released Maven Central coordinates. Local-consumption mechanisms (`mavenLocal`, composite builds) are never committed; release first, then consume.
 
 The module name is `top.focess.keystead.core`. Its exported packages are `access`, `aigc`, `crypto`, `generator`, `memory`, `model`, `security`, `service`, `share`, and `store` under `top.focess.keystead`.
 
@@ -151,5 +157,6 @@ The module name is `top.focess.keystead.core`. Its exported packages are `access
 - A user who can satisfy the configured Windows Hello or local-login-passphrase check can use that local unlock slot.
 - Revoking a local slot does not erase plaintext or keys already copied by an attacker.
 - An append-only server can retain ciphertext and traffic metadata, including account identity, vault fingerprint, record identifiers, revisions, timestamps, and sizes.
+- A forged server event (for example one replaying a known `secretId`) cannot enter a local vault: import authenticates every row against the DEK and its content key before storing. The worst case is availability noise, which re-uploading repairs.
 - Losing every usable local vault and portable backup permanently loses access to opaque server records.
 - The API and on-disk formats are still under active development; pin exact versions.

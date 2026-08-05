@@ -52,7 +52,8 @@ class TolerantSyncImportTest {
                         valid.secretType(),
                         "not-an-envelope",
                         "not-an-envelope",
-                        false);
+                        false,
+                        "content-key");
 
         try (VaultHandle target = service.openVault(targetFile, master())) {
             SyncImportReport report = target.importRecordsWithReport(List.of(valid, corrupt));
@@ -86,7 +87,8 @@ class TolerantSyncImportTest {
                         tombstone.secretType(),
                         tamper(tombstone.encryptedProfile()),
                         "",
-                        true);
+                        true,
+                        tombstone.contentKey());
 
         try (VaultHandle target = service.openVault(targetFile, master())) {
             SyncImportReport report = target.importRecordsWithReport(List.of(tampered));

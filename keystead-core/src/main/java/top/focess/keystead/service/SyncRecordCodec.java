@@ -7,10 +7,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.NonNull;
@@ -200,9 +203,23 @@ final class SyncRecordCodec {
 
     private static @NonNull String properties(@NonNull Properties properties) {
         try {
+            // Serialize with sorted keys and without the timestamp comment:
+            // Properties.store always appends a "#<current date>" line, which would make
+            // every encoding of the same data differ by wall-clock time and destabilize
+            // content keys and event ids computed over these bytes.
+            Properties canonical =
+                    new Properties() {
+                        @Override
+                        public synchronized @NonNull Enumeration<Object> keys() {
+                            return Collections.enumeration(
+                                    new TreeSet<>(properties.stringPropertyNames()));
+                        }
+                    };
+            canonical.putAll(properties);
             StringWriter writer = new StringWriter();
-            properties.store(writer, "Keystead sync v1");
-            return writer.toString();
+            canonical.store(writer, null);
+            String raw = writer.toString();
+            return raw.substring(raw.indexOf('\n') + 1);
         } catch (IOException e) {
             throw new ValidationException("Could not encode sync record");
         }

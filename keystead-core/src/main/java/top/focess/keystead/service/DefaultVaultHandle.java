@@ -497,7 +497,17 @@ final class DefaultVaultHandle implements VaultHandle {
         int skipped = 0;
         List<SyncImportConflict> conflicts = new ArrayList<>();
         for (EncryptedSyncRecord record : verified) {
-            ImportOutcome outcome = importVerifiedRecord(record);
+            ImportOutcome outcome;
+            try {
+                outcome = importVerifiedRecord(record);
+            } catch (ValidationException error) {
+                rejected.add(
+                        new SyncImportRejection(
+                                record.secretId(),
+                                record.revision(),
+                                SyncImportRejectionReason.UNVERIFIABLE));
+                continue;
+            }
             if (outcome.imported()) {
                 imported++;
             } else if (outcome.conflict() != null) {
@@ -681,9 +691,14 @@ final class DefaultVaultHandle implements VaultHandle {
         byte[] profileBytes = SyncRecordCodec.profileBytes(metadata);
         byte[] profileAad =
                 SyncRecordCodec.profileAad(fingerprintText, secretIdText, record.revision());
+        byte @Nullable [] payloadAad = null;
+        byte @Nullable [] payloadPlaintext = null;
         try {
             EncryptedEnvelope encryptedProfile =
                     crypto.encrypt(vaultKey, profileBytes, profileAad, clock.instant());
+            payloadAad = aad(metadata, record.revision());
+            payloadPlaintext = crypto.decrypt(vaultKey, record.payload(), payloadAad);
+            String contentKey = crypto.syncContentKey(vaultKey, profileBytes, payloadPlaintext);
             return new EncryptedSyncRecord(
                     fingerprintText,
                     secretIdText,
@@ -691,10 +706,13 @@ final class DefaultVaultHandle implements VaultHandle {
                     metadata.type().name(),
                     SyncRecordCodec.envelopeWithoutAad(encryptedProfile),
                     SyncRecordCodec.envelopeWithoutAad(record.payload()),
-                    false);
+                    false,
+                    contentKey);
         } finally {
             Wipe.wipe(profileBytes);
             Wipe.wipe(profileAad);
+            Wipe.wipe(payloadAad);
+            Wipe.wipe(payloadPlaintext);
         }
     }
 
@@ -709,6 +727,7 @@ final class DefaultVaultHandle implements VaultHandle {
         try {
             EncryptedEnvelope authenticated =
                     crypto.encrypt(vaultKey, marker, aad, clock.instant());
+            String contentKey = crypto.syncContentKey(vaultKey, marker, new byte[0]);
             return new EncryptedSyncRecord(
                     fingerprintText,
                     secretId,
@@ -716,7 +735,8 @@ final class DefaultVaultHandle implements VaultHandle {
                     secretType,
                     SyncRecordCodec.envelopeWithoutAad(authenticated),
                     "",
-                    true);
+                    true,
+                    contentKey);
         } finally {
             Wipe.wipe(aad);
             Wipe.wipe(marker);
@@ -736,6 +756,12 @@ final class DefaultVaultHandle implements VaultHandle {
             return skippedOrConflict(record, existing.revision(), false);
         }
         if (record.deleted()) {
+            byte[] marker = SyncRecordCodec.tombstoneBytes(record.secretType());
+            try {
+                requireSyncContentKey(record, marker, new byte[0]);
+            } finally {
+                Wipe.wipe(marker);
+            }
             store.saveDeletedSecretRecord(
                     new DeletedSecretRecord(
                             secretId,
@@ -751,6 +777,7 @@ final class DefaultVaultHandle implements VaultHandle {
                         record.fingerprint(), record.secretId(), record.revision());
         byte @Nullable [] profileBytes = null;
         byte @Nullable [] payloadAad = null;
+        byte @Nullable [] payloadPlaintext = null;
         try {
             EncryptedEnvelope profileEnvelope =
                     SyncRecordCodec.envelopeWithAad(record.encryptedProfile(), profileAad);
@@ -759,6 +786,8 @@ final class DefaultVaultHandle implements VaultHandle {
             payloadAad = aad(metadata, record.revision());
             EncryptedEnvelope payloadEnvelope =
                     SyncRecordCodec.envelopeWithAad(record.envelope(), payloadAad);
+            payloadPlaintext = crypto.decrypt(vaultKey, payloadEnvelope, payloadAad);
+            requireSyncContentKey(record, profileBytes, payloadPlaintext);
             store.saveSecretRecord(
                     new EncryptedSecretRecord(metadata, payloadEnvelope, record.revision()));
             return ImportOutcome.importedOutcome();
@@ -766,6 +795,18 @@ final class DefaultVaultHandle implements VaultHandle {
             Wipe.wipe(profileAad);
             Wipe.wipe(profileBytes);
             Wipe.wipe(payloadAad);
+            Wipe.wipe(payloadPlaintext);
+        }
+    }
+
+    private void requireSyncContentKey(
+            @NonNull EncryptedSyncRecord record,
+            byte @NonNull [] profilePlaintext,
+            byte @NonNull [] payloadPlaintext) {
+        if (!crypto.syncContentKey(vaultKey, profilePlaintext, payloadPlaintext)
+                .equals(record.contentKey())) {
+            throw new ValidationException(
+                    "Sync record content key does not match its encrypted content");
         }
     }
 

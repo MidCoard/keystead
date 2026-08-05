@@ -15,17 +15,60 @@ class SyncRecordEventIdTest {
                     "LOGIN_PASSWORD",
                     "profile",
                     "payload",
-                    false);
+                    false,
+                    "content-key");
 
     @Test
     void contentHashUsesTheStableCrossPlatformEncoding() {
-        assertEquals("47fiwy3Hb3dBWDTsn7mEnwW_i2IvfjIgDvvpXWzOGCU", SyncRecordEventId.of(RECORD));
+        assertEquals("ac6hbddox4BkPm4eukfXjPBspNdI9c-J4MOaOB2fs6g", SyncRecordEventId.of(RECORD));
     }
 
     @Test
-    void contentHashBindsEveryEncryptedRecordField() {
+    void contentHashIgnoresCiphertextBecauseReexportRefreshesNonces() {
         String expected = SyncRecordEventId.of(RECORD);
 
+        assertEquals(
+                expected,
+                SyncRecordEventId.of(
+                        new EncryptedSyncRecord(
+                                RECORD.fingerprint(),
+                                RECORD.secretId(),
+                                RECORD.revision(),
+                                RECORD.secretType(),
+                                "reencrypted-profile",
+                                "reencrypted-payload",
+                                RECORD.deleted(),
+                                RECORD.contentKey())));
+    }
+
+    @Test
+    void contentHashBindsEveryIdentityFieldAndTheContentKey() {
+        String expected = SyncRecordEventId.of(RECORD);
+
+        assertNotEquals(
+                expected,
+                SyncRecordEventId.of(
+                        new EncryptedSyncRecord(
+                                "6000000000000002",
+                                RECORD.secretId(),
+                                RECORD.revision(),
+                                RECORD.secretType(),
+                                RECORD.encryptedProfile(),
+                                RECORD.envelope(),
+                                RECORD.deleted(),
+                                RECORD.contentKey())));
+        assertNotEquals(
+                expected,
+                SyncRecordEventId.of(
+                        new EncryptedSyncRecord(
+                                RECORD.fingerprint(),
+                                "550e8400-e29b-41d4-a716-446655440001",
+                                RECORD.revision(),
+                                RECORD.secretType(),
+                                RECORD.encryptedProfile(),
+                                RECORD.envelope(),
+                                RECORD.deleted(),
+                                RECORD.contentKey())));
         assertNotEquals(
                 expected,
                 SyncRecordEventId.of(
@@ -36,7 +79,20 @@ class SyncRecordEventIdTest {
                                 RECORD.secretType(),
                                 RECORD.encryptedProfile(),
                                 RECORD.envelope(),
-                                RECORD.deleted())));
+                                RECORD.deleted(),
+                                RECORD.contentKey())));
+        assertNotEquals(
+                expected,
+                SyncRecordEventId.of(
+                        new EncryptedSyncRecord(
+                                RECORD.fingerprint(),
+                                RECORD.secretId(),
+                                RECORD.revision(),
+                                "SECURE_NOTE",
+                                RECORD.encryptedProfile(),
+                                RECORD.envelope(),
+                                RECORD.deleted(),
+                                RECORD.contentKey())));
         assertNotEquals(
                 expected,
                 SyncRecordEventId.of(
@@ -46,7 +102,20 @@ class SyncRecordEventIdTest {
                                 RECORD.revision(),
                                 RECORD.secretType(),
                                 RECORD.encryptedProfile(),
-                                "changed",
-                                RECORD.deleted())));
+                                "",
+                                true,
+                                RECORD.contentKey())));
+        assertNotEquals(
+                expected,
+                SyncRecordEventId.of(
+                        new EncryptedSyncRecord(
+                                RECORD.fingerprint(),
+                                RECORD.secretId(),
+                                RECORD.revision(),
+                                RECORD.secretType(),
+                                RECORD.encryptedProfile(),
+                                RECORD.envelope(),
+                                RECORD.deleted(),
+                                "changed-content-key")));
     }
 }

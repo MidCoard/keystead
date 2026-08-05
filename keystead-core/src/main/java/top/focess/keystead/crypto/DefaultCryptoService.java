@@ -13,6 +13,7 @@ import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -63,6 +64,9 @@ public final class DefaultCryptoService {
 
     /** Label mixed into the vault fingerprint HMAC to domain-separate it from other uses. */
     public static final @NonNull String FINGERPRINT_LABEL = "keystead-vault-fingerprint-v3";
+
+    /** Label mixed into the sync content-key HMAC to domain-separate it from other uses. */
+    public static final @NonNull String SYNC_CONTENT_LABEL = "keystead-sync-content-v1";
 
     private static final int KEY_BYTES = 32;
     private static final int SALT_BYTES = 16;
@@ -651,6 +655,44 @@ public final class DefaultCryptoService {
         }
     }
 
+    /**
+     * Computes the sync content key of a record: the unpadded base64url {@code
+     * HMAC-SHA-256(vaultKey, SYNC_CONTENT_LABEL ‖ len(profilePlaintext) ‖ profilePlaintext ‖
+     * len(payloadPlaintext) ‖ payloadPlaintext)}, where each length is a 4-byte big-endian
+     * integer.
+     *
+     * <p>The content key is a keyed hash, so a sync server cannot use it as an offline guessing
+     * oracle against record contents, and only vault-key holders can compute or verify it.
+     *
+     * @param key the vault key
+     * @param profilePlaintext the profile plaintext (or the tombstone marker for deletions)
+     * @param payloadPlaintext the payload plaintext (empty for deletions)
+     * @return the sync content key
+     */
+    public @NonNull String syncContentKey(
+            @NonNull VaultKey key,
+            byte @NonNull [] profilePlaintext,
+            byte @NonNull [] payloadPlaintext) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(profilePlaintext, "profilePlaintext");
+        Objects.requireNonNull(payloadPlaintext, "payloadPlaintext");
+        byte[] contentKey =
+                withKeyBytes(
+                        key,
+                        keyBytes -> {
+                            try {
+                                return hmacSha256(
+                                        keyBytes,
+                                        SYNC_CONTENT_LABEL,
+                                        profilePlaintext,
+                                        payloadPlaintext);
+                            } catch (GeneralSecurityException e) {
+                                throw new CryptoException("Could not compute sync content key", e);
+                            }
+                        });
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(contentKey);
+    }
+
     private static byte @NonNull [] hmacSha256(
             byte @NonNull [] key, @NonNull String label, byte @NonNull [] salt)
             throws GeneralSecurityException {
@@ -659,6 +701,29 @@ public final class DefaultCryptoService {
         mac.update(label.getBytes(StandardCharsets.UTF_8));
         mac.update(salt);
         return mac.doFinal();
+    }
+
+    private static byte @NonNull [] hmacSha256(
+            byte @NonNull [] key,
+            @NonNull String label,
+            byte @NonNull [] first,
+            byte @NonNull [] second)
+            throws GeneralSecurityException {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        mac.update(label.getBytes(StandardCharsets.UTF_8));
+        updateLengthPrefixed(mac, first);
+        updateLengthPrefixed(mac, second);
+        return mac.doFinal();
+    }
+
+    private static void updateLengthPrefixed(@NonNull Mac mac, byte @NonNull [] part) {
+        int length = part.length;
+        mac.update((byte) (length >>> 24));
+        mac.update((byte) (length >>> 16));
+        mac.update((byte) (length >>> 8));
+        mac.update((byte) length);
+        mac.update(part);
     }
 
     private byte @NonNull [] wrappingAad(@NonNull KeyId keyId) {

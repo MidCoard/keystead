@@ -10,16 +10,24 @@ import java.util.Base64;
 import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
-/** Computes the stable content hash used as an id for an encrypted sync-record event. */
+/**
+ * Computes the stable content hash used as an id for an encrypted sync-record event.
+ *
+ * <p>The KVE2 format hashes the record's identity fields (fingerprint, secret id, revision,
+ * secret type, deletion flag) together with its {@code contentKey} — a vault-keyed HMAC of the
+ * record plaintexts. Ciphertext fields are deliberately excluded: re-exporting an unchanged
+ * record re-encrypts the profile with a fresh nonce, so hashing ciphertext would produce a new
+ * id for the same logical record and break server-side dedup and client-side comparison.
+ */
 public final class SyncRecordEventId {
 
-    private static final byte[] FORMAT_LABEL = {'K', 'V', 'E', '1'};
+    private static final byte[] FORMAT_LABEL = {'K', 'V', 'E', '2'};
 
     private SyncRecordEventId() {}
 
     /**
-     * Returns the unpadded base64url SHA-256 hash of every authenticated transport field in {@code
-     * record}.
+     * Returns the unpadded base64url SHA-256 hash of the record identity fields and its keyed
+     * content key.
      */
     public static @NonNull String of(@NonNull EncryptedSyncRecord record) {
         Objects.requireNonNull(record, "record");
@@ -31,9 +39,8 @@ public final class SyncRecordEventId {
                 write(data, record.secretId());
                 data.writeLong(record.revision());
                 write(data, record.secretType());
-                write(data, record.encryptedProfile());
-                write(data, record.envelope());
                 data.writeBoolean(record.deleted());
+                write(data, record.contentKey());
             }
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray());
             return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);

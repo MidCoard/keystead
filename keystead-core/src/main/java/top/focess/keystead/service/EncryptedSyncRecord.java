@@ -18,6 +18,8 @@ import top.focess.keystead.model.SecurityLimits;
  * @param encryptedProfile the encrypted profile or authenticated deletion-control envelope
  * @param envelope the encrypted payload envelope, or empty when deleted
  * @param deleted whether this record is a tombstone
+ * @param contentKey the vault-keyed HMAC of the record plaintexts; it makes the event identity
+ *     stable across re-exports and restores because ciphertext nonces no longer affect identity
  */
 public record EncryptedSyncRecord(
         @NonNull String fingerprint,
@@ -26,13 +28,15 @@ public record EncryptedSyncRecord(
         @NonNull String secretType,
         @NonNull String encryptedProfile,
         @NonNull String envelope,
-        boolean deleted) {
+        boolean deleted,
+        @NonNull String contentKey) {
 
     /** Validates the record components. */
     public EncryptedSyncRecord {
         requireNotBlank(fingerprint, "fingerprint");
         requireNotBlank(secretId, "secretId");
         requireNotBlank(secretType, "secretType");
+        requireNotBlank(contentKey, "contentKey");
         Objects.requireNonNull(encryptedProfile, "encryptedProfile");
         Objects.requireNonNull(envelope, "envelope");
         if (encryptedProfile.length() > SecurityLimits.MAX_ENCODED_SYNC_CHARACTERS) {

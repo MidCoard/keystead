@@ -2,6 +2,7 @@ package top.focess.keystead.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static top.focess.keystead.model.SecurityLimits.MAX_ENCODED_SYNC_CHARACTERS;
@@ -10,6 +11,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
@@ -97,6 +99,104 @@ class SyncExportTest {
 
             assertEquals(1, vault.exportRecordsSince(0).size());
             assertEquals(0, vault.exportRecordsSince(1).size());
+        }
+    }
+
+    @Test
+    void exportingAnUnchangedRecordTwiceYieldsTheSameEventIdAndContentKey()
+            throws InterruptedException {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        try (VaultHandle vault =
+                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+            try (SecretBuffer value = SecretBuffer.fromChars(chars("token"))) {
+                vault.saveSecret(
+                        SecretType.API_TOKEN, draft -> draft.title("Token").field("token", value));
+            }
+
+            EncryptedSyncRecord first = vault.exportRecordsSince(0).getFirst();
+            // The properties encoding must be time-invariant: Properties.store appends a
+            // wall-clock date line, which previously made every export differ by seconds.
+            Thread.sleep(1100);
+            EncryptedSyncRecord second = vault.exportRecordsSince(0).getFirst();
+
+            assertNotEquals(
+                    first.encryptedProfile(),
+                    second.encryptedProfile(),
+                    "re-export re-encrypts the profile with a fresh nonce");
+            assertEquals(first.envelope(), second.envelope());
+            assertEquals(first.contentKey(), second.contentKey());
+            assertEquals(SyncRecordEventId.of(first), SyncRecordEventId.of(second));
+        }
+    }
+
+    @Test
+    void exportedRecordImportsIntoASecondVaultWithTheSameVaultKey() throws IOException {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        Path sourceFile = vaultFile();
+        Path targetFile = tempDir.resolve("target.kv");
+        try (VaultHandle source =
+                service.createVault(new CreateVaultRequest(sourceFile), master())) {
+            // create the empty vault so it can be copied before the secret exists
+        }
+        Files.copy(sourceFile, targetFile);
+
+        EncryptedSyncRecord exported;
+        try (VaultHandle source = service.openVault(sourceFile, master());
+                SecretBuffer value = SecretBuffer.fromChars(chars("token"))) {
+            source.saveSecret(
+                    SecretType.API_TOKEN, draft -> draft.title("Token").field("token", value));
+            exported = source.exportRecordsSince(0).getFirst();
+        }
+
+        try (VaultHandle target = service.openVault(targetFile, master())) {
+            assertEquals(1, target.importRecords(List.of(exported)));
+            assertEquals(1, target.listSecrets().size());
+        }
+    }
+
+    @Test
+    void importRejectsRecordWhoseContentKeyBelongsToDifferentContent() throws IOException {
+        VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
+        Path sourceFile = vaultFile();
+        Path targetFile = tempDir.resolve("target.kv");
+        try (VaultHandle source =
+                        service.createVault(new CreateVaultRequest(sourceFile), master());
+                SecretBuffer value = SecretBuffer.fromChars(chars("first"))) {
+            source.saveSecret(
+                    SecretType.API_TOKEN,
+                    draft -> draft.title("First token").field("token", value));
+        }
+        Files.copy(sourceFile, targetFile);
+
+        List<EncryptedSyncRecord> exported;
+        try (VaultHandle source = service.openVault(sourceFile, master());
+                SecretBuffer value = SecretBuffer.fromChars(chars("second"))) {
+            source.saveSecret(
+                    SecretType.API_TOKEN,
+                    draft -> draft.title("Second token").field("token", value));
+            exported = source.exportRecordsSince(0);
+        }
+        EncryptedSyncRecord valid = exported.get(1);
+        EncryptedSyncRecord substituted =
+                new EncryptedSyncRecord(
+                        valid.fingerprint(),
+                        valid.secretId(),
+                        valid.revision(),
+                        valid.secretType(),
+                        valid.encryptedProfile(),
+                        valid.envelope(),
+                        valid.deleted(),
+                        exported.get(0).contentKey());
+
+        try (VaultHandle target = service.openVault(targetFile, master())) {
+            SyncImportReport report = target.importRecordsWithReport(List.of(substituted, valid));
+
+            assertEquals(1, report.imported());
+            assertEquals(1, report.rejected().size());
+            assertEquals(substituted.secretId(), report.rejected().getFirst().secretId());
+            assertEquals(
+                    SyncImportRejectionReason.UNVERIFIABLE, report.rejected().getFirst().reason());
+            assertEquals(2, target.listSecrets().size());
         }
     }
 
@@ -194,7 +294,8 @@ class SyncExportTest {
                             SecretType.API_TOKEN.name(),
                             "",
                             "",
-                            true);
+                            true,
+                            "content-key");
 
             assertEquals(1, vault.listSecrets().size());
             SyncImportReport report = vault.importRecordsWithReport(List.of(valid, foreign));
@@ -226,7 +327,8 @@ class SyncExportTest {
                             SecretType.API_TOKEN.name(),
                             "",
                             "",
-                            true);
+                            true,
+                            "content-key");
 
             assertEquals(1, vault.listSecrets().size());
             SyncImportReport report = vault.importRecordsWithReport(List.of(valid, malformed));
@@ -256,7 +358,8 @@ class SyncExportTest {
                             SecretType.API_TOKEN.name(),
                             "not-an-envelope",
                             "not-an-envelope",
-                            false);
+                            false,
+                            "content-key");
 
             assertEquals(1, vault.listSecrets().size());
             SyncImportReport report = vault.importRecordsWithReport(List.of(valid, undecodable));
@@ -293,7 +396,8 @@ class SyncExportTest {
                             corruptBase.secretType(),
                             corruptBase.encryptedProfile(),
                             tamperedCiphertextEnvelope(corruptBase.envelope()),
-                            false);
+                            false,
+                            corruptBase.contentKey());
 
             assertEquals(2, vault.listSecrets().size());
             SyncImportReport report = vault.importRecordsWithReport(List.of(valid, corrupt));
@@ -323,7 +427,8 @@ class SyncExportTest {
                             SecretType.API_TOKEN.name(),
                             "",
                             "",
-                            true);
+                            true,
+                            "content-key");
 
             assertEquals(1, vault.listSecrets().size());
             SyncImportReport report =
@@ -359,7 +464,8 @@ class SyncExportTest {
                             SecretType.API_TOKEN.name(),
                             "",
                             "",
-                            true);
+                            true,
+                            "content-key");
             SyncImportReport report = vault.importRecordsWithReport(List.of(staleTombstone));
 
             assertEquals(0, report.imported());
@@ -383,7 +489,8 @@ class SyncExportTest {
                                 SecretType.API_TOKEN.name(),
                                 "profile",
                                 "envelope",
-                                false));
+                                false,
+                                "content-key"));
     }
 
     @Test
@@ -401,7 +508,8 @@ class SyncExportTest {
                                 SecretType.API_TOKEN.name(),
                                 "profile",
                                 "envelope",
-                                false));
+                                false,
+                                "content-key"));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
@@ -412,12 +520,32 @@ class SyncExportTest {
                                 SecretType.API_TOKEN.name(),
                                 "profile",
                                 "envelope",
-                                false));
+                                false,
+                                "content-key"));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new EncryptedSyncRecord(
-                                fingerprint, secretId, 1L, " ", "profile", "envelope", false));
+                                fingerprint,
+                                secretId,
+                                1L,
+                                " ",
+                                "profile",
+                                "envelope",
+                                false,
+                                "content-key"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new EncryptedSyncRecord(
+                                fingerprint,
+                                secretId,
+                                1L,
+                                SecretType.API_TOKEN.name(),
+                                "profile",
+                                "envelope",
+                                false,
+                                " "));
     }
 
     @Test
@@ -432,7 +560,8 @@ class SyncExportTest {
                                 "OAUTH_REFRESH_TOKEN",
                                 "profile",
                                 "envelope",
-                                false));
+                                false,
+                                "content-key"));
     }
 
     @Test
@@ -450,7 +579,8 @@ class SyncExportTest {
                                 SecretType.API_TOKEN.name(),
                                 "",
                                 "payload",
-                                false));
+                                false,
+                                "content-key"));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
@@ -461,7 +591,8 @@ class SyncExportTest {
                                 SecretType.API_TOKEN.name(),
                                 "profile",
                                 "",
-                                false));
+                                false,
+                                "content-key"));
     }
 
     @Test
@@ -477,7 +608,8 @@ class SyncExportTest {
                         SecretType.API_TOKEN.name(),
                         "profile",
                         "",
-                        true);
+                        true,
+                        "content-key");
         assertEquals("profile", authenticated.encryptedProfile());
         assertThrows(
                 IllegalArgumentException.class,
@@ -489,7 +621,8 @@ class SyncExportTest {
                                 SecretType.API_TOKEN.name(),
                                 "",
                                 "payload",
-                                true));
+                                true,
+                                "content-key"));
     }
 
     @Test
@@ -503,7 +636,8 @@ class SyncExportTest {
                         SecretType.API_TOKEN.name(),
                         exact,
                         exact,
-                        false);
+                        false,
+                        "content-key");
 
         assertEquals(MAX_ENCODED_SYNC_CHARACTERS, record.encryptedProfile().length());
         assertEquals(MAX_ENCODED_SYNC_CHARACTERS, record.envelope().length());
@@ -517,7 +651,8 @@ class SyncExportTest {
                                 SecretType.API_TOKEN.name(),
                                 "x".repeat(MAX_ENCODED_SYNC_CHARACTERS + 1),
                                 "envelope",
-                                false));
+                                false,
+                                "content-key"));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
@@ -528,7 +663,8 @@ class SyncExportTest {
                                 SecretType.API_TOKEN.name(),
                                 "profile",
                                 "x".repeat(MAX_ENCODED_SYNC_CHARACTERS + 1),
-                                false));
+                                false,
+                                "content-key"));
     }
 
     private static char[] master() {
