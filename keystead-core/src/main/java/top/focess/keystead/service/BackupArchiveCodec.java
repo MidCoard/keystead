@@ -78,7 +78,9 @@ final class BackupArchiveCodec {
                 totalBytes =
                         addEntry(
                                 entries,
-                                RECORDS_PREFIX + record.metadata().id().value() + PROPERTIES_SUFFIX,
+                                RECORDS_PREFIX
+                                        + record.metadata().secretId().value()
+                                        + PROPERTIES_SUFFIX,
                                 recordProperties(record),
                                 totalBytes);
             }
@@ -502,8 +504,8 @@ final class BackupArchiveCodec {
     private static @NonNull Properties recordProperties(@NonNull EncryptedSecretRecord record) {
         Properties properties = new Properties();
         SecretMetadata metadata = record.metadata();
-        properties.setProperty("metadata.id", metadata.id().value().toString());
-        properties.setProperty("metadata.type", metadata.type().name());
+        properties.setProperty("metadata.id", metadata.secretId().value().toString());
+        properties.setProperty("metadata.type", metadata.secretType().name());
         properties.setProperty("metadata.title", b64(metadata.title()));
         writeClassification(properties, metadata.classification());
         properties.setProperty(

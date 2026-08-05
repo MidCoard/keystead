@@ -47,7 +47,7 @@ class ModelTest {
                 NullPointerException.class,
                 () ->
                         new SecretMetadata(
-                                metadata.id(),
+                                metadata.secretId(),
                                 null,
                                 metadata.title(),
                                 metadata.classification(),

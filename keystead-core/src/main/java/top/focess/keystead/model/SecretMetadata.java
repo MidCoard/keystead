@@ -6,19 +6,19 @@ import java.util.Set;
 import org.jspecify.annotations.NonNull;
 
 /**
- * Non-secret metadata for a stored secret: id, type, profile, timestamps, and revision. Revisions
- * are positive and monotonic within a vault.
+ * Non-secret metadata for a stored secret: secretId, secretType, profile, timestamps, and revision.
+ * Revisions are positive and monotonic within a vault.
  *
- * @param id the secret's stable id
- * @param type the secret type
+ * @param secretId the secret's stable id
+ * @param secretType the secret type
  * @param profile the non-secret title, classification, tags, and attributes
  * @param createdAt when the secret was first stored
  * @param updatedAt when the secret was last updated
  * @param revision the monotonic revision; must be positive
  */
 public record SecretMetadata(
-        @NonNull SecretId id,
-        @NonNull SecretType type,
+        @NonNull SecretId secretId,
+        @NonNull SecretType secretType,
         @NonNull SecretProfile profile,
         @NonNull Instant createdAt,
         @NonNull Instant updatedAt,
@@ -26,8 +26,8 @@ public record SecretMetadata(
 
     /** Validates the record components. */
     public SecretMetadata {
-        Objects.requireNonNull(id, "id");
-        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(secretId, "secretId");
+        Objects.requireNonNull(secretType, "secretType");
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(createdAt, "createdAt");
         Objects.requireNonNull(updatedAt, "updatedAt");
@@ -43,8 +43,8 @@ public record SecretMetadata(
     /**
      * Constructs metadata from an explicit title, classification, and tags.
      *
-     * @param id the secret's stable id
-     * @param type the secret type
+     * @param secretId the secret's stable id
+     * @param secretType the secret type
      * @param title the non-blank secret title
      * @param classification the non-secret taxonomy
      * @param tags the tag set
@@ -53,8 +53,8 @@ public record SecretMetadata(
      * @param revision the monotonic revision; must be positive
      */
     public SecretMetadata(
-            @NonNull SecretId id,
-            @NonNull SecretType type,
+            @NonNull SecretId secretId,
+            @NonNull SecretType secretType,
             @NonNull String title,
             @NonNull SecretClassification classification,
             @NonNull Set<String> tags,
@@ -62,8 +62,8 @@ public record SecretMetadata(
             @NonNull Instant updatedAt,
             long revision) {
         this(
-                id,
-                type,
+                secretId,
+                secretType,
                 new SecretProfile(title, classification, tags),
                 createdAt,
                 updatedAt,
@@ -73,8 +73,8 @@ public record SecretMetadata(
     /**
      * Constructs metadata from an explicit title and tags with no classification.
      *
-     * @param id the secret's stable id
-     * @param type the secret type
+     * @param secretId the secret's stable id
+     * @param secretType the secret type
      * @param title the non-blank secret title
      * @param tags the tag set
      * @param createdAt when the secret was first stored
@@ -82,14 +82,22 @@ public record SecretMetadata(
      * @param revision the monotonic revision; must be positive
      */
     public SecretMetadata(
-            @NonNull SecretId id,
-            @NonNull SecretType type,
+            @NonNull SecretId secretId,
+            @NonNull SecretType secretType,
             @NonNull String title,
             @NonNull Set<String> tags,
             @NonNull Instant createdAt,
             @NonNull Instant updatedAt,
             long revision) {
-        this(id, type, title, SecretClassification.none(), tags, createdAt, updatedAt, revision);
+        this(
+                secretId,
+                secretType,
+                title,
+                SecretClassification.none(),
+                tags,
+                createdAt,
+                updatedAt,
+                revision);
     }
 
     /** Returns the secret title.

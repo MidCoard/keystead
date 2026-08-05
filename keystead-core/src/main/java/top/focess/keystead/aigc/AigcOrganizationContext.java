@@ -73,8 +73,8 @@ public record AigcOrganizationContext(
     public static @NonNull AigcOrganizationContext from(@NonNull SecretMetadata metadata) {
         Objects.requireNonNull(metadata, "metadata");
         return new AigcOrganizationContext(
-                metadata.id(),
-                metadata.type(),
+                metadata.secretId(),
+                metadata.secretType(),
                 metadata.title(),
                 metadata.classification(),
                 metadata.tags(),

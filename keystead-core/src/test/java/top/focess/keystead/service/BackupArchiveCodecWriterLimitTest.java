@@ -312,7 +312,7 @@ class BackupArchiveCodecWriterLimitTest {
     }
 
     private static String recordEntryName(EncryptedSecretRecord record) {
-        return "records/" + record.metadata().id().value() + ".properties";
+        return "records/" + record.metadata().secretId().value() + ".properties";
     }
 
     private static byte[] write(BackupArchive archive) {

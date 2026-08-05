@@ -120,7 +120,7 @@ final class DefaultVaultHandle implements VaultHandle {
         EncryptedSecretRecord existing =
                 store.loadSecretRecord(secretId)
                         .orElseThrow(() -> new ValidationException("Login secret does not exist"));
-        if (existing.metadata().type() != SecretType.LOGIN_PASSWORD) {
+        if (existing.metadata().secretType() != SecretType.LOGIN_PASSWORD) {
             throw new ValidationException("Secret is not a login password");
         }
 
@@ -173,7 +173,7 @@ final class DefaultVaultHandle implements VaultHandle {
         EncryptedSecretRecord record =
                 store.loadSecretRecord(secretId)
                         .orElseThrow(() -> new ValidationException("Login secret does not exist"));
-        if (record.metadata().type() != SecretType.LOGIN_PASSWORD) {
+        if (record.metadata().secretType() != SecretType.LOGIN_PASSWORD) {
             throw new ValidationException("Secret is not a login password");
         }
 
@@ -251,7 +251,7 @@ final class DefaultVaultHandle implements VaultHandle {
         EncryptedSecretRecord record =
                 store.loadSecretRecord(secretId)
                         .orElseThrow(() -> new ValidationException("Secure note does not exist"));
-        if (record.metadata().type() != SecretType.SECURE_NOTE) {
+        if (record.metadata().secretType() != SecretType.SECURE_NOTE) {
             throw new ValidationException("Secret is not a secure note");
         }
 
@@ -335,7 +335,7 @@ final class DefaultVaultHandle implements VaultHandle {
                 store.loadSecretRecord(secretId)
                         .orElseThrow(
                                 () -> new ValidationException("Structured secret does not exist"));
-        SecretType type = existing.metadata().type();
+        SecretType type = existing.metadata().secretType();
         requireStructuredType(type);
 
         StructuredSecretDraftImpl draft = new StructuredSecretDraftImpl();
@@ -390,7 +390,7 @@ final class DefaultVaultHandle implements VaultHandle {
                 store.loadSecretRecord(secretId)
                         .orElseThrow(
                                 () -> new ValidationException("Structured secret does not exist"));
-        requireStructuredType(record.metadata().type());
+        requireStructuredType(record.metadata().secretType());
 
         byte[] aad = aad(record.metadata(), record.revision());
         byte @Nullable [] payload = null;
@@ -421,7 +421,7 @@ final class DefaultVaultHandle implements VaultHandle {
                         store.saveDeletedSecretRecord(
                                 new DeletedSecretRecord(
                                         secretId,
-                                        existing.metadata().type(),
+                                        existing.metadata().secretType(),
                                         revision,
                                         clock.instant()));
                         store.deleteSecretRecord(secretId);
@@ -687,7 +687,7 @@ final class DefaultVaultHandle implements VaultHandle {
     private @NonNull EncryptedSyncRecord exportRecord(
             @NonNull String fingerprintText, @NonNull EncryptedSecretRecord record) {
         SecretMetadata metadata = record.metadata();
-        String secretIdText = metadata.id().value().toString();
+        String secretIdText = metadata.secretId().value().toString();
         byte[] profileBytes = SyncRecordCodec.profileBytes(metadata);
         byte[] profileAad =
                 SyncRecordCodec.profileAad(fingerprintText, secretIdText, record.revision());
@@ -703,7 +703,7 @@ final class DefaultVaultHandle implements VaultHandle {
                     fingerprintText,
                     secretIdText,
                     record.revision(),
-                    metadata.type().name(),
+                    metadata.secretType().name(),
                     SyncRecordCodec.envelopeWithoutAad(encryptedProfile),
                     SyncRecordCodec.envelopeWithoutAad(record.payload()),
                     false,

@@ -53,7 +53,9 @@ public record BackupArchive(
     }
 
     private static @NonNull Set<SecretId> recordIds(@NonNull List<EncryptedSecretRecord> records) {
-        return records.stream().map(record -> record.metadata().id()).collect(Collectors.toSet());
+        return records.stream()
+                .map(record -> record.metadata().secretId())
+                .collect(Collectors.toSet());
     }
 
     private static @NonNull Set<SecretId> tombstoneIds(

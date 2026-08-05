@@ -682,7 +682,7 @@ class SyncExportTest {
     private static String encryptedProfileTitle(VaultHandle vault, EncryptedSyncRecord record) {
         SecretId id = new SecretId(UUID.fromString(record.secretId()));
         return vault.listSecrets().stream()
-                .filter(metadata -> metadata.id().equals(id))
+                .filter(metadata -> metadata.secretId().equals(id))
                 .findFirst()
                 .orElseThrow()
                 .title();

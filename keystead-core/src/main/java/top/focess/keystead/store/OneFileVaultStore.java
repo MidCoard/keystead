@@ -176,7 +176,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
             dek = null;
             lock = null;
             for (EncryptedSecretRecord record : body.records()) {
-                store.active.put(record.metadata().id(), record);
+                store.active.put(record.metadata().secretId(), record);
             }
             for (DeletedSecretRecord tombstone : body.tombstones()) {
                 store.deleted.put(tombstone.secretId(), tombstone);
@@ -229,7 +229,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
                             lock);
             lock = null;
             for (EncryptedSecretRecord record : body.records()) {
-                store.active.put(record.metadata().id(), record);
+                store.active.put(record.metadata().secretId(), record);
             }
             for (DeletedSecretRecord tombstone : body.tombstones()) {
                 store.deleted.put(tombstone.secretId(), tombstone);
@@ -374,7 +374,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         header = rotation.header();
         active.clear();
         for (EncryptedSecretRecord record : rotation.activeRecords()) {
-            active.put(record.metadata().id(), record);
+            active.put(record.metadata().secretId(), record);
             recordRevision(record.revision());
         }
         try {
@@ -399,7 +399,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         Objects.requireNonNull(record, "record");
         requireOpen();
         recordRevision(record.revision());
-        active.put(record.metadata().id(), record);
+        active.put(record.metadata().secretId(), record);
         persist(header.withUpdatedAt(clock.instant()), clock.instant());
     }
 
@@ -471,7 +471,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         requireOpen();
         List<EncryptedSecretRecord> records = new ArrayList<>(active.size());
         for (EncryptedSecretRecord record : active.values()) {
-            DeletedSecretRecord tombstone = deleted.get(record.metadata().id());
+            DeletedSecretRecord tombstone = deleted.get(record.metadata().secretId());
             if (tombstone != null && tombstone.revision() > record.revision()) {
                 continue;
             }
@@ -479,7 +479,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         }
         records.sort(
                 Comparator.comparing(
-                        record -> record.metadata().id(), SecretIdComparator.INSTANCE));
+                        record -> record.metadata().secretId(), SecretIdComparator.INSTANCE));
         return Collections.unmodifiableList(records);
     }
 

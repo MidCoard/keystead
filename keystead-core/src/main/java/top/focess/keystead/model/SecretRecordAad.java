@@ -25,8 +25,8 @@ public final class SecretRecordAad {
         StringBuilder value = new StringBuilder();
         append(value, "keystead-secret-record-v3");
         append(value, fingerprint.toHexString());
-        append(value, metadata.id().value().toString());
-        append(value, metadata.type().name());
+        append(value, metadata.secretId().value().toString());
+        append(value, metadata.secretType().name());
         append(value, metadata.title());
         append(value, nullable(metadata.classification().category()));
         append(value, nullable(metadata.classification().provider()));

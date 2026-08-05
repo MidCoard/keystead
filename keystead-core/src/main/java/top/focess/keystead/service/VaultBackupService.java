@@ -116,23 +116,23 @@ public final class VaultBackupService {
         List<BackupConflict> conflicts = new ArrayList<>();
         for (EncryptedSecretRecord record : archive.records()) {
             Optional<EncryptedSecretRecord> existing =
-                    target.loadSecretRecord(record.metadata().id());
+                    target.loadSecretRecord(record.metadata().secretId());
             if (existing.isPresent() && existing.get().revision() >= record.revision()) {
                 skipped++;
                 conflicts.add(
                         new BackupConflict(
-                                record.metadata().id(),
+                                record.metadata().secretId(),
                                 existing.get().revision(),
                                 record.revision()));
                 continue;
             }
             Optional<DeletedSecretRecord> deleted =
-                    target.loadDeletedSecretRecord(record.metadata().id());
+                    target.loadDeletedSecretRecord(record.metadata().secretId());
             if (deleted.isPresent() && deleted.get().revision() >= record.revision()) {
                 skipped++;
                 conflicts.add(
                         new BackupConflict(
-                                record.metadata().id(),
+                                record.metadata().secretId(),
                                 deleted.get().revision(),
                                 record.revision()));
                 continue;

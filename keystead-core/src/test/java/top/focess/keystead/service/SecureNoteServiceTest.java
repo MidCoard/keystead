@@ -47,7 +47,7 @@ class SecureNoteServiceTest {
                     secretId,
                     view -> {
                         assertEquals("Recovery", view.metadata().title());
-                        assertEquals(SecretType.SECURE_NOTE, view.metadata().type());
+                        assertEquals(SecretType.SECURE_NOTE, view.metadata().secretType());
                         view.withBody(
                                 chars ->
                                         assertArrayEquals(

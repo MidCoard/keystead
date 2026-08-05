@@ -40,7 +40,7 @@ final class StructuredSecretViewImpl implements StructuredSecretView, AutoClosea
     @Override
     public @NonNull List<String> orderedFieldNames() {
         requireOpen();
-        SecretTypeSchema schema = SecretTypeSchema.forType(metadata.type());
+        SecretTypeSchema schema = SecretTypeSchema.forType(metadata.secretType());
         if (schema.allowsCustomFields()) {
             return List.copyOf(fields.keySet());
         }

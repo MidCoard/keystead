@@ -52,7 +52,7 @@ class StructuredSecretServiceTest {
             vault.withSecret(
                     secretId,
                     view -> {
-                        assertEquals(SecretType.SSH_KEY, view.metadata().type());
+                        assertEquals(SecretType.SSH_KEY, view.metadata().secretType());
                         assertEquals("Work SSH", view.metadata().title());
                         assertEquals(
                                 new SecretClassification(
@@ -156,7 +156,7 @@ class StructuredSecretServiceTest {
                 vault.withSecret(
                         secretId,
                         view -> {
-                            assertEquals(type, view.metadata().type());
+                            assertEquals(type, view.metadata().secretType());
                             view.withField(
                                     validFieldNames(type).iterator().next(),
                                     chars -> assertArrayEquals(chars("encrypted payload"), chars));

@@ -878,7 +878,7 @@ class VaultBackupServiceTest {
         source.saveSecretRecord(record);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         backup.writeTo(backup.export(source), output);
-        String entryName = "records/" + record.metadata().id().value() + ".properties";
+        String entryName = "records/" + record.metadata().secretId().value() + ".properties";
         Properties properties = new Properties();
         properties.load(new java.io.StringReader(zipEntryText(output.toByteArray(), entryName)));
         mutation.accept(properties);
@@ -1024,7 +1024,7 @@ class VaultBackupServiceTest {
 
         @Override
         public void saveSecretRecord(EncryptedSecretRecord record) {
-            active.put(record.metadata().id(), record);
+            active.put(record.metadata().secretId(), record);
         }
 
         @Override
@@ -1077,13 +1077,13 @@ class VaultBackupServiceTest {
         public List<EncryptedSecretRecord> listSecretRecords() {
             List<EncryptedSecretRecord> records = new ArrayList<>();
             for (EncryptedSecretRecord record : active.values()) {
-                DeletedSecretRecord tombstone = deleted.get(record.metadata().id());
+                DeletedSecretRecord tombstone = deleted.get(record.metadata().secretId());
                 if (tombstone != null && tombstone.revision() > record.revision()) {
                     continue;
                 }
                 records.add(record);
             }
-            records.sort(Comparator.comparing(record -> record.metadata().id().value()));
+            records.sort(Comparator.comparing(record -> record.metadata().secretId().value()));
             return Collections.unmodifiableList(records);
         }
 

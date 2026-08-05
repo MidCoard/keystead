@@ -155,8 +155,8 @@ final class VaultContainerBody {
             @NonNull DataOutputStream data, @NonNull EncryptedSecretRecord record)
             throws IOException {
         SecretMetadata metadata = record.metadata();
-        writeUuid(data, metadata.id().value());
-        writeShortString(data, metadata.type().name());
+        writeUuid(data, metadata.secretId().value());
+        writeShortString(data, metadata.secretType().name());
         writeShortString(data, metadata.title());
         writeClassification(data, metadata.classification());
         writeStringSet(data, metadata.tags());
