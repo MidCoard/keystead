@@ -180,6 +180,24 @@ public interface VaultHandle extends AutoCloseable {
     @NonNull SyncImportReport importRecordsWithReport(@NonNull List<EncryptedSyncRecord> records);
 
     /**
+     * Decrypts a single sync record under this vault's DEK and exposes its contents inside the
+     * callback <em>without</em> storing it, so the user can compare a server record against local
+     * state before merging.
+     *
+     * <p>Validation matches {@link #importRecordsWithReport}: the fingerprint must match this vault,
+     * the profile and payload must decrypt under the open DEK, and the recomputed contentKey must
+     * equal the record's. A record that fails (foreign DEK, pre-rotation leftover, or tampered)
+     * throws {@link ValidationException}; the caller can treat that as "not valid for this vault" and
+     * exclude it from the merge. The decoded payload is wiped when the callback returns.
+     *
+     * @param record the encrypted sync record received from a sync server
+     * @param consumer callback that receives a short-lived {@link SyncRecordPreview}
+     * @throws ValidationException if the record is mixed-vault, malformed, or fails the contentKey proof
+     */
+    void previewSyncRecord(
+            @NonNull EncryptedSyncRecord record, @NonNull Consumer<SyncRecordPreview> consumer);
+
+    /**
      * Wraps the current vault key for another device's public key.
      *
      * @param devicePublicKey the recipient device's public key

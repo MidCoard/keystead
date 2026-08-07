@@ -470,6 +470,74 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
+    public synchronized void previewSyncRecord(
+            @NonNull EncryptedSyncRecord record, @NonNull Consumer<SyncRecordPreview> consumer) {
+        Objects.requireNonNull(record, "record");
+        Objects.requireNonNull(consumer, "consumer");
+        requireOpen();
+        requireSyncRecordPreflight(record);
+        SecretId secretId = new SecretId(UUID.fromString(record.secretId()));
+        SecretType secretType = SecretType.valueOf(record.secretType());
+        if (record.deleted()) {
+            consumer.accept(new SyncRecordPreview.Deleted(secretId, secretType, record.revision()));
+            return;
+        }
+        byte[] profileAad =
+                SyncRecordCodec.profileAad(
+                        record.fingerprint(), record.secretId(), record.revision());
+        byte @Nullable [] profileBytes = null;
+        byte @Nullable [] payloadAad = null;
+        byte @Nullable [] payloadPlaintext = null;
+        @Nullable AutoCloseable viewImpl = null;
+        try {
+            EncryptedEnvelope profileEnvelope =
+                    SyncRecordCodec.envelopeWithAad(record.encryptedProfile(), profileAad);
+            profileBytes = crypto.decrypt(vaultKey, profileEnvelope, profileAad);
+            SecretMetadata metadata = SyncRecordCodec.metadata(record, profileBytes);
+            payloadAad = aad(metadata, record.revision());
+            EncryptedEnvelope payloadEnvelope =
+                    SyncRecordCodec.envelopeWithAad(record.envelope(), payloadAad);
+            payloadPlaintext = crypto.decrypt(vaultKey, payloadEnvelope, payloadAad);
+            requireSyncContentKey(record, profileBytes, payloadPlaintext);
+            SyncPayloadView payloadView;
+            switch (secretType) {
+                case LOGIN_PASSWORD -> {
+                    LoginSecretViewImpl view = LoginPayloadCodec.decode(metadata, payloadPlaintext);
+                    viewImpl = view;
+                    payloadView = new SyncPayloadView.Login(metadata, view);
+                }
+                case SECURE_NOTE -> {
+                    SecureNoteViewImpl view =
+                            SecureNotePayloadCodec.decode(metadata, payloadPlaintext);
+                    viewImpl = view;
+                    payloadView = new SyncPayloadView.Note(metadata, view);
+                }
+                default -> {
+                    StructuredSecretViewImpl view =
+                            StructuredSecretPayloadCodec.decode(metadata, payloadPlaintext);
+                    viewImpl = view;
+                    payloadView = new SyncPayloadView.Structured(metadata, view);
+                }
+            }
+            consumer.accept(new SyncRecordPreview.Active(metadata, payloadView));
+        } finally {
+            if (viewImpl != null) {
+                try {
+                    viewImpl.close();
+                } catch (RuntimeException error) {
+                    throw error;
+                } catch (Exception ignored) {
+                    // AutoCloseable.close declares Exception; the view impls do not throw checked.
+                }
+            }
+            Wipe.wipe(profileAad);
+            Wipe.wipe(profileBytes);
+            Wipe.wipe(payloadAad);
+            Wipe.wipe(payloadPlaintext);
+        }
+    }
+
+    @Override
     public synchronized @NonNull SyncImportReport importRecordsWithReport(
             @NonNull List<EncryptedSyncRecord> records) {
         Objects.requireNonNull(records, "records");
