@@ -26,36 +26,11 @@ The project owner will acknowledge receipt and coordinate a fix and disclosure
 timeline. Vulnerabilities must be reported privately before any public
 disclosure.
 
-## Pre-release security checklist (mandatory)
-
-Before tagging a release or publishing artifacts, every item below must pass:
-
-- [ ] All three test suites are green on their CI lanes:
-      core, server (H2 + PostgreSQL), client.
-- [ ] No plaintext secret, raw token, or wrapped vault key is stored, logged,
-      audited, or returned by any code path (redaction review).
-- [ ] The zero-knowledge contract holds: the server stores only opaque
-      ciphertext and wrapped key packages; no vault key material touches the
-      server.
-- [ ] JPA is the only database access path on the server (no raw JDBC); the
-      `NoDirectJdbcAccessTest` architecture check passes.
-- [ ] Flyway migrations are forward-only and run cleanly on both H2 and
-      PostgreSQL.
-- [ ] Audit events are durable and tamper-evident: when audit signing is
-      enabled, every persisted event carries a reproducible HMAC signature.
-- [ ] The audit-signing key (when configured) is rotated as part of the release
-      and never committed to the repository.
-- [ ] CodeGraph indexes are fresh for each repository (no stale-symbol
-      surprises in review).
-- [ ] Dependency versions are pinned and a dependency audit shows no known
-      high-severity advisories.
-
 ## Scope
 
 This policy applies to the public `keystead` core repository. The
 `keystead-server` and `keystead-client` repositories are also public and follow
-the same private-disclosure path and pre-release checklist; each ships its own
-`SECURITY.md`.
+the same private-disclosure path; each ships its own `SECURITY.md`.
 
 ## License
 

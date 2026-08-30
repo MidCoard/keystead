@@ -121,4 +121,4 @@ gradle-app.setting
 .veto_history
 
 # Project-specific ignores
-docs
+docs/

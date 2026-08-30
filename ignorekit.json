@@ -11,7 +11,7 @@
   ],
   "exclude": [],
   "custom": [
-    "docs"
+    "docs/"
   ],
   "addons": {}
 }
