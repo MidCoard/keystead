@@ -47,8 +47,7 @@ class ProvisionedVaultServiceTest {
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
-                        sourceService.createVault(
-                                new CreateVaultRequest(vaultFile("source")), masterPassword())) {
+                        sourceService.createVault(vaultFile("source"), masterPassword())) {
             SecretId secretId = saveLogin(source);
             List<EncryptedSyncRecord> exported = source.exportRecordsSince(0);
             DeviceVaultKeyPackage keyPackage =
@@ -88,9 +87,7 @@ class ProvisionedVaultServiceTest {
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
-                        sourceService.createVault(
-                                new CreateVaultRequest(vaultFile("new-only-source")),
-                                masterPassword())) {
+                        sourceService.createVault(vaultFile("new-only-source"), masterPassword())) {
             DeviceVaultKeyPackage keyPackage =
                     source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
             assertThrows(
@@ -114,9 +111,7 @@ class ProvisionedVaultServiceTest {
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
-                        sourceService.createVault(
-                                new CreateVaultRequest(vaultFile("delete-source")),
-                                masterPassword())) {
+                        sourceService.createVault(vaultFile("delete-source"), masterPassword())) {
             SecretId secretId = saveLogin(source);
             List<EncryptedSyncRecord> created = source.exportRecordsSince(0);
             DeviceVaultKeyPackage keyPackage =
@@ -155,9 +150,7 @@ class ProvisionedVaultServiceTest {
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
-                        sourceService.createVault(
-                                new CreateVaultRequest(vaultFile("metadata-source")),
-                                masterPassword())) {
+                        sourceService.createVault(vaultFile("metadata-source"), masterPassword())) {
             DeviceVaultKeyPackage keyPackage =
                     source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
             byte[] expectedCiphertext = keyPackage.encryptedVaultKey();
@@ -218,9 +211,7 @@ class ProvisionedVaultServiceTest {
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
-                        sourceService.createVault(
-                                new CreateVaultRequest(vaultFile("mismatch-source")),
-                                masterPassword())) {
+                        sourceService.createVault(vaultFile("mismatch-source"), masterPassword())) {
             DeviceVaultKeyPackage keyPackage =
                     source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
             try (VaultHandle target =

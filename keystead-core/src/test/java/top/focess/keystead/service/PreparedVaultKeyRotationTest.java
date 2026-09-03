@@ -36,9 +36,7 @@ class PreparedVaultKeyRotationTest {
         DefaultVaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
-                VaultHandle source =
-                        service.createVault(
-                                new CreateVaultRequest(vaultFile("commit")), masterPassword())) {
+                VaultHandle source = service.createVault(vaultFile("commit"), masterPassword())) {
             SecretId secretId = saveLogin(source);
             KeyId sourceKeyId = source.vaultKeyId();
 
@@ -79,8 +77,7 @@ class PreparedVaultKeyRotationTest {
     @Test
     void closingWithoutCommitPreservesOldVaultAndReleasesSourceHandle() {
         DefaultVaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle source =
-                service.createVault(new CreateVaultRequest(vaultFile("abort")), masterPassword())) {
+        try (VaultHandle source = service.createVault(vaultFile("abort"), masterPassword())) {
             KeyId sourceKeyId = source.vaultKeyId();
             try (PreparedVaultKeyRotation ignored = source.prepareVaultKeyRotation()) {
                 assertThrows(
@@ -102,9 +99,7 @@ class PreparedVaultKeyRotationTest {
         DefaultCryptoService crypto = new DefaultCryptoService();
         DefaultVaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
-                VaultHandle source =
-                        service.createVault(
-                                new CreateVaultRequest(vaultFile("mismatch")), masterPassword());
+                VaultHandle source = service.createVault(vaultFile("mismatch"), masterPassword());
                 PreparedVaultKeyRotation rotation = source.prepareVaultKeyRotation()) {
             DeviceVaultKeyPackage generated =
                     rotation.wrapVaultKeyPackageForDevice(device.publicKey(), CONTEXT);
@@ -135,9 +130,7 @@ class PreparedVaultKeyRotationTest {
         DeviceVaultKeyPackage staged;
         SecretId secretId;
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair()) {
-            try (VaultHandle source =
-                    service.createVault(
-                            new CreateVaultRequest(vaultFile("resume")), masterPassword())) {
+            try (VaultHandle source = service.createVault(vaultFile("resume"), masterPassword())) {
                 secretId = saveLogin(source);
                 try (PreparedVaultKeyRotation rotation = source.prepareVaultKeyRotation()) {
                     staged = rotation.wrapVaultKeyPackageForDevice(device.publicKey(), CONTEXT);
@@ -168,9 +161,7 @@ class PreparedVaultKeyRotationTest {
         DefaultVaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
-                        service.createVault(
-                                new CreateVaultRequest(vaultFile("wrong-context")),
-                                masterPassword())) {
+                        service.createVault(vaultFile("wrong-context"), masterPassword())) {
             DeviceVaultKeyPackage staged;
             try (PreparedVaultKeyRotation rotation = source.prepareVaultKeyRotation()) {
                 staged = rotation.wrapVaultKeyPackageForDevice(device.publicKey(), CONTEXT);

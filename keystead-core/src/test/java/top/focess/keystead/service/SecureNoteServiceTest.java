@@ -37,8 +37,7 @@ class SecureNoteServiceTest {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         SecretId secretId;
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             secretId = saveNote(vault);
         }
 
@@ -61,8 +60,7 @@ class SecureNoteServiceTest {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         AtomicReference<SecureNoteView> captured = new AtomicReference<>();
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             SecretId secretId = saveNote(vault);
             vault.withSecureNote(secretId, captured::set);
         }
@@ -74,8 +72,7 @@ class SecureNoteServiceTest {
     void saveSecureNoteRequiresTitleAndBody() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             assertThrows(
                     ValidationException.class,
                     () ->
@@ -94,8 +91,7 @@ class SecureNoteServiceTest {
     void persistedSecureNoteDoesNotContainPlaintextBody() throws IOException {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             saveNote(vault);
         }
 
@@ -108,8 +104,7 @@ class SecureNoteServiceTest {
     void openingSecureNoteAsLoginIsRejected() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             SecretId secretId = saveNote(vault);
 
             assertThrows(ValidationException.class, () -> vault.withLogin(secretId, view -> {}));

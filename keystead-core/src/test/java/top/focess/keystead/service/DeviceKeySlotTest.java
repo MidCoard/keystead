@@ -41,8 +41,7 @@ class DeviceKeySlotTest {
         DeviceKeyPair device = crypto.generateDeviceKeyPair();
         try {
             SecretId secretId;
-            try (VaultHandle source =
-                    service.createVault(new CreateVaultRequest(file), masterPassword())) {
+            try (VaultHandle source = service.createVault(file, masterPassword())) {
                 secretId = saveLogin(source);
                 source.addDeviceKey(device.publicKey(), context);
             }
@@ -72,8 +71,7 @@ class DeviceKeySlotTest {
         DeviceKeyPair device = crypto.generateDeviceKeyPair();
         try {
             KeyId slotId;
-            try (VaultHandle source =
-                    service.createVault(new CreateVaultRequest(file), masterPassword())) {
+            try (VaultHandle source = service.createVault(file, masterPassword())) {
                 slotId = source.addDeviceKey(device.publicKey(), context);
             }
 
@@ -104,8 +102,7 @@ class DeviceKeySlotTest {
         Path file = vaultFile("unknown-slot");
         DeviceKeyPair device = crypto.generateDeviceKeyPair();
         try {
-            try (VaultHandle source =
-                    service.createVault(new CreateVaultRequest(file), masterPassword())) {
+            try (VaultHandle source = service.createVault(file, masterPassword())) {
                 source.addDeviceKey(device.publicKey(), context);
                 assertThrows(
                         ValidationException.class,
@@ -127,8 +124,7 @@ class DeviceKeySlotTest {
             // Provision a device-only vault (a single DEVICE slot, no passphrase).
             DeviceVaultKeyPackage keyPackage;
             try (VaultHandle source =
-                    service.createVault(
-                            new CreateVaultRequest(vaultFile("last-src")), masterPassword())) {
+                    service.createVault(vaultFile("last-src"), masterPassword())) {
                 keyPackage = source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
             }
             try (VaultHandle ignored =
@@ -158,9 +154,7 @@ class DeviceKeySlotTest {
             DeviceVaultKeyPackage keyPackage;
             top.focess.keystead.model.VaultFingerprint fingerprint;
             try (VaultHandle source =
-                    service.createVault(
-                            new CreateVaultRequest(vaultFile("restore-source")),
-                            masterPassword())) {
+                    service.createVault(vaultFile("restore-source"), masterPassword())) {
                 fingerprint = source.vaultFingerprint();
                 keyPackage = source.wrapVaultKeyPackageForDevice(device.publicKey(), context);
             }

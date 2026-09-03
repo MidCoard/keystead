@@ -45,8 +45,7 @@ class SyncExportTest {
     @Test
     void exportRejectsNegativeSyncCursorBeforeReadingRows() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             ValidationException failure =
                     assertThrows(ValidationException.class, () -> vault.exportRecordsSince(-1));
             assertEquals("Since revision must not be negative", failure.getMessage());
@@ -56,8 +55,7 @@ class SyncExportTest {
     @Test
     void exportsEncryptedRecordsWithoutServerVisibleProfileOrAad() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer username = SecretBuffer.fromChars(chars("alice@example.com"));
                     SecretBuffer password = SecretBuffer.fromChars(chars("secret-password"))) {
                 vault.saveLogin(
@@ -90,8 +88,7 @@ class SyncExportTest {
     @Test
     void exportRecordsSinceFiltersByRevision() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("token"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN, draft -> draft.title("Token").field("token", value));
@@ -106,8 +103,7 @@ class SyncExportTest {
     void exportingAnUnchangedRecordTwiceYieldsTheSameEventIdAndContentKey()
             throws InterruptedException {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("token"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN, draft -> draft.title("Token").field("token", value));
@@ -134,8 +130,7 @@ class SyncExportTest {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         Path sourceFile = vaultFile();
         Path targetFile = tempDir.resolve("target.kv");
-        try (VaultHandle source =
-                service.createVault(new CreateVaultRequest(sourceFile), master())) {
+        try (VaultHandle source = service.createVault(sourceFile, master())) {
             // create the empty vault so it can be copied before the secret exists
         }
         Files.copy(sourceFile, targetFile);
@@ -159,8 +154,7 @@ class SyncExportTest {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         Path sourceFile = vaultFile();
         Path targetFile = tempDir.resolve("target.kv");
-        try (VaultHandle source =
-                        service.createVault(new CreateVaultRequest(sourceFile), master());
+        try (VaultHandle source = service.createVault(sourceFile, master());
                 SecretBuffer value = SecretBuffer.fromChars(chars("first"))) {
             source.saveSecret(
                     SecretType.API_TOKEN,
@@ -203,8 +197,7 @@ class SyncExportTest {
     @Test
     void newSecretsUseVaultWideRevisionSoSinceCursorDoesNotSkipThem() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("first"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -232,8 +225,7 @@ class SyncExportTest {
     void deleteExportsDurableTombstoneAndRejectsOlderRecordResurrection() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         EncryptedSyncRecord original;
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -261,8 +253,7 @@ class SyncExportTest {
     @Test
     void importSkipsOlderServerRevision() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -278,8 +269,7 @@ class SyncExportTest {
     @Test
     void importRejectsForeignVaultRowWithoutRejectingTheWholeBatch() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -311,8 +301,7 @@ class SyncExportTest {
     @Test
     void importReportsMalformedRowWithoutThrowingForTheBatch() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -342,8 +331,7 @@ class SyncExportTest {
     @Test
     void importReportsUndecodableActiveRowWithoutThrowingForTheBatch() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -373,8 +361,7 @@ class SyncExportTest {
     @Test
     void importReportsUndecryptablePayloadWithoutThrowingForTheBatch() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret_one"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -411,8 +398,7 @@ class SyncExportTest {
     @Test
     void importRejectsUnauthenticatedDuplicateTombstoneWithoutRejectingTheBatch() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer value = SecretBuffer.fromChars(chars("ghp_secret"))) {
                 vault.saveSecret(
                         SecretType.API_TOKEN,
@@ -443,8 +429,7 @@ class SyncExportTest {
     @Test
     void importRejectsUnauthenticatedRemoteTombstoneBeforeConflictResolution() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             SecretId secretId;
             try (SecretBuffer value = SecretBuffer.fromChars(chars("first"))) {
                 secretId =

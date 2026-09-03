@@ -48,9 +48,7 @@ class VaultHandleConcurrencyTest {
         AtomicReference<Thread> rotationWorker = new AtomicReference<>();
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
-                VaultHandle source =
-                        service.createVault(
-                                new CreateVaultRequest(vaultFile("rotation")), masterPassword())) {
+                VaultHandle source = service.createVault(vaultFile("rotation"), masterPassword())) {
             assertTimeoutPreemptively(
                     Duration.ofSeconds(5),
                     () -> {
@@ -90,8 +88,7 @@ class VaultHandleConcurrencyTest {
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
                 VaultHandle source =
-                        service.createVault(
-                                new CreateVaultRequest(vaultFile("wrap-close")), masterPassword());
+                        service.createVault(vaultFile("wrap-close"), masterPassword());
                 PreparedVaultKeyRotation prepared = source.prepareVaultKeyRotation()) {
             assertTimeoutPreemptively(
                     Duration.ofSeconds(5),

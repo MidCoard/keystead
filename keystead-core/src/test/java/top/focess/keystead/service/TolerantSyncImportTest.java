@@ -100,7 +100,7 @@ class TolerantSyncImportTest {
     }
 
     private static SecretId createOneRecord(VaultService service, Path file) {
-        try (VaultHandle vault = service.createVault(new CreateVaultRequest(file), master());
+        try (VaultHandle vault = service.createVault(file, master());
                 SecretBuffer value = SecretBuffer.fromChars("first".toCharArray())) {
             return vault.saveSecret(
                     SecretType.API_TOKEN, draft -> draft.title("First").field("token", value));

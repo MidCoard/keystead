@@ -32,13 +32,12 @@ public interface VaultService {
      * passphrase-derived fingerprint, the DEK id, and the passphrase key slot are persisted in the
      * plaintext header before the handle is returned.
      *
-     * @param request the vault file path and creation parameters
+     * @param file the vault file to create
      * @param passphrase caller-owned passphrase; wiped by the caller, not by this service
      * @return a live handle owning the new vault key
-     * @throws ValidationException if the vault file already exists or the request is invalid
+     * @throws ValidationException if the vault file already exists or the path is invalid
      */
-    @NonNull VaultHandle createVault(
-            @NonNull CreateVaultRequest request, char @NonNull [] passphrase);
+    @NonNull VaultHandle createVault(@NonNull Path file, char @NonNull [] passphrase);
 
     /**
      * Opens an existing passphrase-protected vault file and returns a handle holding its unlocked key.

@@ -43,8 +43,7 @@ class StructuredSecretServiceTest {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         SecretId secretId;
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             secretId = saveSshKey(vault);
         }
 
@@ -77,8 +76,7 @@ class StructuredSecretServiceTest {
     void structuredSecretViewOrdersTypedFieldsBySchema() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             SecretId secretId;
             try (SecretBuffer passphrase = SecretBuffer.fromChars(chars("private-passphrase"));
                     SecretBuffer privateKey =
@@ -107,8 +105,7 @@ class StructuredSecretServiceTest {
     void structuredSecretViewKeepsGenericCustomFieldsInPayloadOrder() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             SecretId secretId;
             try (SecretBuffer second = SecretBuffer.fromChars(chars("second-value"));
                     SecretBuffer first = SecretBuffer.fromChars(chars("first-value"))) {
@@ -131,8 +128,7 @@ class StructuredSecretServiceTest {
     void structuredSecretSupportsAllGeneralSecretTypes() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             for (SecretType type :
                     Set.of(
                             SecretType.SSH_KEY,
@@ -169,8 +165,7 @@ class StructuredSecretServiceTest {
     void saveSecretRejectsDedicatedPayloadTypes() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             assertThrows(
                     ValidationException.class,
                     () -> vault.saveSecret(SecretType.LOGIN_PASSWORD, draft -> {}));
@@ -185,8 +180,7 @@ class StructuredSecretServiceTest {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         AtomicReference<StructuredSecretView> captured = new AtomicReference<>();
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             SecretId secretId = saveSshKey(vault);
             vault.withSecret(secretId, captured::set);
         }
@@ -200,8 +194,7 @@ class StructuredSecretServiceTest {
     void saveStructuredSecretRequiresTitleAndField() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             assertThrows(
                     ValidationException.class,
                     () ->
@@ -224,8 +217,7 @@ class StructuredSecretServiceTest {
     void saveStructuredSecretEnforcesTypeSchemaFields() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             assertThrows(
                     ValidationException.class,
                     () ->
@@ -255,8 +247,7 @@ class StructuredSecretServiceTest {
     void persistedStructuredSecretDoesNotContainPlaintextFields() throws IOException {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             saveSshKey(vault);
         }
 

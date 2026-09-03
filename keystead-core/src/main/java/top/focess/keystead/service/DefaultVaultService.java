@@ -72,12 +72,10 @@ public final class DefaultVaultService implements VaultService {
     }
 
     @Override
-    public @NonNull VaultHandle createVault(
-            @NonNull CreateVaultRequest request, char @NonNull [] passphrase) {
-        Objects.requireNonNull(request, "request");
+    public @NonNull VaultHandle createVault(@NonNull Path file, char @NonNull [] passphrase) {
+        Objects.requireNonNull(file, "file");
         Objects.requireNonNull(passphrase, "passphrase");
-        OneFileVaultStore store =
-                OneFileVaultStore.create(crypto, request.file(), passphrase, clock);
+        OneFileVaultStore store = OneFileVaultStore.create(crypto, file, passphrase, clock);
         boolean storeTransferred = false;
         try {
             VaultHandle handle = handleFactory.create(store);

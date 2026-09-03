@@ -29,8 +29,7 @@ class VaultServiceOwnershipTransferTest {
                 AssertionError.class,
                 () ->
                         fixture.throwingService.createVault(
-                                new CreateVaultRequest(fixture.vaultFile),
-                                "password".toCharArray()));
+                                fixture.vaultFile, "password".toCharArray()));
 
         assertTrue(fixture.memory.lastOwner().isClosed());
     }
@@ -94,8 +93,7 @@ class VaultServiceOwnershipTransferTest {
     private Fixture initializedFixture(String directory) {
         Fixture fixture = fixture(directory);
         try (VaultHandle ignored =
-                fixture.normalService.createVault(
-                        new CreateVaultRequest(fixture.vaultFile), "password".toCharArray())) {
+                fixture.normalService.createVault(fixture.vaultFile, "password".toCharArray())) {
             return fixture;
         }
     }

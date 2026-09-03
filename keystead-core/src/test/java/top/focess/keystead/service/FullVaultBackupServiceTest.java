@@ -38,8 +38,7 @@ class FullVaultBackupServiceTest {
         byte[] encodedBackup;
 
         try (VaultHandle source =
-                vaults.createVault(
-                        new CreateVaultRequest(sourceFile), chars("original-vault-passphrase"))) {
+                vaults.createVault(sourceFile, chars("original-vault-passphrase"))) {
             try (SecretBuffer username = SecretBuffer.fromChars(chars("alice@example.com"));
                     SecretBuffer password = SecretBuffer.fromChars(chars("secret-password"))) {
                 secretId =
@@ -170,10 +169,7 @@ class FullVaultBackupServiceTest {
     private byte[] createEmptyBackup(String backupPassword) {
         Path sourceFile = tempDir.resolve("source-" + backupPassword + ".kvault");
         try (VaultHandle source =
-                vaultService()
-                        .createVault(
-                                new CreateVaultRequest(sourceFile),
-                                chars("original-vault-passphrase"))) {
+                vaultService().createVault(sourceFile, chars("original-vault-passphrase"))) {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             backupService().export(source, chars(backupPassword), output);
             return output.toByteArray();

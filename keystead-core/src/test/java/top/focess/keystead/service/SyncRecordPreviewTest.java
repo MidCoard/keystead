@@ -45,8 +45,7 @@ class SyncRecordPreviewTest {
     @Test
     void previewDecodesActiveLoginRecord() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             EncryptedSyncRecord record = saveLoginAndExport(vault);
             AtomicReference<String> seenPassword = new AtomicReference<>();
             vault.previewSyncRecord(
@@ -68,8 +67,7 @@ class SyncRecordPreviewTest {
     @Test
     void previewDecodesDeletedTombstone() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             try (SecretBuffer username = SecretBuffer.fromChars(chars("alice@example.com"));
                     SecretBuffer password = SecretBuffer.fromChars(chars("secret-password"))) {
                 vault.saveLogin(
@@ -90,12 +88,8 @@ class SyncRecordPreviewTest {
     @Test
     void previewRejectsForeignVaultRecord() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        try (VaultHandle vaultA =
-                        service.createVault(
-                                new CreateVaultRequest(tempDir.resolve("a.kv")), master());
-                VaultHandle vaultB =
-                        service.createVault(
-                                new CreateVaultRequest(tempDir.resolve("b.kv")), master())) {
+        try (VaultHandle vaultA = service.createVault(tempDir.resolve("a.kv"), master());
+                VaultHandle vaultB = service.createVault(tempDir.resolve("b.kv"), master())) {
             EncryptedSyncRecord foreignRecord = saveLoginAndExport(vaultA);
             assertThrows(
                     ValidationException.class,

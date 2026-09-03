@@ -46,8 +46,7 @@ class VaultServiceTest {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         SecretId secretId;
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             secretId = saveGitHubLogin(vault);
         }
 
@@ -81,8 +80,7 @@ class VaultServiceTest {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         SecretId secretId;
         KeyId originalKeyId;
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             secretId = saveGitHubLogin(vault);
             originalKeyId = vault.vaultKeyId();
         }
@@ -112,8 +110,7 @@ class VaultServiceTest {
     void wrongMasterPasswordCannotOpenVault() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle ignored =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle ignored = service.createVault(vaultFile(), master())) {
             // create vault
         }
 
@@ -126,8 +123,7 @@ class VaultServiceTest {
     void openVaultWithDeviceKeyRejectsPasswordProtectedVault() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle ignored =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle ignored = service.createVault(vaultFile(), master())) {
             // create a master-password-protected vault
         }
 
@@ -143,8 +139,7 @@ class VaultServiceTest {
         byte[] context = "vault:vault-1:device:laptop-1".getBytes(StandardCharsets.UTF_8);
 
         try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
-                VaultHandle vault =
-                        service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+                VaultHandle vault = service.createVault(vaultFile(), master())) {
             byte[] packageBytes = vault.wrapVaultKeyForDevice(device.publicKey(), context);
 
             assertTrue(packageBytes.length > 0);
@@ -173,8 +168,7 @@ class VaultServiceTest {
         SecretId secretId;
         AtomicReference<LoginSecretView> captured = new AtomicReference<>();
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             secretId = saveGitHubLogin(vault);
             vault.withLogin(secretId, captured::set);
         }
@@ -188,8 +182,7 @@ class VaultServiceTest {
     void saveLoginRequiresTitleAndPassword() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             assertThrows(
                     ValidationException.class,
                     () ->
@@ -208,8 +201,7 @@ class VaultServiceTest {
     void persistedLoginRecordDoesNotContainPlaintextSecretValues() throws IOException {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             saveGitHubLogin(vault);
         }
 
@@ -225,8 +217,7 @@ class VaultServiceTest {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         SecretId secretId;
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             secretId = saveGitHubLogin(vault);
             vault.deleteSecret(secretId);
 
@@ -239,8 +230,7 @@ class VaultServiceTest {
     void updateLoginReplacesPayloadAndUsesNewRevision() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             SecretId secretId = saveGitHubLogin(vault);
 
             try (SecretBuffer username = SecretBuffer.fromChars(chars("alice@example.com"));
@@ -278,8 +268,7 @@ class VaultServiceTest {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             CountDownLatch start = new CountDownLatch(1);
             Future<SecretId> firstSave =
                     executor.submit(
@@ -310,8 +299,7 @@ class VaultServiceTest {
     void updateStructuredSecretReplacesFieldsAndUsesNewRevision() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
 
-        try (VaultHandle vault =
-                service.createVault(new CreateVaultRequest(vaultFile()), master())) {
+        try (VaultHandle vault = service.createVault(vaultFile(), master())) {
             SecretId secretId;
             try (SecretBuffer token = SecretBuffer.fromChars(chars("ghp_old"))) {
                 secretId =
@@ -347,7 +335,7 @@ class VaultServiceTest {
     @Test
     void closingVaultHandleRejectsFurtherOperations() {
         VaultService service = new DefaultVaultService(new DefaultCryptoService(), CLOCK);
-        VaultHandle vault = service.createVault(new CreateVaultRequest(vaultFile()), master());
+        VaultHandle vault = service.createVault(vaultFile(), master());
 
         vault.close();
 
