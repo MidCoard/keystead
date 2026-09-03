@@ -6,16 +6,23 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
 /**
- * Plaintext v2 vault header: format version, routing fingerprint, vault key id, the
+ * Plaintext vault header: format version, routing fingerprint, vault key id, the
  * multi-slot key list, and timestamps.
  *
- * <p>A v2 vault carries no stored vault identifier; identity is the file path locally and the
+ * <p>A vault carries no separate stored vault identifier; identity is the file path locally and the
  * {@link VaultFingerprint} for routing and AAD binding. A newly created vault derives that
  * fingerprint from its initial passphrase; a server-provisioned copy imports and preserves it.
  * The same
  * data-encryption key is wrapped under one or more {@link KeySlot slots}; any single slot unlocks
  * the vault. The fingerprint is stable across data-encryption-key rotations and when a
  * server-provisioned copy installs a device-local passphrase slot.
+ *
+ * @param formatVersion the vault-file format version
+ * @param fingerprint the stored vault routing fingerprint
+ * @param vaultKeyId the active data-encryption-key identifier
+ * @param slots the key slots that can unwrap the active key
+ * @param createdAt when the vault was created
+ * @param updatedAt when the header was last updated
  */
 public record VaultHeader(
         int formatVersion,

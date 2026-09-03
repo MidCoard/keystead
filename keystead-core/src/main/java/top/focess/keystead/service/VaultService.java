@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import org.jspecify.annotations.NonNull;
 
 /**
- * Entry point for creating, opening, provisioning, and rotating v2 single-file vaults.
+ * Entry point for creating, opening, provisioning, and rotating single-file vaults.
  *
  * <p>A vault is one opaque file persisted by a {@link top.focess.keystead.store.OneFileVaultStore}.
  * The service derives and wraps a random data-encryption key (DEK) from a passphrase under an

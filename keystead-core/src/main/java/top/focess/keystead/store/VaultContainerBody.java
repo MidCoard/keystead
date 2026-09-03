@@ -28,12 +28,12 @@ import top.focess.keystead.model.SecurityLimits;
 import top.focess.keystead.model.VaultFingerprint;
 
 /**
- * Binary codec for the decrypted body of a v2 single-file vault container.
+ * Binary codec for the decrypted body of the current single-file vault container.
  *
  * <p>The body holds the monotonic vault revision, the active encrypted secret records, and the
  * deleted-secret tombstones. It is serialized to a flat byte array, encrypted as one
  * authenticated-encryption envelope by {@link VaultFileFormat}, and integrity-protected by the
- * whole-vault AEAD tag (the header is the container AAD).
+ * container AEAD tag (the header is the container AAD).
  *
  * <p>Each record's envelope is stored <em>without</em> its additional-authenticated data: the AAD is
  * recomputed on decode from the vault {@link VaultFingerprint}, the record metadata, and the record

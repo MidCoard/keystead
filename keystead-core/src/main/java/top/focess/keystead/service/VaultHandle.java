@@ -29,11 +29,11 @@ import top.focess.keystead.model.VaultFingerprint;
  */
 public interface VaultHandle extends AutoCloseable {
 
-    /** Returns the passphrase-derived fingerprint of the vault this handle is bound to.
+    /** Returns the stored routing fingerprint of the vault this handle is bound to.
      *
-     * <p>The fingerprint is a non-stored routing identifier derived from the passphrase and KDF salt;
-     * it is stable across vault-key rotations and may be disclosed to a sync server as an opaque
-     * routing token.
+     * <p>A new vault initially derives this non-secret value from its first passphrase and KDF salt.
+     * It is then stored and preserved across vault-key rotations, restores, provisioning, and local
+     * passphrase changes, and may be disclosed to a sync server as an opaque routing token.
      *
      * @return the vault fingerprint */
     @NonNull VaultFingerprint vaultFingerprint();
@@ -147,8 +147,9 @@ public interface VaultHandle extends AutoCloseable {
 
     /**
      * Exports encrypted records and tombstones with revision strictly greater than {@code
-     * sinceRevision}, ordered by revision then secret id. Exported rows are encrypted and are never
-     * decrypted by this call.
+     * sinceRevision}, ordered by revision then secret id. To create a stable DEK-keyed content key,
+     * this call decrypts each selected payload into a temporary buffer and wipes that buffer after
+     * constructing the encrypted export row.
      *
      * @param sinceRevision the exclusive lower revision bound; must not be negative
      * @return the encrypted rows to send to a sync server
@@ -192,7 +193,8 @@ public interface VaultHandle extends AutoCloseable {
      *
      * @param record the encrypted sync record received from a sync server
      * @param consumer callback that receives a short-lived {@link SyncRecordPreview}
-     * @throws ValidationException if the record is mixed-vault, malformed, or fails the contentKey proof
+     * @throws ValidationException if the record is mixed-vault, malformed, or fails content-key
+     *     verification
      */
     void previewSyncRecord(
             @NonNull EncryptedSyncRecord record, @NonNull Consumer<SyncRecordPreview> consumer);

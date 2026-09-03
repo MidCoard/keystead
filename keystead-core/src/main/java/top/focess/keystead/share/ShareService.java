@@ -9,7 +9,7 @@ import top.focess.keystead.memory.Wipe;
 import top.focess.keystead.service.ValidationException;
 
 /**
- * Mints and opens single-secret shares (Landing 3).
+ * Mints and opens single-secret shares.
  *
  * <p>A share is a self-contained encrypted string of the form
  * {@code keystead-share:v1:<base64url>} carrying one secret's fields plus optional metadata
@@ -74,9 +74,9 @@ public final class ShareService {
     /**
      * Opens (decrypts) a single-secret share string.
      *
-     * <p>A wrong passphrase fails with {@link CryptoException}. An expired share
-     * ( {@code expiresAt} in the past) is rejected with {@link ValidationException} after
-     * successful decryption, so the failure mode does not leak whether decryption succeeded.
+     * <p>A wrong passphrase fails with {@link CryptoException}. Because expiry is authenticated
+     * inside the encrypted payload, an expired share ({@code expiresAt} in the past) can only be
+     * identified and rejected with {@link ValidationException} after successful decryption.
      *
      * @param encoded        the {@code keystead-share:v1:...} string
      * @param tempPassphrase the recipient's temp passphrase (wiped on return)

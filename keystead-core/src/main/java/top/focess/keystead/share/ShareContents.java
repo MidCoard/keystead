@@ -39,6 +39,7 @@ public record ShareContents(
         @NonNull Instant createdAt,
         @Nullable Instant expiresAt) {
 
+    /** Validates the contents and defensively copies the field map. */
     public ShareContents {
         Objects.requireNonNull(shareId, "shareId");
         Objects.requireNonNull(secretType, "secretType");

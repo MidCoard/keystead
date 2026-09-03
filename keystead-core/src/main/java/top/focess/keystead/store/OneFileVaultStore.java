@@ -40,7 +40,7 @@ import top.focess.keystead.model.VaultFingerprint;
 import top.focess.keystead.model.VaultHeader;
 
 /**
- * Single-file {@link VaultStore} for a v2 vault.
+ * Single-file {@link VaultStore} for the current vault format.
  *
  * <p>An {@code OneFileVaultStore} is bound to exactly one vault file. It holds the unlocked vault
  * key (data-encryption key), the vault header, and the decrypted record set in memory, and rewrites
@@ -283,26 +283,34 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         }
     }
 
-    /** Returns the cryptographic service used by this store. */
+    /** Returns the cryptographic service used by this store.
+     *
+     * @return the cryptographic service */
     public @NonNull DefaultCryptoService crypto() {
         return crypto;
     }
 
-    /** Returns the vault fingerprint (non-secret routing identity from the header). */
+    /** Returns the vault fingerprint (non-secret routing identity from the header).
+     *
+     * @return the vault fingerprint */
     public @NonNull VaultFingerprint vaultFingerprint() {
         synchronized (this) {
             return header.fingerprint();
         }
     }
 
-    /** Returns the active vault key id. */
+    /** Returns the active vault key id.
+     *
+     * @return the active key id */
     public @NonNull KeyId vaultKeyId() {
         synchronized (this) {
             return header.vaultKeyId();
         }
     }
 
-    /** Returns the unlocked vault key. The key is owned by the store; callers must not close it. */
+    /** Returns the unlocked vault key. The key is owned by the store; callers must not close it.
+     *
+     * @return the store-owned unlocked key */
     public @NonNull VaultKey vaultKey() {
         synchronized (this) {
             requireOpen();
@@ -310,7 +318,9 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         }
     }
 
-    /** Returns the clock used by this store for timestamps. */
+    /** Returns the clock used by this store for timestamps.
+     *
+     * @return the store clock */
     public @NonNull Clock clock() {
         return clock;
     }

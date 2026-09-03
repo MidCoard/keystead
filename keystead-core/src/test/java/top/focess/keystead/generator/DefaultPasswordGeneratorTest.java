@@ -72,6 +72,48 @@ class DefaultPasswordGeneratorTest {
         assertThrows(IllegalArgumentException.class, () -> generator.generate(policy));
     }
 
+    @Test
+    void rejectsEnabledGroupWhenEveryCharacterIsExcluded() {
+        PasswordPolicy policy =
+                new PasswordPolicy(
+                        16,
+                        true,
+                        false,
+                        false,
+                        false,
+                        false,
+                        charactersOf(PasswordCharacterSets.UPPERCASE));
+
+        IllegalArgumentException error =
+                assertThrows(IllegalArgumentException.class, () -> generator.generate(policy));
+
+        assertTrue(error.getMessage().contains("uppercase"));
+    }
+
+    @Test
+    void generatedPasswordUsesOnlyIndividuallySelectedSymbols() {
+        Set<Character> excluded = charactersOf(PasswordCharacterSets.SYMBOLS);
+        excluded.remove('!');
+        excluded.remove('?');
+        PasswordPolicy policy = new PasswordPolicy(64, false, false, false, true, false, excluded);
+
+        try (SecretBuffer password = generator.generate(policy)) {
+            password.copyChars(
+                    chars -> {
+                        assertEquals(64, chars.length);
+                        for (char c : chars) {
+                            assertTrue(c == '!' || c == '?', "unexpected symbol: " + c);
+                        }
+                    });
+        }
+    }
+
+    private static Set<Character> charactersOf(String value) {
+        Set<Character> characters = new java.util.HashSet<>();
+        value.chars().forEach(character -> characters.add((char) character));
+        return characters;
+    }
+
     private static boolean containsAny(char[] chars, char start, char end) {
         for (char c : chars) {
             if (c >= start && c <= end) {

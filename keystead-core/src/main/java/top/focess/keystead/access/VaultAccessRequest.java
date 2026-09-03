@@ -12,6 +12,14 @@ import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
  *
  * <p>The request deliberately contains no persistent device identifier or proof key. The exchange
  * private key exists only in the requesting client's authenticated login session.
+ *
+ * @param formatVersion the access-request format version
+ * @param requestId the canonical request UUID
+ * @param accountId the account requesting access
+ * @param serverOrigin the server origin the request is bound to
+ * @param expiresAt the whole-second expiry instant
+ * @param keyAlgorithm the approved exchange-key algorithm
+ * @param exchangePublicKey the ephemeral exchange public key
  */
 public record VaultAccessRequest(
         int formatVersion,
@@ -51,6 +59,9 @@ public record VaultAccessRequest(
         exchangePublicKey = Arrays.copyOf(exchangePublicKey, exchangePublicKey.length);
     }
 
+    /** Returns a defensive copy of the ephemeral exchange public key.
+     *
+     * @return a defensive copy of the public key */
     @Override
     public byte @NonNull [] exchangePublicKey() {
         return Arrays.copyOf(exchangePublicKey, exchangePublicKey.length);

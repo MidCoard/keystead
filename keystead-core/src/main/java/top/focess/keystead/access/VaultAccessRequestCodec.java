@@ -26,6 +26,10 @@ public final class VaultAccessRequestCodec {
 
     private VaultAccessRequestCodec() {}
 
+    /** Encodes an access request into its canonical binary representation.
+     *
+     * @param request the request to encode
+     * @return the canonical encoded bytes */
     public static byte @NonNull [] encode(@NonNull VaultAccessRequest request) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -50,6 +54,11 @@ public final class VaultAccessRequestCodec {
         }
     }
 
+    /** Strictly decodes a canonical access request.
+     *
+     * @param encoded the encoded request bytes
+     * @return the decoded request
+     * @throws IllegalArgumentException if the input is malformed or not canonical */
     public static @NonNull VaultAccessRequest decode(byte @NonNull [] encoded) {
         if (encoded.length == 0 || encoded.length > MAX_ENCODED_BYTES) {
             throw invalid();
@@ -94,7 +103,10 @@ public final class VaultAccessRequestCodec {
         }
     }
 
-    /** Returns the first 128 digest bits in an uppercase UUID-shaped comparison format. */
+    /** Returns the first 128 digest bits in an uppercase UUID-shaped comparison format.
+     *
+     * @param request the request to fingerprint
+     * @return the comparison fingerprint */
     public static @NonNull String fingerprint(@NonNull VaultAccessRequest request) {
         byte[] encoded = encode(request);
         byte[] digest = digest(encoded);

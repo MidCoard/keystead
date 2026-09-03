@@ -13,7 +13,7 @@ import top.focess.keystead.model.SecurityLimits;
 /**
  * Argon2id {@link PasswordKeyDerivation} backed by Bouncy Castle's {@link Argon2BytesGenerator}.
  *
- * <p>Argon2id is the v2 vault passphrase KDF: it is memory-hard, raising the cost of offline
+ * <p>Argon2id is the vault passphrase KDF: it is memory-hard, raising the cost of offline
  * passphrase guessing against a stolen vault file. Parameters are the time cost (iterations), the
  * memory cost in KiB, and the parallelism (lanes).
  */

@@ -41,6 +41,7 @@ public record ShareDraft(
         @Nullable Instant expiresAt,
         int kdfIterations) {
 
+    /** Validates the draft and defensively copies the field map. */
     public ShareDraft {
         Objects.requireNonNull(secretType, "secretType");
         Objects.requireNonNull(title, "title");

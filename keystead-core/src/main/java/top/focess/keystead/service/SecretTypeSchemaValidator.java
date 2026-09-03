@@ -4,6 +4,7 @@ import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.NonNull;
 import top.focess.keystead.model.SecretFieldSchema;
+import top.focess.keystead.model.SecretType;
 import top.focess.keystead.model.SecretTypeSchema;
 
 /** Validates structured-secret field names against a secret-type schema. */
@@ -11,7 +12,8 @@ public final class SecretTypeSchemaValidator {
 
     /**
      * Validates that the supplied field names are non-blank, satisfy every required field in the
-     * schema, and do not introduce unknown fields when custom fields are disallowed.
+     * schema (including documented compatibility aliases), and do not introduce unknown fields when
+     * custom fields are disallowed.
      *
      * @param schema the secret-type schema defining required and allowed fields
      * @param fieldNames the field names to validate
@@ -27,7 +29,7 @@ public final class SecretTypeSchemaValidator {
             }
         }
         for (SecretFieldSchema field : schema.fields()) {
-            if (field.required() && !fieldNames.contains(field.name())) {
+            if (field.required() && !requiredFieldIsPresent(schema, field, fieldNames)) {
                 throw new ValidationException(
                         "Missing required field for " + schema.type() + ": " + field.name());
             }
@@ -40,6 +42,19 @@ public final class SecretTypeSchemaValidator {
                 }
             }
         }
+    }
+
+    private static boolean requiredFieldIsPresent(
+            @NonNull SecretTypeSchema schema,
+            @NonNull SecretFieldSchema field,
+            @NonNull Set<String> fieldNames) {
+        if (fieldNames.contains(field.name())) {
+            return true;
+        }
+        // Releases before the MFA generator/schema were aligned stored the seed as "secret".
+        return schema.type() == SecretType.MFA_SECRET
+                && field.name().equals("seed")
+                && fieldNames.contains("secret");
     }
 
     private SecretTypeSchemaValidator() {}

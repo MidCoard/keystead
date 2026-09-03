@@ -9,7 +9,7 @@ import top.focess.keystead.model.SecurityLimits;
  * An encrypted secret record exchanged with a sync server. Active records carry an encrypted profile
  * and envelope; deleted records carry an authenticated control envelope in {@code
  * encryptedProfile}. Legacy empty tombstones can still be decoded from old servers, but import
- * rejects them because they cannot prove possession of the vault key.
+ * rejects them because they cannot be authenticated under the vault key.
  *
  * @param fingerprint the vault fingerprint (hex)
  * @param secretId the secret id
@@ -18,8 +18,10 @@ import top.focess.keystead.model.SecurityLimits;
  * @param encryptedProfile the encrypted profile or authenticated deletion-control envelope
  * @param envelope the encrypted payload envelope, or empty when deleted
  * @param deleted whether this record is a tombstone
- * @param contentKey the vault-keyed HMAC of the record plaintexts; it makes the event identity
- *     stable across re-exports and restores because ciphertext nonces no longer affect identity
+ * @param contentKey the claimed vault-keyed HMAC of the record plaintexts; it makes the event
+ *     identity stable across re-exports and restores because ciphertext nonces no longer affect
+ *     identity. The record structure alone cannot authenticate this caller-supplied value; an open
+ *     receiving vault verifies it by decrypting and recomputing the HMAC.
  */
 public record EncryptedSyncRecord(
         @NonNull String fingerprint,

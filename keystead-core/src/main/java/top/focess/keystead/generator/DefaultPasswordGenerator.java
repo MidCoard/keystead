@@ -11,11 +11,11 @@ import top.focess.keystead.memory.Wipe;
 /** Default {@link PasswordGenerator} that builds a password from enabled character groups. */
 public final class DefaultPasswordGenerator implements PasswordGenerator {
 
-    private static final char[] UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray();
-    private static final char[] LOWERCASE = "abcdefghijklmnopqrstuvwxyz".toCharArray();
-    private static final char[] DIGITS = "0123456789".toCharArray();
-    private static final char[] SYMBOLS = "!@#$%^&*()-_=+[]{};:,.?/".toCharArray();
-    private static final char[] AMBIGUOUS = "0O1Il".toCharArray();
+    private static final char[] UPPERCASE = PasswordCharacterSets.UPPERCASE.toCharArray();
+    private static final char[] LOWERCASE = PasswordCharacterSets.LOWERCASE.toCharArray();
+    private static final char[] DIGITS = PasswordCharacterSets.DIGITS.toCharArray();
+    private static final char[] SYMBOLS = PasswordCharacterSets.SYMBOLS.toCharArray();
+    private static final char[] AMBIGUOUS = PasswordCharacterSets.AMBIGUOUS.toCharArray();
 
     private final SecureRandom random;
 
@@ -70,19 +70,28 @@ public final class DefaultPasswordGenerator implements PasswordGenerator {
     private @NonNull List<char[]> enabledGroups(@NonNull PasswordPolicy policy) {
         List<char[]> groups = new ArrayList<>();
         if (policy.uppercase()) {
-            groups.add(filter(UPPERCASE, policy));
+            groups.add(requiredGroup(UPPERCASE, policy, "uppercase"));
         }
         if (policy.lowercase()) {
-            groups.add(filter(LOWERCASE, policy));
+            groups.add(requiredGroup(LOWERCASE, policy, "lowercase"));
         }
         if (policy.digits()) {
-            groups.add(filter(DIGITS, policy));
+            groups.add(requiredGroup(DIGITS, policy, "digit"));
         }
         if (policy.symbols()) {
-            groups.add(filter(SYMBOLS, policy));
+            groups.add(requiredGroup(SYMBOLS, policy, "symbol"));
         }
-        groups.removeIf(group -> group.length == 0);
         return groups;
+    }
+
+    private char @NonNull [] requiredGroup(
+            char @NonNull [] source, @NonNull PasswordPolicy policy, @NonNull String name) {
+        char[] group = filter(source, policy);
+        if (group.length == 0) {
+            throw new IllegalArgumentException(
+                    "No " + name + " characters remain after applying the password policy");
+        }
+        return group;
     }
 
     private char @NonNull [] filter(char @NonNull [] source, @NonNull PasswordPolicy policy) {

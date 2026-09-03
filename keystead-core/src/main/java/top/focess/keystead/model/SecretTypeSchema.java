@@ -245,12 +245,17 @@ public final class SecretTypeSchema {
                                 new SecretFieldSchema(
                                         "notes", SecretFieldType.SECRET, false, true)),
                         false));
+        // "secret" is the legacy MFA seed name. Keep it readable while making "seed" canonical.
         map.put(
                 SecretType.MFA_SECRET,
                 new SecretTypeSchema(
                         SecretType.MFA_SECRET,
                         List.of(
-                                new SecretFieldSchema("secret", SecretFieldType.SECRET, true, true),
+                                new SecretFieldSchema("seed", SecretFieldType.SECRET, true, true),
+                                new SecretFieldSchema(
+                                        "otpauthUri", SecretFieldType.SECRET, false, true),
+                                new SecretFieldSchema(
+                                        "secret", SecretFieldType.SECRET, false, true),
                                 new SecretFieldSchema(
                                         "recoveryCodes", SecretFieldType.SECRET, false, true)),
                         false));

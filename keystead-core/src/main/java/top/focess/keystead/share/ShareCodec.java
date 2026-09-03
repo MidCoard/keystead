@@ -22,7 +22,7 @@ import top.focess.keystead.model.SecurityLimits;
 import top.focess.keystead.service.ValidationException;
 
 /**
- * Binary encode/decode for the single-secret share envelope (Landing 3).
+ * Binary encode/decode for the single-secret share envelope.
  *
  * <p>Wire layout (all integers big-endian):
  * <pre>

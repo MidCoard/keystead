@@ -57,4 +57,22 @@ class SecretTypeSchemaValidatorTest {
                 ValidationException.class,
                 () -> SecretTypeSchemaValidator.validate(schema, Set.of("username", "url")));
     }
+
+    @Test
+    void acceptsCurrentAndLegacyMfaSeedFields() {
+        SecretTypeSchema schema = SecretTypeSchema.forType(SecretType.MFA_SECRET);
+
+        assertEquals(Set.of("seed"), Set.copyOf(schema.requiredFieldNames()));
+        SecretTypeSchemaValidator.validate(schema, Set.of("seed", "otpauthUri"));
+        SecretTypeSchemaValidator.validate(schema, Set.of("secret", "recoveryCodes"));
+    }
+
+    @Test
+    void rejectsMfaWithoutCurrentOrLegacySeed() {
+        SecretTypeSchema schema = SecretTypeSchema.forType(SecretType.MFA_SECRET);
+
+        assertThrows(
+                ValidationException.class,
+                () -> SecretTypeSchemaValidator.validate(schema, Set.of("otpauthUri")));
+    }
 }

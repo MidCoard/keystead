@@ -4,10 +4,10 @@ import java.util.Objects;
 import org.jspecify.annotations.NonNull;
 
 /**
- * An encrypted secret record: metadata, encrypted payload, and revision. A v2 vault is
- * vault-scoped on disk (one file), so records carry no stored vault identifier; the
- * passphrase-derived {@link VaultFingerprint} is held by the owning handle and mixed into each
- * record's AAD at encrypt/decrypt time.
+ * An encrypted secret record: metadata, encrypted payload, and revision. A vault is scoped to one
+ * file on disk, so records carry no separate stored vault identifier; the stored {@link
+ * VaultFingerprint} is held by the owning handle and mixed into each record's AAD at
+ * encrypt/decrypt time.
  *
  * @param metadata the non-secret metadata
  * @param payload the encrypted envelope

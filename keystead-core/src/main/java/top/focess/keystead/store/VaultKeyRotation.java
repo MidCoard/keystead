@@ -13,10 +13,10 @@ import top.focess.keystead.model.VaultHeader;
  * copied; the next vault key is held by reference and its ownership transfers to the store on
  * commit.
  *
- * <p>Records no longer carry a vault identifier (the store is vault-scoped), so the v0.2 cross-check
- * against the header's vault id is dropped. The data-encryption key is rewrapped while the passphrase
- * and salt stay fixed, so the vault fingerprint is unchanged across the rotation. Tombstones carry no
- * encrypted payload and are not part of the rotation; the store preserves its existing tombstones.
+ * <p>Records carry no separate vault identifier because the store is vault-scoped. The
+ * data-encryption key is rewrapped while the stored vault fingerprint is preserved. Tombstones carry
+ * no encrypted payload and are not part of the rotation; the store preserves its existing
+ * tombstones.
  *
  * @param header the replacement vault header
  * @param activeRecords the active secret records re-encrypted under the new key

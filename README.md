@@ -11,7 +11,7 @@ Core has no accounts, HTTP client, team vaults, members, roles, invitations, per
 | Project | Responsibility |
 | --- | --- |
 | **Keystead Core** | Local vault format, cryptography, encrypted record import/export, backup, access-request codecs, sharing, and memory protection |
-| **Keystead Client** | Desktop UI, local vault selection, Windows Hello local login, account sessions, sync validation, approval, and restore workflows |
+| **Keystead Client** | Desktop UI, local vault selection, OS-backed local login (for example Windows Hello or macOS Touch ID), account sessions, sync validation, approval, and restore workflows |
 | **Keystead Server** | Account sessions, one opaque encrypted record stream per account, short-lived access-request relay, one-off share hosting, and redacted audit events |
 
 One Keystead account represents one personal encrypted record stream. The server does not receive a raw data-encryption key (DEK), vault master password, local-login private key, biometric data, or plaintext secret.
@@ -23,7 +23,7 @@ A Keystead vault is one `.kvault` file whose record content is encrypted. It is 
 - Creation generates a random DEK.
 - The master password is processed with Argon2id and wraps the DEK; it is not used directly to encrypt records.
 - Each record is independently encrypted and authenticated with the DEK and record-specific associated data.
-- The plaintext header contains format and routing metadata plus wrapped key slots, never a raw DEK. The body container also keeps its framing fields (format version, AEAD algorithm, key id, nonce, encryption timestamp) unencrypted — these are not secret in an AEAD design; only the record ciphertext is encrypted, and the header is integrity-protected as the container's AAD.
+- The plaintext header contains format and routing metadata plus wrapped key slots, never a raw DEK. The outer envelope keeps its algorithm, key id, nonce, and encryption timestamp as plaintext framing metadata; its ciphertext encrypts the complete container body (vault revision, encrypted records, and tombstones). The serialized header is authenticated as the envelope's AAD. The envelope encryption timestamp is informational metadata and is not part of that AAD.
 - Records are addressed by a random UUID (`secretId`) generated at creation. The id is a label, not a security boundary: authenticity comes from the DEK, not from identifier uniqueness.
 - Closing `VaultHandle` destroys the handle's live key material and releases its file lock.
 - `OneFileVaultStore` uses a sibling lock file, recovery journal, and atomic replacement for committed mutations.
@@ -36,7 +36,7 @@ Some public Core names contain `Device`, including `DeviceKeyPair`, `DeviceVault
 
 Keystead Client uses these primitives in two separate ways:
 
-- **Local login:** one optional local private key can be protected by Windows Hello or by a separate local passphrase. A local `DEVICE` slot wraps the same vault DEK so the local vault can open without typing its master password. This key is never registered with the server.
+- **Local login:** one optional local private key can be protected by an OS-backed mechanism such as Windows Hello or macOS Touch ID, or by a separate local passphrase. A local `DEVICE` slot wraps the same vault DEK so the local vault can open without typing its master password. This key is never registered with the server.
 - **Server restore:** a server session creates a fresh memory-only exchange key pair and request UUID. Another same-account client wraps the open vault's DEK to that ephemeral public key. The new client provisions a local vault, installs a new master-password slot, removes the temporary transfer slot, and destroys the exchange private key.
 
 Core does not store those private keys. The calling application owns their protection, lifetime, user verification, and deletion.
@@ -64,9 +64,9 @@ Synchronization moves `EncryptedSyncRecord` values, not vault headers and not de
 
 Each record carries a stable, export-independent identity:
 
-- `contentKey` is `HMAC-SHA-256(DEK, label ‖ profilePlaintext ‖ payloadPlaintext)`, base64url. It commits to the record's plaintext content. Because it is keyed by the DEK, a sync server storing it gains no offline guessing oracle over record contents.
+- `contentKey` is `HMAC-SHA-256(DEK, label ‖ profileOrDeletionMarker ‖ payloadPlaintext)`, base64url (with length prefixes in the actual encoding). It commits to the active record's plaintext content or to an authenticated deletion marker. Because it is keyed by the DEK, a sync server storing it gains no offline guessing oracle over record contents.
 - `SyncRecordEventId` (format `KVE2`) is the SHA-256 hash of the identity fields — vault fingerprint, `secretId`, revision, secret type, deletion flag — together with the `contentKey`. Ciphertext is deliberately excluded: export re-encrypts the sync profile with a fresh random nonce every time, so ciphertext can never serve as identity. Re-exporting an unchanged record always yields the same event id, which is what makes server-side dedup and client-side comparison exact.
-- The sync codecs serialize canonically (sorted keys, no wall-clock timestamp comments), so the same record always encodes to the same bytes.
+- Canonical plaintext encoding (including sorted map/set entries) makes `contentKey` deterministic. The encrypted wire encoding is intentionally not deterministic because profile encryption uses a fresh nonce; only the logical identity represented by `contentKey` and `eventId` remains stable across re-exports.
 
 Export and import:
 
@@ -86,9 +86,9 @@ This section is the concrete reference for how Keystead stores data on disk and 
 
 A vault file is one opaque container with two parts.
 
-**Plaintext header** — the format magic (`KSTEAD`) and version, the vault **fingerprint** (a non-secret 64-bit routing identity derived from the passphrase and KDF salt), the vault key id, and one or more **key slots**. Each slot wraps the same data-encryption key (DEK) for a different recipient: a `PASSPHRASE` slot wraps it under an Argon2id passphrase-derived key (and carries its own KDF parameters), and zero or more `DEVICE` slots wrap it to a device public key. Any single slot unlocks the vault. The header closes with created/updated timestamps.
+**Plaintext header** — the format magic (`KSTEAD`) and version, the vault **fingerprint** (a stored, non-secret 64-bit routing identity), the vault key id, and one or more **key slots**. A new vault derives its initial fingerprint from the initial passphrase and KDF salt; restored or provisioned copies preserve that fingerprint even when they install a different local passphrase. Each slot wraps the same data-encryption key (DEK) for a different recipient: a `PASSPHRASE` slot wraps it under an Argon2id passphrase-derived key (and carries its own KDF parameters), and zero or more `DEVICE` slots wrap it to a device public key. Any single slot unlocks the vault. The header closes with created/updated timestamps.
 
-**AEAD envelope** — one AES-256-GCM block whose ciphertext is the encrypted **container body**. The serialized header bytes are the envelope's additional authenticated data (AAD), so the AEAD tag authenticates the whole header: a wrong passphrase, a tampered slot, or a tampered ciphertext all fail the tag on open. Only the envelope's `ciphertext` is encrypted; the algorithm, key id, nonce, and encryption timestamp are plaintext metadata (the timestamp is not authenticated).
+**AEAD envelope** — one AES-256-GCM block whose ciphertext is the encrypted **container body**. The serialized header bytes are the envelope's additional authenticated data (AAD), so the container AEAD authenticates the header and ciphertext. A wrong passphrase or tampered passphrase slot normally fails earlier while authenticating the wrapped DEK; after a DEK is recovered, a modified header, nonce, or ciphertext fails container authentication. The algorithm, key id, nonce, and encryption timestamp are plaintext framing metadata; the timestamp is informational and not authenticated.
 
 ### Container body (what the DEK decrypts)
 
@@ -109,7 +109,7 @@ Each active record stores:
 
 Each tombstone stores `secretId`, `secretType`, the revision at which the secret was deleted, and the deletion timestamp. A tombstone whose revision is newer than an active record hides that record.
 
-**Why two encryption layers?** The outer envelope protects the whole file at rest (unlocked by the passphrase). The inner per-record payload envelope makes each record a self-contained encrypted unit, so records can be synced to the server or written to a backup archive as opaque ciphertext without ever decrypting them — neither the server nor the backup format ever holds the DEK. Both layers use the same DEK; the inner layer exists for per-record portability, not for extra strength.
+**Why two encryption layers?** The outer envelope protects the whole file at rest after the DEK is recovered from any valid key slot. The inner per-record payload envelope makes each record a self-contained encrypted unit, so records can be synced to the server or written to a backup archive as opaque ciphertext. The server never receives the DEK; a portable backup contains an independently password-wrapped copy, never the raw DEK. Both layers use the same DEK; the inner layer exists for per-record portability, not for extra strength.
 
 **Payload formats** (the plaintext inside a record's payload envelope):
 
@@ -120,7 +120,7 @@ Each tombstone stores `secretId`, `secretType`, the revision at which the secret
 | `SSH_KEY` | publicKey, privateKey, passphrase (optional) |
 | `API_TOKEN` | token, notes |
 | `GPG_KEY` | publicKey, privateKey, passphrase (optional) |
-| `MFA_SECRET` | secret, recoveryCodes |
+| `MFA_SECRET` | seed, otpauthUri (optional), recoveryCodes (optional); legacy `secret` is accepted as a seed alias |
 | `CERTIFICATE` | certificate, privateKey, passphrase (optional) |
 | `GENERIC_SECRET` | arbitrary custom fields |
 
@@ -140,30 +140,30 @@ Synchronization moves one record at a time as an `EncryptedSyncRecord`. The clie
 | `encryptedProfile` | the profile (title/classification/tags/attributes/timestamps/revision) encrypted under the DEK |
 | `envelope` | the record's payload envelope (the same per-record ciphertext stored locally) |
 | `deleted` | tombstone flag |
-| `contentKey` | a DEK-keyed HMAC committing to the profile and payload plaintext (see below) |
+| `contentKey` | a DEK-keyed HMAC committing to the profile/deletion marker and payload plaintext (see below) |
 
 The server stores these in two tables:
 
 - **`personal_vaults`** — one row per account: `owner_id`, `fingerprint`, `created_at`, `updated_at`. The first upload binds the account to that fingerprint; a later upload with a different fingerprint is rejected with HTTP 409.
 - **`vault_record_events`** — an append-only event log: `server_sequence` (server-assigned, monotonic), `owner_id`, `event_id`, `fingerprint`, `secret_id`, `local_revision`, `secret_type`, `encrypted_profile`, `envelope`, `content_key`, `deleted`, `created_at`. Uploads carry no timestamps; the server assigns `server_sequence` and `created_at`.
 
-The server never decrypts anything and never receives the DEK. It validates that the submitted `eventId` matches a recomputation from the other fields (the contentKey proof — only a DEK holder can produce a matching `contentKey`/`eventId` pair) and deduplicates by `(owner_id, event_id)`. Clients read the stream with `GET /api/v1/vault/records?afterSequence=…` and purge a secret's history with `DELETE /api/v1/vault/records/{secretId}`.
+The server never decrypts anything and never receives the DEK. It checks that the submitted `eventId` is structurally consistent with the submitted identity fields and `contentKey`, then deduplicates by `(owner_id, event_id)`. This check is not proof of DEK possession because the server cannot authenticate the caller-supplied `contentKey`; an open receiving vault performs the authoritative check by decrypting the record and recomputing the DEK-keyed HMAC. Clients read the stream with `GET /api/v1/vault/records?afterSequence=…` and purge a secret's history with `DELETE /api/v1/vault/records/{secretId}`.
 
 ### Record identity, deduplication, and collisions
 
 Three derived values give each record a stable, ciphertext-independent identity:
 
-- **fingerprint** = `HMAC-SHA-256(wrappingKey, "keystead-vault-fingerprint-v3" ‖ kdfSalt)`, truncated to 64 bits (8 bytes / 16 hex chars). Non-secret routing token binding an account to one vault.
+- **fingerprint** = initially `HMAC-SHA-256(wrappingKey, "keystead-vault-fingerprint-v3" ‖ kdfSalt)`, truncated to the first 64 bits (8 bytes / 16 hex chars), then persisted and preserved by restore/provisioning. It is a non-secret routing token binding an account to one vault.
 - **contentKey** = base64url `HMAC-SHA-256(DEK, "keystead-sync-content-v1" ‖ len(profile) ‖ profile ‖ len(payload) ‖ payload)`. Commits to the record plaintext; keyed by the DEK so the server gains no offline guessing oracle.
 - **eventId** = base64url `SHA-256("KVE2" ‖ fingerprint ‖ secretId ‖ revision ‖ secretType ‖ deleted ‖ contentKey)`. The deduplication key. Ciphertext is deliberately excluded, so re-exporting an unchanged record (which re-encrypts the profile with a fresh nonce) yields the same `eventId`.
 
 **Duplicates and collisions:**
 
-- **Same `eventId`** means the same logical record content. The server deduplicates by `(owner_id, event_id)`: re-uploading an unchanged record returns the existing row unchanged (idempotent). `eventId` is a 256-bit hash, so two different records colliding is computationally infeasible — this is deduplication, not a collision.
+- **Same `eventId`**, for rows that pass receiving-vault verification, means the same logical record content. The server itself treats it as a structural deduplication key, not as proof of authenticity. It deduplicates by `(owner_id, event_id)`: re-uploading an unchanged record returns the existing row unchanged (idempotent). `eventId` is a 256-bit hash, so accidental collision between valid records is computationally infeasible.
 - **Same `secretId`, different revision** means the same secret updated over time. The server keeps every revision (append-only); reads take the highest `server_sequence` for that `secret_id`. `secretId` is a UUID (122 bits of randomness), so accidental reuse is infeasible; reuse across revisions is the intended history mechanism.
 - **`contentKey`** is a 256-bit HMAC; collisions are computationally infeasible.
 
-**Fingerprint collisions (the 64-bit case).** The fingerprint is truncated to 64 bits, so a birthday collision becomes theoretically possible around 2³² vaults. Keystead treats this as acceptable and does not add an extra collision check, for two reasons. First, the space is far larger than any realistic deployment. Second, and more important, the DEK-bound `contentKey` is the real per-record authority: even if two different vaults shared a fingerprint, a record encrypted under vault A's DEK could not be imported by vault B's client (the recomputed `contentKey` would not match), so a collision would cause only sync noise, never a secrecy break. Across different accounts there is no conflict at all (`owner_id` separates the streams); on the same account the server would simply treat the two vaults as one. Widening the fingerprint to 128 bits would raise the birthday bound further but would change the on-disk and sync formats and break existing vaults, so it is not done.
+**Fingerprint collisions (the 64-bit case).** The fingerprint is truncated to 64 bits, so a birthday collision becomes theoretically possible around 2³² vaults. Keystead treats this as acceptable and does not add an extra collision check, for two reasons. First, the space is far larger than any realistic deployment. Second, and more important, the DEK-bound `contentKey` is the real per-record authority: even if two different vaults shared a fingerprint, a record encrypted under vault A's DEK could not be imported by vault B's client because decryption or `contentKey` verification would fail. A fingerprint collision can therefore cause routing and availability noise but does not by itself expose record plaintext. Across different accounts there is no conflict at all (`owner_id` separates the streams); on the same account the server would simply treat the two vaults as one. Widening the fingerprint to 128 bits would raise the birthday bound further but would change the on-disk and sync formats and break existing vaults, so it is not done.
 
 ## Portable backup
 
@@ -180,9 +180,9 @@ Restore does not silently overwrite an existing target.
 
 ## Typed secrets and generators
 
-Core provides dedicated payload formats for login passwords and secure notes plus schemas for structured secret types. Plaintext enters through mutable `SecretBuffer` values and is exposed through short-lived view callbacks where possible.
+Core provides dedicated payload formats for login passwords and secure notes plus schemas for structured secret types. Vault secret-field values generally enter through mutable `SecretBuffer` values and are exposed through short-lived view callbacks where the API permits.
 
-Generators cover passwords, API tokens, SSH keys, OpenPGP keys, MFA seeds and TOTP values, and X.509 certificate bundles. Generated private material uses closeable or mutable containers so callers can destroy it deterministically.
+Generators cover passwords, API tokens, SSH keys, OpenPGP keys, MFA seeds and TOTP values, and X.509 certificate bundles. Generated private material uses closeable or mutable containers so callers can promptly overwrite Core-owned buffers. This is best-effort in a managed JVM: immutable strings and copies made by callers cannot be reliably wiped by Core.
 
 ## One-off sharing
 
@@ -198,7 +198,7 @@ The current implementation uses:
 | Record and metadata encryption | AES-256-GCM with domain-separated associated data |
 | Recipient/exchange wrapping | Google Tink ECIES P-256, HKDF-HMAC-SHA256, AES-128-GCM |
 | Sync content identity | DEK-keyed HMAC-SHA-256 content keys with `KVE2` SHA-256 event ids |
-| Password hashes and fingerprints | Domain-separated SHA-256-based constructions where specified by the format |
+| Vault routing fingerprint | Truncated, domain-separated HMAC-SHA-256 derived at initial vault creation and then persisted |
 | SSH/OpenPGP/X.509 generation | Bouncy Castle |
 
 Google Tink depends on protobuf for its own key serialization. Keystead does not use protobuf as its client/server wire protocol. The `protobuf-java` `sun.misc.Unsafe` warning on JDK 25 is a transitive dependency compatibility warning; removing protobuf without replacing Tink would remove the active hybrid-encryption implementation.
@@ -213,7 +213,7 @@ Applications must:
 - decide whether native-memory failure should be fatal or whether an explicit heap fallback is acceptable;
 - keep plaintext callbacks short and wipe caller-owned arrays;
 - apply strict process hardening only at an appropriate application lifecycle boundary;
-- understand that Windows Hello is implemented in Keystead Client, not Core, and is only a local convenience gate.
+- understand that OS-backed authentication such as Windows Hello and macOS Touch ID is implemented in Keystead Client, not Core, and is only a local convenience gate.
 
 ## Build and test
 
@@ -231,7 +231,7 @@ Run all named-module and classpath-consumer tests:
 Dependency coordinates (Maven Central):
 
 ```kotlin
-implementation("top.focess:keystead-core:0.4.5")
+implementation("top.focess:keystead-core:0.5.1")
 ```
 
 Client and Server consume only released Maven Central coordinates. Local-consumption mechanisms (`mavenLocal`, composite builds) are never committed; release first, then consume.
@@ -241,7 +241,7 @@ The module name is `top.focess.keystead.core`. Its exported packages are `access
 ## Security limits
 
 - A compromised live process can observe plaintext while the vault is open.
-- A user who can satisfy the configured Windows Hello or local-login-passphrase check can use that local unlock slot.
+- A user who can satisfy the configured OS-backed or local-login-passphrase check can use that local unlock slot.
 - Revoking a local slot does not erase plaintext or keys already copied by an attacker.
 - An append-only server can retain ciphertext and traffic metadata, including account identity, vault fingerprint, record identifiers, revisions, timestamps, and sizes.
 - A forged server event (for example one replaying a known `secretId`) cannot enter a local vault: import authenticates every row against the DEK and its content key before storing. The worst case is availability noise, which re-uploading repairs.

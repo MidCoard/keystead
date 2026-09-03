@@ -7,7 +7,7 @@ import org.jspecify.annotations.Nullable;
 import top.focess.keystead.crypto.KdfParameters;
 
 /**
- * One key slot in a v2 multi-slot vault header: a single credential that can unwrap the
+ * One key slot in a multi-slot vault header: a single credential that can unwrap the
  * data-encryption key.
  *
  * @param slotType how the DEK is wrapped (passphrase or device)

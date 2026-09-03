@@ -20,15 +20,24 @@ public sealed interface SyncPayloadView {
      * @return the secret's non-secret metadata */
     @NonNull SecretMetadata metadata();
 
-    /** A decoded login-password payload. */
+    /** A decoded login-password payload.
+     *
+     * @param metadata the secret metadata
+     * @param view the short-lived login view */
     record Login(@NonNull SecretMetadata metadata, @NonNull LoginSecretView view)
             implements SyncPayloadView {}
 
-    /** A decoded secure-note payload. */
+    /** A decoded secure-note payload.
+     *
+     * @param metadata the secret metadata
+     * @param view the short-lived secure-note view */
     record Note(@NonNull SecretMetadata metadata, @NonNull SecureNoteView view)
             implements SyncPayloadView {}
 
-    /** A decoded structured-secret payload. */
+    /** A decoded structured-secret payload.
+     *
+     * @param metadata the secret metadata
+     * @param view the short-lived structured-secret view */
     record Structured(@NonNull SecretMetadata metadata, @NonNull StructuredSecretView view)
             implements SyncPayloadView {}
 }

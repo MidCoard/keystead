@@ -7,8 +7,9 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Encodes additional authenticated data (AAD) for a secret record, binding the ciphertext to the
- * vault fingerprint, metadata, and revision. The fingerprint replaces the v0.2 vault id and is
- * stable across data-encryption-key rotations (it is derived from the passphrase wrapping key).
+ * vault fingerprint, metadata, and revision. A newly created vault derives its initial fingerprint
+ * from its passphrase wrapping key, then stores and preserves that identity across
+ * data-encryption-key rotations and restore/provisioning flows.
  */
 public final class SecretRecordAad {
 

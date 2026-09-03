@@ -59,7 +59,7 @@ public final class DefaultCryptoService {
     /** Default Argon2id parallelism (lanes). */
     public static final int DEFAULT_ARGON2ID_PARALLELISM = 1;
 
-    /** Approved Argon2id KDF algorithm used as the v2 vault passphrase KDF. */
+    /** Approved Argon2id KDF algorithm used as the vault passphrase KDF. */
     public static final @NonNull String ARGON2ID_ALGORITHM = CryptoAlgorithmRegistry.KDF_ARGON2ID;
 
     /** Label mixed into the vault fingerprint HMAC to domain-separate it from other uses. */
@@ -174,7 +174,7 @@ public final class DefaultCryptoService {
     }
 
     /**
-     * Builds the default v2 Argon2id passphrase KDF parameters for a fresh salt.
+     * Builds the default Argon2id vault-passphrase KDF parameters for a fresh salt.
      *
      * @param salt the KDF salt
      * @return the default Argon2id parameters
@@ -628,9 +628,10 @@ public final class DefaultCryptoService {
      *
      * <p>The fingerprint is {@code HMAC-SHA-256(wrappingKey, FINGERPRINT_LABEL ‖ kdfSalt)} truncated to
      * 64 bits, where {@code wrappingKey} is the password-derived key. It is a non-secret routing
-     * identity, stored in the vault header so passphrase-less device opens can recover it.
-     * It is stable across vault-key rotations (the wrapping key is unchanged when only the
-     * data-encryption key is rewrapped) and changes only when the passphrase or salt changes.
+     * identity. This method computes the initial value for a newly created vault. The value is then
+     * stored in the vault header and preserved across key rotation, restore, provisioning, and local
+     * passphrase-slot changes; those operations do not call this method to replace the vault's
+     * identity.
      *
      * @param masterPassword caller-owned master password
      * @param kdfParameters the password KDF parameters

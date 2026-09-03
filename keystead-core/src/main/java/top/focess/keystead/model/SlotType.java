@@ -3,7 +3,7 @@ package top.focess.keystead.model;
 import org.jspecify.annotations.NonNull;
 
 /**
- * A key-slot type: how the data-encryption key is wrapped for a given recipient credential in a v2
+ * A key-slot type: how the data-encryption key is wrapped for a given recipient credential in a
  * multi-slot vault header.
  *
  * <ul>

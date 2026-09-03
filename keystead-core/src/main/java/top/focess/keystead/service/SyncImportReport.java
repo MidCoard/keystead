@@ -11,6 +11,7 @@ import org.jspecify.annotations.NonNull;
  * @param imported the number of records written
  * @param skipped the number of records skipped due to conflicts
  * @param conflicts the per-row conflicts explaining skipped rows
+ * @param rejected the rows rejected before mutation because authentication or routing failed
  */
 public record SyncImportReport(
         int imported,
@@ -30,7 +31,11 @@ public record SyncImportReport(
         }
     }
 
-    /** Compatibility constructor for reports with no authentication rejection. */
+    /** Compatibility constructor for reports with no authentication rejection.
+     *
+     * @param imported the number of records written
+     * @param skipped the number of records skipped due to conflicts
+     * @param conflicts the per-row conflicts explaining skipped rows */
     public SyncImportReport(
             int imported, int skipped, @NonNull List<SyncImportConflict> conflicts) {
         this(imported, skipped, conflicts, List.of());

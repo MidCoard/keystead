@@ -3,7 +3,7 @@ package top.focess.keystead.share;
 import top.focess.keystead.crypto.CryptoAlgorithmRegistry;
 
 /**
- * Binary-format constants for the single-secret share envelope (Landing 3).
+ * Binary-format constants for the single-secret share envelope.
  *
  * <p>A share is a self-contained encrypted string
  * {@code keystead-share:v1:<base64url>}. The plaintext header (magic, version, KDF

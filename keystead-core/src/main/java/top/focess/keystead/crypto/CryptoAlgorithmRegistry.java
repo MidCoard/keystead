@@ -21,7 +21,7 @@ public final class CryptoAlgorithmRegistry {
     /** Approved KDF algorithm name for PBKDF2-HMAC-SHA-512. */
     public static final @NonNull String KDF_PBKDF2_HMAC_SHA512 = "PBKDF2WithHmacSHA512";
 
-    /** Approved KDF algorithm name for Argon2id, the v2 vault passphrase KDF. */
+    /** Approved KDF algorithm name for the Argon2id vault passphrase KDF. */
     public static final @NonNull String KDF_ARGON2ID = "ARGON2ID";
 
     /** Approved device key-package algorithm name for Tink ECIES P-256. */

@@ -31,9 +31,11 @@ import top.focess.keystead.model.VaultHeader;
  * <p>A vault file is one opaque container: a plaintext multi-slot header (magic, format version,
  * fingerprint, vault key id, key slots, timestamps) followed by a single authenticated-encryption
  * envelope whose ciphertext is the encrypted vault body and whose additional-authenticated data is
- * the entire plaintext header. The envelope tag is therefore a whole-vault MAC: any tampering with
- * the header, the slots, the fingerprint, or the ciphertext is detected on open, and a wrong
- * passphrase fails the tag cleanly.
+ * the entire serialized header. The container AEAD therefore authenticates the header and encrypted
+ * body. Its own framing fields remain plaintext; the algorithm and key id are validated, while the
+ * nonce participates in decryption. The informational envelope timestamp is not authenticated.
+ * Passphrase-slot unwrapping has separate AEAD authentication and normally rejects a wrong
+ * passphrase before container decryption.
  *
  * <p><b>Multi-slot header.</b> The same data-encryption key (DEK) is wrapped under one or more
  * independent {@link KeySlot slots}: a {@link SlotType#PASSPHRASE PASSPHRASE} slot (DEK wrapped
@@ -52,7 +54,8 @@ import top.focess.keystead.model.VaultHeader;
  *   HEADER (plaintext; also the container AAD)
  *     magic[6]            "KSTEAD"
  *     version[1]          3
- *     fingerprint[8]      HMAC-SHA-256(wrappingKey, label ‖ kdfSalt), low 64 bits
+ *     fingerprint[8]      stored routing identity; initially the first 64 bits of a
+ *                         passphrase-derived HMAC, then preserved by restore/provisioning
  *     vaultKeyId          u16 len + UTF-8
  *     slotCount           u16
  *     slots[slotCount]:
@@ -75,7 +78,7 @@ import top.focess.keystead.model.VaultHeader;
  * </pre>
  *
  * <p>This codec is format-only: it serializes and parses the container and performs the unlock
- * (satisfy a slot to recover the DEK, read or derive the fingerprint, decrypt the body). The
+ * (satisfy a slot to recover the DEK, read the stored fingerprint, decrypt the body). The
  * structured layout of the decrypted body (records, tombstones, revisions) is defined by the vault
  * store layer.
  */
@@ -92,7 +95,12 @@ public final class VaultFileFormat {
 
     private VaultFileFormat() {}
 
-    /** Result of opening a vault file: the parsed header, unlocked vault key, fingerprint, and body. */
+    /** Result of opening a vault file: the parsed header, unlocked vault key, fingerprint, and body.
+     *
+     * @param header the parsed vault header
+     * @param vaultKey the unlocked, owned vault key
+     * @param fingerprint the stored routing fingerprint
+     * @param containerBody the decrypted container body */
     public record OpenedFile(
             @NonNull VaultHeader header,
             @NonNull VaultKey vaultKey,
@@ -159,11 +167,12 @@ public final class VaultFileFormat {
      * fingerprint, and decrypted body.
      *
      * <p>The first {@link SlotType#PASSPHRASE} slot is satisfied: the wrapping key is derived from the
-     * passphrase and the slot's KDF parameters, and the DEK is unwrapped. The wrapping key's AEAD tag
-     * authenticates the passphrase, so a wrong passphrase, a tampered header, or a tampered ciphertext
-     * fails the whole-vault authentication tag and throws {@link CryptoException}. The fingerprint is
-     * read directly from the integrity-protected header (it is not re-derived on open). A truncated
-     * file or an unrecognized magic/version throws {@link StoreException}.
+     * passphrase and the slot's KDF parameters, and the DEK is unwrapped. The slot wrapping AEAD
+     * rejects a wrong passphrase or a modified selected slot. After unwrapping, the container AEAD
+     * authenticates the serialized header and encrypted body; modification causes {@link
+     * CryptoException}. The fingerprint is read directly from the authenticated header (it is not
+     * re-derived on open). A truncated file or an unrecognized magic/version throws {@link
+     * StoreException}.
      *
      * @param crypto the cryptographic service
      * @param file the serialized vault file bytes

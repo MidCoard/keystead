@@ -9,7 +9,7 @@ import top.focess.keystead.model.VaultFingerprint;
  * Header of a backup archive: format version, vault fingerprint, row counts, and creation time.
  *
  * @param formatVersion the backup format version
- * @param fingerprint the passphrase-derived fingerprint of the vault the archive belongs to
+ * @param fingerprint the stored routing fingerprint of the vault the archive belongs to
  * @param recordCount the number of secret records in the archive
  * @param tombstoneCount the number of tombstones in the archive
  * @param createdAt when the archive was created

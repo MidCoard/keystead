@@ -14,10 +14,12 @@ import org.jspecify.annotations.NonNull;
  * Computes the stable content hash used as an id for an encrypted sync-record event.
  *
  * <p>The KVE2 format hashes the record's identity fields (fingerprint, secret id, revision,
- * secret type, deletion flag) together with its {@code contentKey} — a vault-keyed HMAC of the
- * record plaintexts. Ciphertext fields are deliberately excluded: re-exporting an unchanged
- * record re-encrypts the profile with a fresh nonce, so hashing ciphertext would produce a new
- * id for the same logical record and break server-side dedup and client-side comparison.
+ * secret type, deletion flag) together with its {@code contentKey}. A receiving vault separately
+ * verifies that field as a DEK-keyed HMAC of the record plaintexts; recomputing the event id alone
+ * does not prove possession of the DEK. Ciphertext fields are deliberately excluded: re-exporting
+ * an unchanged record re-encrypts the profile with a fresh nonce, so hashing ciphertext would
+ * produce a new id for the same logical record and break server-side dedup and client-side
+ * comparison.
  */
 public final class SyncRecordEventId {
 
@@ -28,6 +30,9 @@ public final class SyncRecordEventId {
     /**
      * Returns the unpadded base64url SHA-256 hash of the record identity fields and its keyed
      * content key.
+     *
+     * @param record the encrypted sync record
+     * @return the stable event id
      */
     public static @NonNull String of(@NonNull EncryptedSyncRecord record) {
         Objects.requireNonNull(record, "record");

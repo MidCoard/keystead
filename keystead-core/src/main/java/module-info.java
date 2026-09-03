@@ -1,5 +1,5 @@
 /**
- * Keystead Core: zero-knowledge vault cryptography, secret memory management, and process
+ * Keystead Core: client-held-key vault cryptography, secret memory management, and process
  * hardening.
  */
 module top.focess.keystead.core {

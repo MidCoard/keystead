@@ -61,13 +61,17 @@ public record FullBackupArchive(
         chunks = List.copyOf(chunks);
     }
 
-    /** Returns a defensive copy of the password-wrapped vault key. */
+    /** Returns a defensive copy of the password-wrapped vault key.
+     *
+     * @return a defensive copy of the wrapped key */
     @Override
     public byte @NonNull [] wrappedVaultKey() {
         return Arrays.copyOf(wrappedVaultKey, wrappedVaultKey.length);
     }
 
-    /** Returns a defensive copy of the inner archive digest. */
+    /** Returns a defensive copy of the inner archive digest.
+     *
+     * @return a defensive copy of the digest */
     @Override
     public byte @NonNull [] payloadDigest() {
         return Arrays.copyOf(payloadDigest, payloadDigest.length);
