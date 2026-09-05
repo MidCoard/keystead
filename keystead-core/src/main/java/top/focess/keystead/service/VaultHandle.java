@@ -201,6 +201,21 @@ public interface VaultHandle extends AutoCloseable {
     void resolveSyncRecord(@NonNull EncryptedSyncRecord record);
 
     /**
+     * Authenticates a sync record and returns its platform-independent content comparison key.
+     * The original encrypted bytes and claimed content key must verify before normalization.
+     * Legacy profile line endings and property ordering do not affect the returned key; payload
+     * bytes, metadata, and metadata revision remain bound. This method does not mutate the vault.
+     *
+     * <p>Use this key only for authenticated content comparison. Keep the original record's
+     * content key and event id when transmitting or checking wire event identity.
+     *
+     * @param record the encrypted sync record to authenticate and compare
+     * @return the canonical vault-keyed content digest
+     * @throws ValidationException if the record is malformed or cannot be authenticated
+     */
+    @NonNull String canonicalSyncContentKey(@NonNull EncryptedSyncRecord record);
+
+    /**
      * Decrypts a single sync record under this vault's DEK and exposes its contents inside the
      * callback <em>without</em> storing it, so the user can compare a server record against local
      * state before merging.

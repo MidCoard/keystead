@@ -219,6 +219,16 @@ final class SyncRecordCodec {
             Properties canonical =
                     new Properties() {
                         @Override
+                        public synchronized @NonNull Set<Map.Entry<Object, Object>> entrySet() {
+                            Set<Map.Entry<Object, Object>> entries =
+                                    new java.util.LinkedHashSet<>();
+                            for (String key : new TreeSet<>(properties.stringPropertyNames())) {
+                                entries.add(Map.entry(key, properties.getProperty(key)));
+                            }
+                            return Collections.unmodifiableSet(entries);
+                        }
+
+                        @Override
                         public synchronized @NonNull Enumeration<Object> keys() {
                             return Collections.enumeration(
                                     new TreeSet<>(properties.stringPropertyNames()));
@@ -228,7 +238,9 @@ final class SyncRecordCodec {
             StringWriter writer = new StringWriter();
             canonical.store(writer, null);
             String raw = writer.toString();
-            return raw.substring(raw.indexOf('\n') + 1);
+            // Properties escaping represents value CR/LF characters as backslash escapes, so
+            // only physical record delimiters change here. Keep wire bytes identical on every OS.
+            return raw.substring(raw.indexOf('\n') + 1).replace("\r\n", "\n");
         } catch (IOException e) {
             throw new ValidationException("Could not encode sync record");
         }

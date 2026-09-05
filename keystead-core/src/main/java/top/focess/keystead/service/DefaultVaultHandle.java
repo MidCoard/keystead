@@ -526,6 +526,17 @@ final class DefaultVaultHandle implements VaultHandle {
     @Override
     public synchronized void previewSyncRecord(
             @NonNull EncryptedSyncRecord record, @NonNull Consumer<SyncRecordPreview> consumer) {
+        withVerifiedSyncRecord(record, consumer);
+    }
+
+    @Override
+    public synchronized @NonNull String canonicalSyncContentKey(
+            @NonNull EncryptedSyncRecord record) {
+        return withVerifiedSyncRecord(record, ignored -> {});
+    }
+
+    private @NonNull String withVerifiedSyncRecord(
+            @NonNull EncryptedSyncRecord record, @NonNull Consumer<SyncRecordPreview> consumer) {
         Objects.requireNonNull(record, "record");
         Objects.requireNonNull(consumer, "consumer");
         requireOpen();
@@ -540,7 +551,7 @@ final class DefaultVaultHandle implements VaultHandle {
                 Wipe.wipe(marker);
             }
             consumer.accept(new SyncRecordPreview.Deleted(secretId, secretType, record.revision()));
-            return;
+            return record.contentKey();
         }
         byte[] profileAad =
                 SyncRecordCodec.profileAad(
@@ -548,6 +559,7 @@ final class DefaultVaultHandle implements VaultHandle {
         byte @Nullable [] profileBytes = null;
         byte @Nullable [] payloadAad = null;
         byte @Nullable [] payloadPlaintext = null;
+        byte @Nullable [] canonicalProfile = null;
         @Nullable AutoCloseable viewImpl = null;
         try {
             EncryptedEnvelope profileEnvelope =
@@ -579,7 +591,13 @@ final class DefaultVaultHandle implements VaultHandle {
                     payloadView = new SyncPayloadView.Structured(metadata, view);
                 }
             }
+            // Authenticate the original bytes above before normalizing legacy property order
+            // and CRLF delimiters. Never accept a substituted claimed content key.
+            canonicalProfile = SyncRecordCodec.profileBytes(metadata);
+            String canonicalKey =
+                    crypto.syncContentKey(vaultKey, canonicalProfile, payloadPlaintext);
             consumer.accept(new SyncRecordPreview.Active(metadata, payloadView));
+            return canonicalKey;
         } finally {
             if (viewImpl != null) {
                 try {
@@ -592,6 +610,7 @@ final class DefaultVaultHandle implements VaultHandle {
             }
             Wipe.wipe(profileAad);
             Wipe.wipe(profileBytes);
+            Wipe.wipe(canonicalProfile);
             Wipe.wipe(payloadAad);
             Wipe.wipe(payloadPlaintext);
         }

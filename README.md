@@ -231,7 +231,7 @@ Run all named-module and classpath-consumer tests:
 Dependency coordinates (Maven Central):
 
 ```kotlin
-implementation("top.focess:keystead-core:0.5.3")
+implementation("top.focess:keystead-core:0.5.4")
 ```
 
 Client and Server consume only released Maven Central coordinates. Local-consumption mechanisms (`mavenLocal`, composite builds) are never committed; release first, then consume.
