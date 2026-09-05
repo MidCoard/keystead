@@ -90,6 +90,16 @@ public interface VaultHandle extends AutoCloseable {
     @NonNull SecretId saveSecureNote(@NonNull Consumer<SecureNoteDraft> draftConsumer);
 
     /**
+     * Replaces an existing secure note with a new draft, advancing its revision.
+     *
+     * @param secretId the note to replace
+     * @param draftConsumer callback that populates the replacement draft
+     * @throws ValidationException if the secret does not exist or is not a secure note
+     */
+    void updateSecureNote(
+            @NonNull SecretId secretId, @NonNull Consumer<SecureNoteDraft> draftConsumer);
+
+    /**
      * Decrypts a secure note and exposes its body inside the callback.
      *
      * @param secretId the note to read
@@ -179,6 +189,16 @@ public interface VaultHandle extends AutoCloseable {
      * @throws ValidationException if the batch is mixed-vault, has duplicate ids, or is malformed
      */
     @NonNull SyncImportReport importRecordsWithReport(@NonNull List<EncryptedSyncRecord> records);
+
+    /**
+     * Explicitly accepts an authenticated incoming value or deletion as a new local revision.
+     * Call only after the user chooses this version when resolving a conflict. The secret id is
+     * preserved and the new revision exceeds both the incoming and all observed local revisions.
+     *
+     * @param record the user-selected encrypted sync record
+     * @throws ValidationException if the record cannot be authenticated or its revision is exhausted
+     */
+    void resolveSyncRecord(@NonNull EncryptedSyncRecord record);
 
     /**
      * Decrypts a single sync record under this vault's DEK and exposes its contents inside the

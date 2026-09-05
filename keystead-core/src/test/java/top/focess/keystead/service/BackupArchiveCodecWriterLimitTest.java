@@ -31,6 +31,7 @@ import top.focess.keystead.model.VaultHeader;
 
 class BackupArchiveCodecWriterLimitTest {
 
+    private static final int MAX_RECORD_ENTRY_BYTES = 2_097_152;
     private static final int MAX_ENTRY_BYTES = 1_048_576;
     private static final int MAX_ENTRY_COUNT = 4_096;
     private static final int MAX_ARCHIVE_BYTES = 16 * 1_024 * 1_024;
@@ -42,13 +43,13 @@ class BackupArchiveCodecWriterLimitTest {
 
     @Test
     void writerRoundTripsRecordAtExactSerializedEntryLimit() throws Exception {
-        EncryptedSecretRecord record = recordAtSerializedSize(secretId(2L), MAX_ENTRY_BYTES);
+        EncryptedSecretRecord record = recordAtSerializedSize(secretId(2L), MAX_RECORD_ENTRY_BYTES);
         BackupArchive archive = archive(header(new byte[] {4, 5, 6}), List.of(record), List.of());
 
         byte[] encoded = write(archive);
         BackupReadResult read = BackupArchiveCodec.read(new ByteArrayInputStream(encoded));
 
-        assertEquals(MAX_ENTRY_BYTES, zipEntrySize(encoded, recordEntryName(record)));
+        assertEquals(MAX_RECORD_ENTRY_BYTES, zipEntrySize(encoded, recordEntryName(record)));
         assertEquals(1, read.archive().records().size());
         assertArrayEquals(
                 record.payload().ciphertext(),
@@ -57,7 +58,7 @@ class BackupArchiveCodecWriterLimitTest {
 
     @Test
     void writerRejectsRecordOneSerializedByteOverLimitBeforePublishingOutput() throws Exception {
-        EncryptedSecretRecord exact = recordAtSerializedSize(secretId(2L), MAX_ENTRY_BYTES);
+        EncryptedSecretRecord exact = recordAtSerializedSize(secretId(2L), MAX_RECORD_ENTRY_BYTES);
         EncryptedSecretRecord oversized = withAlgorithm(exact, exact.payload().algorithm() + "X");
         ByteArrayOutputStream output = new ByteArrayOutputStream();
 
@@ -206,8 +207,9 @@ class BackupArchiveCodecWriterLimitTest {
         if (growth < 0) {
             throw new AssertionError("Target entry size is below the record fixture overhead");
         }
-        int ciphertextGrowth = (growth / 4) * 3;
-        int algorithmGrowth = growth % 4;
+        int encodedGrowth = Math.min(growth / 4, (1_048_575 - 3) / 3) * 4;
+        int ciphertextGrowth = encodedGrowth / 4 * 3;
+        int algorithmGrowth = growth - encodedGrowth;
         return record(id, 3 + ciphertextGrowth, "A" + "X".repeat(algorithmGrowth));
     }
 

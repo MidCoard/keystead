@@ -177,6 +177,42 @@ class PreparedVaultKeyRotationTest {
         }
     }
 
+    @Test
+    void failedRotationPreservesSourceKeyAndRecords() throws Exception {
+        DefaultCryptoService crypto = new DefaultCryptoService();
+        DefaultVaultService service = new DefaultVaultService(crypto, CLOCK);
+        Path directory = java.nio.file.Files.createDirectory(tempDir.resolve("active"));
+        Path parked = tempDir.resolve("parked");
+        Path file = directory.resolve("vault");
+        SecretId id;
+        try (DeviceKeyPair device = crypto.generateDeviceKeyPair();
+                VaultHandle source = service.createVault(file, masterPassword())) {
+            id = saveLogin(source);
+            KeyId oldKey = source.vaultKeyId();
+            long revision = source.listSecrets().getFirst().revision();
+            try (PreparedVaultKeyRotation rotation = source.prepareVaultKeyRotation()) {
+                DeviceVaultKeyPackage keyPackage =
+                        rotation.wrapVaultKeyPackageForDevice(device.publicKey(), CONTEXT);
+                java.nio.file.Files.move(directory, parked);
+                try {
+                    assertThrows(
+                            top.focess.keystead.store.StoreException.class,
+                            () -> rotation.commitWithDevicePackage(keyPackage));
+                } finally {
+                    java.nio.file.Files.move(parked, directory);
+                }
+                assertEquals(oldKey, source.vaultKeyId());
+                assertEquals(revision, source.listSecrets().getFirst().revision());
+                assertPassword(source, id);
+            }
+            source.deleteSecret(id);
+            assertEquals(revision + 1, source.exportRecordsSince(0).getFirst().revision());
+        }
+        try (VaultHandle reopened = service.openVault(file, masterPassword())) {
+            assertTrue(reopened.listSecrets().isEmpty());
+        }
+    }
+
     private static SecretId saveLogin(VaultHandle vault) {
         try (SecretBuffer username = SecretBuffer.fromChars("alice@example.com".toCharArray());
                 SecretBuffer password = SecretBuffer.fromChars("secret-password".toCharArray())) {

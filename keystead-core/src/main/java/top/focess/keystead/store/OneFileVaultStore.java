@@ -74,6 +74,8 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
     private final Map<SecretId, EncryptedSecretRecord> active = new LinkedHashMap<>();
     private final Map<SecretId, DeletedSecretRecord> deleted = new LinkedHashMap<>();
     private boolean closed;
+    private boolean mutationInProgress;
+    private boolean persistenceRequested;
 
     private OneFileVaultStore(
             @NonNull Path file,
@@ -131,9 +133,9 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
             reserveNewVaultFile(file);
             OneFileVaultStore store =
                     new OneFileVaultStore(file, crypto, clock, dek, header, 0L, lock);
+            store.persist(header, now);
             dek = null;
             lock = null;
-            store.persist(header, now);
             return store;
         } finally {
             if (dek != null) {
@@ -346,8 +348,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         if (!header.fingerprint().equals(this.header.fingerprint())) {
             throw new StoreException("Vault header fingerprint must not change", null);
         }
-        this.header = header;
-        persist(header, header.updatedAt());
+        mutate(() -> persist(header, header.updatedAt()));
     }
 
     @Override
@@ -359,7 +360,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
     @Override
     public synchronized long nextRevision() {
         requireOpen();
-        return vaultRevision + 1L;
+        return Math.addExact(vaultRevision, 1L);
     }
 
     @Override
@@ -369,7 +370,11 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
             throw new IllegalArgumentException("Revision must not be negative");
         }
         if (revision > vaultRevision) {
-            vaultRevision = revision;
+            mutate(
+                    () -> {
+                        vaultRevision = revision;
+                        persist(header, clock.instant());
+                    });
         }
     }
 
@@ -377,21 +382,27 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
     public synchronized void commitVaultKeyRotation(@NonNull VaultKeyRotation rotation) {
         Objects.requireNonNull(rotation, "rotation");
         requireOpen();
+        if (mutationInProgress) {
+            throw new IllegalStateException(
+                    "Vault key rotation cannot be nested inside a mutation");
+        }
         VaultKey oldKey = vaultKey;
         VaultHeader oldHeader = header;
         Map<SecretId, EncryptedSecretRecord> oldActive = new LinkedHashMap<>(active);
+        long oldRevision = vaultRevision;
         vaultKey = rotation.nextVaultKey();
         header = rotation.header();
         active.clear();
         for (EncryptedSecretRecord record : rotation.activeRecords()) {
             active.put(record.metadata().secretId(), record);
-            recordRevision(record.revision());
+            vaultRevision = Math.max(vaultRevision, record.revision());
         }
         try {
             persist(header, clock.instant());
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | Error e) {
             vaultKey = oldKey;
             header = oldHeader;
+            vaultRevision = oldRevision;
             active.clear();
             active.putAll(oldActive);
             try {
@@ -408,9 +419,12 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
     public synchronized void saveSecretRecord(@NonNull EncryptedSecretRecord record) {
         Objects.requireNonNull(record, "record");
         requireOpen();
-        recordRevision(record.revision());
-        active.put(record.metadata().secretId(), record);
-        persist(header.withUpdatedAt(clock.instant()), clock.instant());
+        mutate(
+                () -> {
+                    recordRevision(record.revision());
+                    active.put(record.metadata().secretId(), record);
+                    persist(header.withUpdatedAt(clock.instant()), clock.instant());
+                });
     }
 
     @Override
@@ -433,17 +447,23 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
     public synchronized void deleteSecretRecord(@NonNull SecretId secretId) {
         Objects.requireNonNull(secretId, "secretId");
         requireOpen();
-        active.remove(secretId);
-        persist(header.withUpdatedAt(clock.instant()), clock.instant());
+        mutate(
+                () -> {
+                    active.remove(secretId);
+                    persist(header.withUpdatedAt(clock.instant()), clock.instant());
+                });
     }
 
     @Override
     public synchronized void saveDeletedSecretRecord(@NonNull DeletedSecretRecord record) {
         Objects.requireNonNull(record, "record");
         requireOpen();
-        recordRevision(record.revision());
-        deleted.put(record.secretId(), record);
-        persist(header.withUpdatedAt(clock.instant()), clock.instant());
+        mutate(
+                () -> {
+                    recordRevision(record.revision());
+                    deleted.put(record.secretId(), record);
+                    persist(header.withUpdatedAt(clock.instant()), clock.instant());
+                });
     }
 
     @Override
@@ -466,8 +486,11 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
     public synchronized void deleteDeletedSecretRecord(@NonNull SecretId secretId) {
         Objects.requireNonNull(secretId, "secretId");
         requireOpen();
-        deleted.remove(secretId);
-        persist(header.withUpdatedAt(clock.instant()), clock.instant());
+        mutate(
+                () -> {
+                    deleted.remove(secretId);
+                    persist(header.withUpdatedAt(clock.instant()), clock.instant());
+                });
     }
 
     @Override
@@ -529,13 +552,119 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         }
     }
 
+    @Override
+    public synchronized void commitMutation(@NonNull VaultMutation mutation) {
+        Objects.requireNonNull(mutation, "mutation");
+        requireOpen();
+        mutate(() -> mutation.commit(nextRevision()));
+    }
+
+    /** Defer all writes in a compound mutation and restore every live field on failure. */
+    private void mutate(@NonNull Runnable action) {
+        if (mutationInProgress) {
+            action.run();
+            return;
+        }
+        VaultHeader previousHeader = header;
+        long previousRevision = vaultRevision;
+        Map<SecretId, EncryptedSecretRecord> previousActive = new LinkedHashMap<>(active);
+        Map<SecretId, DeletedSecretRecord> previousDeleted = new LinkedHashMap<>(deleted);
+        mutationInProgress = true;
+        persistenceRequested = false;
+        try {
+            action.run();
+            if (persistenceRequested) {
+                persistNow(header, clock.instant());
+            }
+        } catch (RuntimeException | Error error) {
+            header = previousHeader;
+            vaultRevision = previousRevision;
+            active.clear();
+            active.putAll(previousActive);
+            deleted.clear();
+            deleted.putAll(previousDeleted);
+            throw error;
+        } finally {
+            mutationInProgress = false;
+            persistenceRequested = false;
+        }
+    }
+
     private void persist(@NonNull VaultHeader headerToWrite, @NonNull Instant encryptedAt) {
+        if (mutationInProgress) {
+            header = headerToWrite;
+            persistenceRequested = true;
+            return;
+        }
+        persistNow(headerToWrite, encryptedAt);
+    }
+
+    private void persistNow(@NonNull VaultHeader headerToWrite, @NonNull Instant encryptedAt) {
         byte[] body =
                 VaultContainerBody.encode(
                         vaultRevision, List.copyOf(active.values()), List.copyOf(deleted.values()));
         byte[] bytes = VaultFileFormat.write(crypto, headerToWrite, vaultKey, body, encryptedAt);
         atomicWrite(bytes);
         this.header = headerToWrite;
+    }
+
+    /**
+     * Installs a complete staging file at a new vault path while holding the target vault lock.
+     * Existing destinations are never replaced. Filesystems without hard links use a CREATE_NEW
+     * copy; the lock prevents another Core opener from observing an incomplete file.
+     *
+     * @param source complete staging vault, retained for the caller to clean up
+     * @param target new destination vault path
+     */
+    public static void installNewVaultFile(@NonNull Path source, @NonNull Path target) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(target, "target");
+        try (LockHandle ignored = LockHandle.acquire(target)) {
+            try {
+                Files.createLink(target, source);
+                return;
+            } catch (FileAlreadyExistsException error) {
+                throw new StoreException("Vault restore target already exists: " + target, error);
+            } catch (IOException | UnsupportedOperationException noHardLink) {
+                boolean created = false;
+                try {
+                    try (FileChannel output =
+                            FileChannel.open(
+                                    target,
+                                    StandardOpenOption.CREATE_NEW,
+                                    StandardOpenOption.WRITE)) {
+                        created = true;
+                        try (FileChannel input =
+                                FileChannel.open(source, StandardOpenOption.READ)) {
+                            ByteBuffer buffer = ByteBuffer.allocate(8192);
+                            while (input.read(buffer) != -1) {
+                                buffer.flip();
+                                while (buffer.hasRemaining()) {
+                                    output.write(buffer);
+                                }
+                                buffer.clear();
+                            }
+                            output.force(true);
+                        }
+                    }
+                } catch (IOException | RuntimeException | Error error) {
+                    if (created) {
+                        try {
+                            Files.deleteIfExists(target);
+                        } catch (IOException cleanup) {
+                            error.addSuppressed(cleanup);
+                        }
+                    }
+                    throw new StoreException("Could not install new vault file: " + target, error);
+                }
+            }
+        }
+    }
+
+    private static void rejectSymbolicLink(@NonNull Path file) {
+        if (Files.isSymbolicLink(file)) {
+            throw new StoreException("Vault file must not be a symbolic link: " + file, null);
+        }
     }
 
     private static void reserveNewVaultFile(@NonNull Path file) {
@@ -549,6 +678,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
     }
 
     private void atomicWrite(byte @NonNull [] bytes) {
+        rejectSymbolicLink(file);
         Path temp = file.resolveSibling(file.getFileName() + ".tmp-" + UUID.randomUUID());
         try {
             try (FileChannel channel =
@@ -625,6 +755,7 @@ public final class OneFileVaultStore implements VaultStore, AutoCloseable {
         }
 
         static @NonNull LockHandle acquire(@NonNull Path file) {
+            rejectSymbolicLink(file);
             Path canonical = file.toAbsolutePath().normalize();
             Object token = new Object();
             if (PROCESS_LOCKS.putIfAbsent(canonical, token) != null) {

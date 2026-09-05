@@ -5,10 +5,8 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
@@ -321,15 +319,11 @@ public final class FullVaultBackupService {
 
     private static void moveWithoutReplacement(@NonNull Path source, @NonNull Path target) {
         try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException error) {
-            try {
-                Files.move(source, target);
-            } catch (java.io.IOException fallback) {
-                throw new ValidationException("Could not install restored vault", fallback);
-            }
-        } catch (java.io.IOException error) {
-            throw new ValidationException("Could not install restored vault", error);
+            OneFileVaultStore.installNewVaultFile(source, target);
+            deleteIfExists(source);
+        } catch (top.focess.keystead.store.StoreException error) {
+            throw new ValidationException(
+                    "Could not install restored vault without replacement", error);
         }
     }
 

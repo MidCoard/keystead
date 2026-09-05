@@ -54,6 +54,8 @@ final class BackupArchiveCodec {
     private static final String ENTRY_DIGEST_PREFIX = "entry.sha256.";
     private static final int MAX_ENCODED_KDF_SALT_CHARACTERS =
             ((SecurityLimits.MAX_KDF_SALT_BYTES + 2) / 3) * 4;
+    // Ciphertext is base64-encoded and properties escape metadata; allow that expansion.
+    private static final int MAX_RECORD_ENTRY_BYTES = 2_097_152;
     private static final int MAX_ENTRY_BYTES = 1_048_576;
     private static final int MAX_ENTRY_COUNT = 4_096;
     private static final int MAX_ARCHIVE_BYTES = 16 * 1_024 * 1_024;
@@ -203,6 +205,10 @@ final class BackupArchiveCodec {
                 new BackupArchive(manifest, vaultHeader, records, tombstones), unsupported);
     }
 
+    private static int entryLimit(@NonNull String name) {
+        return name.startsWith(RECORDS_PREFIX) ? MAX_RECORD_ENTRY_BYTES : MAX_ENTRY_BYTES;
+    }
+
     private static byte @NonNull [] readEntry(@NonNull ZipInputStream zip, @NonNull String name)
             throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -211,7 +217,7 @@ final class BackupArchiveCodec {
         int read;
         while ((read = zip.read(buffer)) != -1) {
             total += read;
-            if (total > MAX_ENTRY_BYTES) {
+            if (total > entryLimit(name)) {
                 throw new ValidationException("Backup entry exceeds size limit: " + name);
             }
             output.write(buffer, 0, read);
@@ -250,7 +256,7 @@ final class BackupArchiveCodec {
         byte[] bytes = propertiesBytes(properties);
         boolean transferred = false;
         try {
-            if (bytes.length > MAX_ENTRY_BYTES) {
+            if (bytes.length > entryLimit(name)) {
                 throw new ValidationException("Backup entry exceeds size limit");
             }
             long nextTotal = (long) totalBytes + bytes.length;

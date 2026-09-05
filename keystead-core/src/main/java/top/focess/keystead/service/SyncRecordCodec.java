@@ -111,7 +111,7 @@ final class SyncRecordCodec {
                         SecurityLimits.MAX_ENVELOPE_CIPHERTEXT_BYTES,
                         "Sync record ciphertext",
                         base64Decoder),
-                Instant.parse(required(properties, "encryptedAt")));
+                instantValue(properties, "encryptedAt"));
     }
 
     static @NonNull SecretMetadata metadata(
@@ -127,9 +127,18 @@ final class SyncRecordCodec {
                         readClassification(properties),
                         encodedSet(properties.getProperty("tags", "")),
                         encodedMap(properties.getProperty("attributes", ""))),
-                Instant.parse(required(properties, "createdAt")),
-                Instant.parse(required(properties, "updatedAt")),
+                instantValue(properties, "createdAt"),
+                instantValue(properties, "updatedAt"),
                 longValue(properties, "metadataRevision"));
+    }
+
+    private static @NonNull Instant instantValue(
+            @NonNull Properties properties, @NonNull String name) {
+        try {
+            return Instant.parse(required(properties, name));
+        } catch (java.time.DateTimeException error) {
+            throw new ValidationException("Sync record timestamp is invalid: " + name, error);
+        }
     }
 
     private static void writeClassification(

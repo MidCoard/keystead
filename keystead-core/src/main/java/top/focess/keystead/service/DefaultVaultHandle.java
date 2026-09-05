@@ -242,6 +242,60 @@ final class DefaultVaultHandle implements VaultHandle {
     }
 
     @Override
+    public synchronized void updateSecureNote(
+            @NonNull SecretId secretId, @NonNull Consumer<SecureNoteDraft> draftConsumer) {
+        Objects.requireNonNull(secretId, "secretId");
+        Objects.requireNonNull(draftConsumer, "draftConsumer");
+        requireOpen();
+        requireMutable();
+
+        EncryptedSecretRecord existing =
+                store.loadSecretRecord(secretId)
+                        .orElseThrow(() -> new ValidationException("Secure note does not exist"));
+        if (existing.metadata().secretType() != SecretType.SECURE_NOTE) {
+            throw new ValidationException("Secret is not a secure note");
+        }
+
+        SecureNoteDraftImpl draft = new SecureNoteDraftImpl();
+        byte @Nullable [] payload = null;
+        try {
+            draftConsumer.accept(draft);
+            draft.validate();
+
+            Instant now = clock.instant();
+            byte[] encodedPayload = SecureNotePayloadCodec.encode(draft);
+            payload = encodedPayload;
+            store.commitMutation(
+                    revision -> {
+                        SecretMetadata metadata =
+                                new SecretMetadata(
+                                        secretId,
+                                        SecretType.SECURE_NOTE,
+                                        new SecretProfile(
+                                                draft.requireTitle(),
+                                                draft.classification(),
+                                                draft.tags(),
+                                                draft.attributes()),
+                                        existing.metadata().createdAt(),
+                                        now,
+                                        revision);
+                        byte[] aad = aad(metadata, revision);
+                        try {
+                            EncryptedEnvelope envelope =
+                                    crypto.encrypt(vaultKey, encodedPayload, aad, now);
+                            store.saveSecretRecord(
+                                    new EncryptedSecretRecord(metadata, envelope, revision));
+                        } finally {
+                            Wipe.wipe(aad);
+                        }
+                    });
+        } finally {
+            Wipe.wipe(payload);
+            draft.close();
+        }
+    }
+
+    @Override
     public synchronized void withSecureNote(
             @NonNull SecretId secretId, @NonNull Consumer<SecureNoteView> viewConsumer) {
         Objects.requireNonNull(secretId, "secretId");
@@ -479,6 +533,12 @@ final class DefaultVaultHandle implements VaultHandle {
         SecretId secretId = new SecretId(UUID.fromString(record.secretId()));
         SecretType secretType = SecretType.valueOf(record.secretType());
         if (record.deleted()) {
+            byte[] marker = SyncRecordCodec.tombstoneBytes(record.secretType());
+            try {
+                requireSyncContentKey(record, marker, new byte[0]);
+            } finally {
+                Wipe.wipe(marker);
+            }
             consumer.accept(new SyncRecordPreview.Deleted(secretId, secretType, record.revision()));
             return;
         }
@@ -534,6 +594,92 @@ final class DefaultVaultHandle implements VaultHandle {
             Wipe.wipe(profileBytes);
             Wipe.wipe(payloadAad);
             Wipe.wipe(payloadPlaintext);
+        }
+    }
+
+    @Override
+    public synchronized void resolveSyncRecord(@NonNull EncryptedSyncRecord record) {
+        Objects.requireNonNull(record, "record");
+        requireOpen();
+        requireMutable();
+        // Validate the authenticated content key and typed payload before changing any state.
+        previewSyncRecord(record, ignored -> {});
+        if (record.revision() == Long.MAX_VALUE) {
+            throw new ValidationException("Sync record revision is exhausted");
+        }
+        try {
+            store.nextRevision();
+        } catch (ArithmeticException error) {
+            throw new ValidationException("Local vault revision is exhausted", error);
+        }
+        SecretId secretId = new SecretId(UUID.fromString(record.secretId()));
+        if (record.deleted()) {
+            store.commitMutation(
+                    localRevision -> {
+                        long revision = Math.max(localRevision, record.revision() + 1L);
+                        store.saveDeletedSecretRecord(
+                                new DeletedSecretRecord(
+                                        secretId,
+                                        SecretType.valueOf(record.secretType()),
+                                        revision,
+                                        clock.instant()));
+                        store.deleteSecretRecord(secretId);
+                    });
+            return;
+        }
+        byte[] profileAad =
+                SyncRecordCodec.profileAad(
+                        record.fingerprint(), record.secretId(), record.revision());
+        byte[] profile = null;
+        byte[] payloadAad = null;
+        byte[] plaintext = null;
+        try {
+            profile =
+                    crypto.decrypt(
+                            vaultKey,
+                            SyncRecordCodec.envelopeWithAad(record.encryptedProfile(), profileAad),
+                            profileAad);
+            SecretMetadata original = SyncRecordCodec.metadata(record, profile);
+            payloadAad = aad(original, record.revision());
+            plaintext =
+                    crypto.decrypt(
+                            vaultKey,
+                            SyncRecordCodec.envelopeWithAad(record.envelope(), payloadAad),
+                            payloadAad);
+            byte[] chosenPayload = plaintext;
+            store.commitMutation(
+                    localRevision -> {
+                        long revision = Math.max(localRevision, record.revision() + 1L);
+                        Instant now = clock.instant();
+                        if (now.isBefore(original.updatedAt())) {
+                            now = original.updatedAt();
+                        }
+                        SecretMetadata metadata =
+                                new SecretMetadata(
+                                        secretId,
+                                        original.secretType(),
+                                        original.profile(),
+                                        original.createdAt(),
+                                        now,
+                                        revision);
+                        byte[] updatedAad = aad(metadata, revision);
+                        try {
+                            store.saveSecretRecord(
+                                    new EncryptedSecretRecord(
+                                            metadata,
+                                            crypto.encrypt(
+                                                    vaultKey, chosenPayload, updatedAad, now),
+                                            revision));
+                            store.deleteDeletedSecretRecord(secretId);
+                        } finally {
+                            Wipe.wipe(updatedAad);
+                        }
+                    });
+        } finally {
+            Wipe.wipe(profileAad);
+            Wipe.wipe(profile);
+            Wipe.wipe(payloadAad);
+            Wipe.wipe(plaintext);
         }
     }
 
@@ -830,13 +976,16 @@ final class DefaultVaultHandle implements VaultHandle {
             } finally {
                 Wipe.wipe(marker);
             }
-            store.saveDeletedSecretRecord(
-                    new DeletedSecretRecord(
-                            secretId,
-                            SecretType.valueOf(record.secretType()),
-                            record.revision(),
-                            clock.instant()));
-            store.deleteSecretRecord(secretId);
+            store.commitMutation(
+                    ignored -> {
+                        store.saveDeletedSecretRecord(
+                                new DeletedSecretRecord(
+                                        secretId,
+                                        SecretType.valueOf(record.secretType()),
+                                        record.revision(),
+                                        clock.instant()));
+                        store.deleteSecretRecord(secretId);
+                    });
             return ImportOutcome.importedOutcome();
         }
 
