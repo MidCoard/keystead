@@ -84,13 +84,18 @@ class ExplicitSyncResolutionTest {
                 file = dir.resolve("vault");
         try (var vault = new DefaultVaultService().createVault(file, password());
                 var body = SecretBuffer.fromChars("body".toCharArray())) {
-            Files.move(dir, parked);
+            // Keep the sibling lock file in place: Windows does not allow moving its parent.
+            Files.move(file, parked);
+            Files.createDirectory(file);
+            Path blocker = Files.writeString(file.resolve("blocker"), "force write failure");
             try {
                 assertThrows(
                         top.focess.keystead.store.StoreException.class,
                         () -> vault.saveSecureNote(d -> d.title("failed").body(body)));
             } finally {
-                Files.move(parked, dir);
+                Files.delete(blocker);
+                Files.delete(file);
+                Files.move(parked, file);
             }
             assertTrue(vault.listSecrets().isEmpty());
             vault.saveSecureNote(d -> d.title("success").body(body));

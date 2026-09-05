@@ -193,13 +193,20 @@ class PreparedVaultKeyRotationTest {
             try (PreparedVaultKeyRotation rotation = source.prepareVaultKeyRotation()) {
                 DeviceVaultKeyPackage keyPackage =
                         rotation.wrapVaultKeyPackageForDevice(device.publicKey(), CONTEXT);
-                java.nio.file.Files.move(directory, parked);
+                // Keep the sibling lock file in place: Windows does not allow moving its parent.
+                java.nio.file.Files.move(file, parked);
+                java.nio.file.Files.createDirectory(file);
+                Path blocker =
+                        java.nio.file.Files.writeString(
+                                file.resolve("blocker"), "force write failure");
                 try {
                     assertThrows(
                             top.focess.keystead.store.StoreException.class,
                             () -> rotation.commitWithDevicePackage(keyPackage));
                 } finally {
-                    java.nio.file.Files.move(parked, directory);
+                    java.nio.file.Files.delete(blocker);
+                    java.nio.file.Files.delete(file);
+                    java.nio.file.Files.move(parked, file);
                 }
                 assertEquals(oldKey, source.vaultKeyId());
                 assertEquals(revision, source.listSecrets().getFirst().revision());

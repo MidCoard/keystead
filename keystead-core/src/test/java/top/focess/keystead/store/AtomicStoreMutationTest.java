@@ -75,7 +75,10 @@ class AtomicStoreMutationTest {
         try (var store =
                 OneFileVaultStore.create(new DefaultCryptoService(), file, PASSWORD, CLOCK)) {
             var header = store.header();
-            Files.move(dir, parked);
+            // Keep the sibling lock file in place: Windows does not allow moving its parent.
+            Files.move(file, parked);
+            Files.createDirectory(file);
+            Path blocker = Files.writeString(file.resolve("blocker"), "force write failure");
             try {
                 assertThrows(
                         StoreException.class,
@@ -89,7 +92,9 @@ class AtomicStoreMutationTest {
                                 store.saveVaultHeader(
                                         header.withUpdatedAt(CLOCK.instant().plusSeconds(1))));
             } finally {
-                Files.move(parked, dir);
+                Files.delete(blocker);
+                Files.delete(file);
+                Files.move(parked, file);
             }
             assertTrue(store.listDeletedSecretRecords().isEmpty());
             assertEquals(1, store.nextRevision());

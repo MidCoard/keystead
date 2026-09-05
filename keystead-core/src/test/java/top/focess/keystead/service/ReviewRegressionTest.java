@@ -75,11 +75,16 @@ class ReviewRegressionTest {
     void successfullyStoredLargeRecordCanBeBackedUp() throws Exception {
         Path path = temp.resolve("large");
         var service = new DefaultVaultService();
+        String expectedContentKey;
         try (var vault = service.createVault(path, pw());
-                var body = top.focess.keystead.memory.SecretBuffer.fromUtf8(new byte[800_000])) {
+                var body =
+                        top.focess.keystead.memory.SecretBuffer.fromUtf8(
+                                new byte[800_000],
+                                top.focess.keystead.memory.SecretMemoryProvider.heap())) {
             vault.saveSecret(
                     top.focess.keystead.model.SecretType.GENERIC_SECRET,
                     d -> d.title("large secret").field("value", body));
+            expectedContentKey = vault.exportRecordsSince(0).getFirst().contentKey();
         }
         try (var reopened = service.openVault(path, pw())) {
             assertEquals(1, reopened.listSecrets().size());
@@ -92,12 +97,10 @@ class ReviewRegressionTest {
                             new ByteArrayInputStream(output.toByteArray()),
                             pw(),
                             pw())) {
-                var id = restored.listSecrets().getFirst().secretId();
-                restored.withSecret(
-                        id,
-                        view ->
-                                view.withField(
-                                        "value", chars -> assertEquals(800_000, chars.length)));
+                // Export recomputes this keyed digest from decrypted profile and payload. It
+                // verifies the full round trip without testing native page-lock quotas here.
+                assertEquals(
+                        expectedContentKey, restored.exportRecordsSince(0).getFirst().contentKey());
             }
         }
     }
