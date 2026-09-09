@@ -11,8 +11,8 @@ Core has no accounts, HTTP client, team vaults, members, roles, invitations, per
 | Project | Responsibility |
 | --- | --- |
 | **Keystead Core** | Local vault format, cryptography, encrypted record import/export, backup, access-request codecs, sharing, and memory protection |
-| **Keystead Client** | Desktop UI, local vault selection, OS-backed local login (for example Windows Hello or macOS Touch ID), account sessions, sync validation, approval, and restore workflows |
-| **Keystead Server** | Account sessions, one opaque encrypted record stream per account, short-lived access-request relay, one-off share hosting, and redacted audit events |
+| **[Keystead Client](https://github.com/MidCoard/keystead-client)** | Desktop UI, local vault selection, OS-backed local login (for example Windows Hello or macOS Touch ID), account sessions, sync validation, approval, and restore workflows |
+| **[Keystead Server](https://github.com/MidCoard/keystead-server)** | Account sessions, one opaque encrypted record stream per account, short-lived access-request relay, one-off share hosting, and redacted audit events |
 
 One Keystead account represents one personal encrypted record stream. The server does not receive a raw data-encryption key (DEK), vault master password, local-login private key, biometric data, or plaintext secret.
 
@@ -34,7 +34,7 @@ A Keystead vault is one `.kvault` file whose record content is encrypted. It is 
 
 Some public Core names contain `Device`, including `DeviceKeyPair`, `DeviceVaultKeyPackage`, `SlotType.DEVICE`, `addDeviceKey`, and `provisionVault`. In Core these are generic hybrid recipient-key primitives retained as part of the current API and file format. They do not define a persistent server device identity.
 
-Keystead Client uses these primitives in two separate ways:
+[Keystead Client](https://github.com/MidCoard/keystead-client) uses these primitives in two separate ways:
 
 - **Local login:** one optional local private key can be protected by an OS-backed mechanism such as Windows Hello or macOS Touch ID, or by a separate local passphrase. A local `DEVICE` slot wraps the same vault DEK so the local vault can open without typing its master password. This key is never registered with the server.
 - **Server restore:** a server session creates a fresh memory-only exchange key pair and request UUID. Another same-account client wraps the open vault's DEK to that ephemeral public key. The new client provisions a local vault, installs a new master-password slot, removes the temporary transfer slot, and destroys the exchange private key.
@@ -60,23 +60,60 @@ There is no recovery kit in the current product. If no correct local vault or po
 
 ## Encrypted synchronization
 
-Synchronization moves `EncryptedSyncRecord` values, not vault headers and not decrypted secrets.
+The personal-vault sync protocol exchanges complete encrypted record snapshots and authenticated deletion markers. It does not upload the entire `.kvault` file. Each server account has one record stream bound to a vault fingerprint. Clients must hold the matching vault identity and DEK, obtained through restore or provisioning; signing into the same account does not make independently created vaults compatible.
 
-Each record carries a stable, export-independent identity:
+### Record identity and verification
 
-- `contentKey` is `HMAC-SHA-256(DEK, label ‖ profileOrDeletionMarker ‖ payloadPlaintext)`, base64url (with length prefixes in the actual encoding). It commits to the active record's plaintext content or to an authenticated deletion marker. Because it is keyed by the DEK, a sync server storing it gains no offline guessing oracle over record contents.
-- `SyncRecordEventId` (format `KVE2`) is the SHA-256 hash of the identity fields — vault fingerprint, `secretId`, revision, secret type, deletion flag — together with the `contentKey`. Ciphertext is deliberately excluded: export re-encrypts the sync profile with a fresh random nonce every time, so ciphertext can never serve as identity. Re-exporting an unchanged record always yields the same event id, which is what makes server-side dedup and client-side comparison exact.
-- Canonical plaintext encoding (including sorted map/set entries) makes `contentKey` deterministic. The encrypted wire encoding is intentionally not deterministic because profile encryption uses a fresh nonce; only the logical identity represented by `contentKey` and `eventId` remains stable across re-exports.
+Each snapshot contains a `secretId`, `revision`, `secretType`, vault `fingerprint`, encrypted profile, encrypted payload, deletion flag, and `contentKey`. The client adds an `eventId` when uploading it.
 
-Export and import:
+- `contentKey` is a DEK-keyed HMAC over the profile plaintext and payload plaintext, or the deletion marker and an empty payload. Profile metadata, including its timestamps and metadata revision, contributes to this identity.
+- `eventId` uses the `KVE2` format: SHA-256 over the fingerprint, secret ID, revision, type, deletion flag, and contentKey. Ciphertext is excluded because profile encryption generates a fresh nonce on export. Re-exporting an unchanged snapshot with the current encoding therefore preserves its eventId.
+- Core 0.5.4 writes profile properties in sorted order with UTF-8 encoding, fixed LF separators, and no generated timestamp comment. Sets and maps are sorted. User content, including embedded line breaks, is preserved.
 
-- `VaultHandle.exportRecordsSince(revision)` exports encrypted record revisions and authenticated tombstones.
-- `VaultHandle.importRecordsWithReport(records)` verifies before storing: the vault fingerprint must match, the profile and payload must decrypt under the open vault's DEK, and the recomputed `contentKey` must match. Failures are reported as rejected rows, never written to the vault.
-- A row encrypted with another DEK fails local authentication and must not be stored in the local vault.
-- The transport can be append-only. Core does not require the server to understand record plaintext or possess the DEK.
-- The server cannot cryptographically prove that all clients used the same DEK; the receiving client is the enforcement point.
+The server recomputes eventId and checks the submitted fields, but it cannot authenticate contentKey because it has no DEK. The receiving vault decrypts and authenticates the record with its associated data and verifies the HMAC before storing imported content. A matching eventId alone is not proof that the ciphertext is valid.
 
-The current server stores one append-only personal record event stream per account. All sync timing and ordering (`createdAt`, `serverSequence`) is assigned by the server at append time; clients submit no timestamps. Team and collaboration synchronization are not part of the current model.
+Older writers may have used CRLF separators or a different property order. `VaultHandle.canonicalSyncContentKey(record)` first authenticates the original encrypted content and its claimed HMAC, validates the typed payload, then computes an identity using the canonical profile encoding. [Keystead Client 1.1.4](https://github.com/MidCoard/keystead-client) uses this to recognize equivalent historical snapshots without promoting their revision. It does not rewrite the original eventId or bypass verification. Legacy records without a contentKey and unauthenticated empty deletion markers cannot be treated as verified records.
+
+### Upload and download
+
+1. A local edit or deletion receives the next revision from the local vault's monotonic counter. This counter is shared by all records, so an individual record's revisions can have gaps. Exporting or pulling a record does not itself create a new record version.
+2. The client sends each snapshot to `POST /api/v1/vault/records`. The server binds the account to the first fingerprint and rejects a different fingerprint with HTTP 409. It deduplicates by `(owner_id, event_id)` and returns the existing event for a repeated upload, even if re-encryption produced different ciphertext. Both new and duplicate submissions return HTTP 201.
+3. New events receive a server-assigned `serverSequence` and `createdAt`. The server preserves competing events; it does not decrypt or merge them, reject lower revisions, or choose the correct content for the user.
+4. The client downloads events using `GET /api/v1/vault/records?afterSequence=…&limit=…`. Pages contain this account's events in ascending sequence order. The default limit is 100 and the maximum is 500. `highestSequence` is the maximum sequence in that page, or the requested cursor for an empty page. When `hasMore` is true, `nextSequence` must advance the cursor; otherwise it is null.
+5. The client verifies and processes the records, then saves its download cursor. `serverSequence` is a position in the event stream, not a content version or evidence that one edit supersedes another. Server timestamps also do not determine which content wins.
+
+`VaultHandle.exportRecordsSince(revision)` exports current snapshots and tombstones above a revision threshold, not every historical local edit. Incremental upload advances its revision watermark after all submissions succeed; selected uploads do not advance that global watermark. Download cursors are isolated by local vault instance, server origin, account, and fingerprint. Restoring a local snapshot starts a new instance so it does not inherit an unrelated cursor.
+
+A download cursor records how far the client has scanned, not that every record was applied: conflicts and rejected records are returned separately, and the cursor can advance past them. A failed multi-page operation may already have imported some records; retrying from the old cursor is supported. Repeated uploads are deduplicated by eventId. Pagination is not a transaction spanning the entire download, so concurrent uploads may appear in later pages or a subsequent sync.
+
+### Comparison and conflict handling
+
+[Keystead Client 1.1.4](https://github.com/MidCoard/keystead-client) compares each secret's current local snapshot with the remote event having the highest revision, using serverSequence to break ties at the same revision. Other events remain visible as history.
+
+| Comparison | Meaning |
+| --- | --- |
+| Local only / server only | The record exists on only one side; remote content still needs verification before import. |
+| Local newer / server newer | One revision number is greater than the other. |
+| Matched | The revisions are equal, remote verification succeeds, and the event identity or canonical content identity agrees. |
+| Content conflict | The revisions are equal and both contents are valid, but they differ. |
+| Hash mismatch | The advertised event identity or content authentication fails. |
+| Unverified / legacy unverifiable | The client lacks sufficient verification evidence; this is not a successful match. |
+
+Ordinary Core import preserves incoming revisions. It imports a record when no local version exists or the incoming revision is higher. If the local revision is equal or higher, it reports a conflict when the deletion states differ and otherwise skips the incoming record. A Core import result of `skipped` therefore does not by itself mean the contents match; the client's comparison performs the additional content check.
+
+When the user explicitly selects remote content, the client first authenticates it. Equivalent content at the same revision is skipped. A higher remote revision is imported unchanged. Choosing different content from an equal or older remote revision creates a new local resolution revision, greater than both the local vault watermark and the chosen remote revision. Uploading that resolution allows the other client to import it normally.
+
+Selected local upload sends the chosen snapshots and refreshes comparison. For selected same-revision conflicts or invalid remote events, it promotes the local snapshot once, uploads again, and refreshes. Matched records are not promoted. This is not an unconditional overwrite operation: uploading a lower local revision does not automatically replace a higher remote revision.
+
+The protocol does not perform field-level merging or encode parent-event ancestry. Different offline edits can receive different revision numbers, so a higher number does not prove that it includes the other device's changes. The current protocol cannot identify every concurrent edit from revision numbers alone.
+
+### Deletion and history
+
+Normal synchronized deletion keeps the secretId and writes a higher-revision tombstone. Its `encryptedProfile` contains an authenticated deletion-control envelope, `envelope` is empty, and its contentKey commits to the deletion marker. The receiving vault verifies the marker before applying it. Older active snapshots cannot silently undo a newer local tombstone; an explicit resolution can restore chosen content as a new version.
+
+`DELETE /api/v1/vault/records/{secretId}` is a separate history-purge operation. It removes that secret's server events without creating a tombstone or deleting copies on other clients. Those clients can upload the record again. Clearing the entire stream also releases its fingerprint binding. Purging history is not the normal way to propagate deletion or resolve a sync mismatch.
+
+The current protocol has no stream-generation negotiation for server rollback or replacement. A saved cursor beyond a restored server's history can return an empty page; a full refresh or cursor reset is needed to reconcile that state. An empty incremental response alone does not prove that both vaults match.
 
 ## Data storage format
 
@@ -145,7 +182,7 @@ Synchronization moves one record at a time as an `EncryptedSyncRecord`. The clie
 The server stores these in two tables:
 
 - **`personal_vaults`** — one row per account: `owner_id`, `fingerprint`, `created_at`, `updated_at`. The first upload binds the account to that fingerprint; a later upload with a different fingerprint is rejected with HTTP 409.
-- **`vault_record_events`** — an append-only event log: `server_sequence` (server-assigned, monotonic), `owner_id`, `event_id`, `fingerprint`, `secret_id`, `local_revision`, `secret_type`, `encrypted_profile`, `envelope`, `content_key`, `deleted`, `created_at`. Uploads carry no timestamps; the server assigns `server_sequence` and `created_at`.
+- **`vault_record_events`** — an append-only event log: `server_sequence` (server-assigned, monotonic), `owner_id`, `event_id`, `fingerprint`, `secret_id`, `local_revision`, `secret_type`, `encrypted_profile`, `envelope`, `content_key`, `deleted`, `created_at`. Uploads do not supply the server event timestamp; the server assigns `server_sequence` and `created_at`. Encrypted profile and envelope data retain their own timestamps.
 
 The server never decrypts anything and never receives the DEK. It checks that the submitted `eventId` is structurally consistent with the submitted identity fields and `contentKey`, then deduplicates by `(owner_id, event_id)`. This check is not proof of DEK possession because the server cannot authenticate the caller-supplied `contentKey`; an open receiving vault performs the authoritative check by decrypting the record and recomputing the DEK-keyed HMAC. Clients read the stream with `GET /api/v1/vault/records?afterSequence=…` and purge a secret's history with `DELETE /api/v1/vault/records/{secretId}`.
 
@@ -160,7 +197,7 @@ Three derived values give each record a stable, ciphertext-independent identity:
 **Duplicates and collisions:**
 
 - **Same `eventId`**, for rows that pass receiving-vault verification, means the same logical record content. The server itself treats it as a structural deduplication key, not as proof of authenticity. It deduplicates by `(owner_id, event_id)`: re-uploading an unchanged record returns the existing row unchanged (idempotent). `eventId` is a 256-bit hash, so accidental collision between valid records is computationally infeasible.
-- **Same `secretId`, different revision** means the same secret updated over time. The server keeps every revision (append-only); reads take the highest `server_sequence` for that `secret_id`. `secretId` is a UUID (122 bits of randomness), so accidental reuse is infeasible; reuse across revisions is the intended history mechanism.
+- **Same `secretId`, different revision** means the same secret updated over time. The server retains uploaded events unless explicitly purged; the client selects the highest revision for that `secret_id`, breaking same-revision ties by `server_sequence`. `secretId` is a UUID (122 bits of randomness), so accidental reuse is infeasible; reuse across revisions is the intended history mechanism.
 - **`contentKey`** is a 256-bit HMAC; collisions are computationally infeasible.
 
 **Fingerprint collisions (the 64-bit case).** The fingerprint is truncated to 64 bits, so a birthday collision becomes theoretically possible around 2³² vaults. Keystead treats this as acceptable and does not add an extra collision check, for two reasons. First, the space is far larger than any realistic deployment. Second, and more important, the DEK-bound `contentKey` is the real per-record authority: even if two different vaults shared a fingerprint, a record encrypted under vault A's DEK could not be imported by vault B's client because decryption or `contentKey` verification would fail. A fingerprint collision can therefore cause routing and availability noise but does not by itself expose record plaintext. Across different accounts there is no conflict at all (`owner_id` separates the streams); on the same account the server would simply treat the two vaults as one. Widening the fingerprint to 128 bits would raise the birthday bound further but would change the on-disk and sync formats and break existing vaults, so it is not done.
@@ -186,7 +223,7 @@ Generators cover passwords, API tokens, SSH keys, OpenPGP keys, MFA seeds and TO
 
 ## One-off sharing
 
-`ShareService` creates a self-contained `keystead-share:v1` encrypted string protected by an independent temporary passphrase. The recipient needs neither an account nor a vault. Keystead Server may host this opaque string with expiry and optional burn-after-reading behavior, but Core performs the encryption and decryption.
+`ShareService` creates a self-contained `keystead-share:v1` encrypted string protected by an independent temporary passphrase. The recipient needs neither an account nor a vault. [Keystead Server](https://github.com/MidCoard/keystead-server) may host this opaque string with expiry and optional burn-after-reading behavior, but Core performs the encryption and decryption.
 
 ## Cryptography
 
@@ -213,7 +250,7 @@ Applications must:
 - decide whether native-memory failure should be fatal or whether an explicit heap fallback is acceptable;
 - keep plaintext callbacks short and wipe caller-owned arrays;
 - apply strict process hardening only at an appropriate application lifecycle boundary;
-- understand that OS-backed authentication such as Windows Hello and macOS Touch ID is implemented in Keystead Client, not Core, and is only a local convenience gate.
+- understand that OS-backed authentication such as Windows Hello and macOS Touch ID is implemented in [Keystead Client](https://github.com/MidCoard/keystead-client), not Core, and is only a local convenience gate.
 
 ## Build and test
 
